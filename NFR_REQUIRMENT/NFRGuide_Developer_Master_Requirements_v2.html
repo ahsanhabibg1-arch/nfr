@@ -1,0 +1,1393 @@
+<!DOCTYPE html>
+
+<html lang="" xml:lang="" xmlns="http://www.w3.org/1999/xhtml">
+<head>
+<meta charset="utf-8"/>
+<meta content="pandoc" name="generator"/>
+<meta content="width=device-width, initial-scale=1.0, user-scalable=yes" name="viewport"/>
+<title>NFRGuide Developer Master Requirements v2.0</title>
+<style>
+    code{white-space: pre-wrap;}
+    span.smallcaps{font-variant: small-caps;}
+    div.columns{display: flex; gap: min(4vw, 1.5em);}
+    div.column{flex: auto; overflow-x: auto;}
+    div.hanging-indent{margin-left: 1.5em; text-indent: -1.5em;}
+    /* The extra [class] is a hack that increases specificity enough to
+       override a similar rule in reveal.js */
+    ul.task-list[class]{list-style: none;}
+    ul.task-list li input[type="checkbox"] {
+      font-size: inherit;
+      width: 0.8em;
+      margin: 0 0.8em 0.2em -1.6em;
+      vertical-align: middle;
+    }
+    .display.math{display: block; text-align: center; margin: 0.5rem auto;}
+  </style>
+
+<style>:root{--ink:#1e2938;--muted:#5b6878;--navy:#122338;--gold:#bd8b4c;--paper:#fff;--line:#dfe5eb;--bg:#f3f5f7}*{box-sizing:border-box}html{scroll-behavior:smooth}body{margin:0;background:var(--bg);color:var(--ink);font:16px/1.7 -apple-system,BlinkMacSystemFont,"Segoe UI",Arial,sans-serif}main{max-width:1040px;margin:30px auto 80px;padding:48px 64px;background:var(--paper);border:1px solid var(--line);border-radius:12px;box-shadow:0 10px 40px #1223380c}h1,h2,h3{font-family:Georgia,serif;line-height:1.25;color:var(--navy);scroll-margin-top:24px}h1{font-size:30px;border-bottom:2px solid var(--gold);padding-bottom:10px;margin-top:44px}h2{font-size:23px;margin-top:32px}h3{font-size:19px}h1.title{font-size:44px;border:0;margin:0 0 6px}p{margin:10px 0}a{color:#125f96}a:hover{text-decoration-thickness:2px}table{border-collapse:collapse;width:100%;margin:18px 0 25px;font-size:14px;line-height:1.5}th,td{border:1px solid #d9e0e8;padding:10px 12px;vertical-align:top;text-align:left;overflow-wrap:anywhere}thead th{background:#122338;color:#fff;font-weight:650}tbody tr:nth-child(even){background:#f6f8fa}ul,ol{padding-left:25px}li{margin:5px 0}blockquote{border-left:4px solid var(--gold);padding:12px 20px;background:#faf7f1;margin:20px 0}#TOC{border:1px solid var(--line);border-radius:10px;padding:22px;background:#f8fafc;margin:28px 0}#TOC ul{list-style:none;padding-left:16px}#TOC>ul{padding-left:0}#TOC a{text-decoration:none}.header{background:#101923;color:#fff;padding:22px max(20px,calc((100vw - 1000px)/2));display:flex;justify-content:space-between;gap:20px;align-items:center}.header strong{font:700 26px Georgia,serif}.header strong span{color:#d0a36b}.header small{color:#c8d0da}.footer{max-width:1040px;margin:0 auto 35px;text-align:center;color:var(--muted);font-size:13px}code{white-space:pre-wrap;overflow-wrap:anywhere}pre{overflow:auto;background:#f3f5f8;padding:14px;border-radius:8px}@media(max-width:700px){main{margin:0;padding:24px 18px;border:0;border-radius:0}body{font-size:15px}.header{padding:14px 18px}.header strong{font-size:21px}h1{font-size:25px}h1.title{font-size:34px}table{display:block;overflow-x:auto;white-space:normal;font-size:13px}}@media print{body{background:white}.header,.footer{display:none}main{margin:0;max-width:none;padding:0;border:0;box-shadow:none}h1,h2,h3{break-after:avoid}tr{break-inside:avoid}a{color:inherit}}
+</style></head>
+<body><div class="header"><strong>NFR<span>Guide</span></strong><small>Developer Master Requirements · Version 2.0</small></div><main>
+<header id="title-block-header">
+<h1 class="title">NFRGuide Developer Master Requirements v2.0</h1>
+</header>
+<nav id="TOC" role="doc-toc">
+<ul>
+<li><a href="#document-control" id="toc-document-control">Document
+control</a></li>
+<li><a href="#how-to-use-this-document" id="toc-how-to-use-this-document">How to use this document</a></li>
+<li><a href="#product-mission-and-non-negotiable-rules" id="toc-product-mission-and-non-negotiable-rules">1. Product mission and
+non-negotiable rules</a></li>
+<li><a href="#public-information-architecture" id="toc-public-information-architecture">2. Public information
+architecture</a>
+<ul>
+<li><a href="#entity-distinctions" id="toc-entity-distinctions">2.1
+Entity distinctions</a></li>
+<li><a href="#canonical-url-proposal" id="toc-canonical-url-proposal">2.2 Canonical URL proposal</a></li>
+</ul></li>
+<li><a href="#public-website-page-templates-and-behavior" id="toc-public-website-page-templates-and-behavior">3. Public website:
+page templates and behavior</a>
+<ul>
+<li><a href="#homepage-composition" id="toc-homepage-composition">3.1
+Homepage composition</a></li>
+<li><a href="#article-page-behavior" id="toc-article-page-behavior">3.2
+Article page behavior</a></li>
+</ul></li>
+<li><a href="#visual-design-specification-concept-c" id="toc-visual-design-specification-concept-c">4. Visual design
+specification — Concept C</a>
+<ul>
+<li><a href="#responsive-behavior" id="toc-responsive-behavior">4.1
+Responsive behavior</a></li>
+<li><a href="#reusable-public-component-library" id="toc-reusable-public-component-library">4.2 Reusable public component
+library</a></li>
+</ul></li>
+<li><a href="#custom-cms-12-admin-modules" id="toc-custom-cms-12-admin-modules">5. Custom CMS: 12 admin modules</a>
+<ul>
+<li><a href="#admin-interaction-standards" id="toc-admin-interaction-standards">5.1 Admin interaction
+standards</a></li>
+</ul></li>
+<li><a href="#editorial-editor-and-workflow" id="toc-editorial-editor-and-workflow">6. Editorial editor and
+workflow</a>
+<ul>
+<li><a href="#required-sportingspy-aligned-field-order" id="toc-required-sportingspy-aligned-field-order">6.1 Required
+SportingSpy-aligned field order</a></li>
+<li><a href="#configurable-article-types" id="toc-configurable-article-types">6.2 Configurable article
+types</a></li>
+<li><a href="#workflow" id="toc-workflow">6.3 Workflow</a></li>
+<li><a href="#publishing-blockers-versus-advice" id="toc-publishing-blockers-versus-advice">6.4 Publishing blockers
+versus advice</a></li>
+</ul></li>
+<li><a href="#logical-database-schema-contract" id="toc-logical-database-schema-contract">7. Logical database schema
+contract</a>
+<ul>
+<li><a href="#core-entities" id="toc-core-entities">7.1 Core
+entities</a></li>
+<li><a href="#entity-fields-and-constraints" id="toc-entity-fields-and-constraints">7.2 Entity fields and
+constraints</a></li>
+<li><a href="#database-integrity-requirements" id="toc-database-integrity-requirements">7.3 Database integrity
+requirements</a></li>
+<li><a href="#deliverables-required-from-developer" id="toc-deliverables-required-from-developer">7.4 Deliverables required
+from developer</a></li>
+</ul></li>
+<li><a href="#seo-intelligence-specification" id="toc-seo-intelligence-specification">8. SEO Intelligence
+specification</a>
+<ul>
+<li><a href="#seo-data-and-lifecycle" id="toc-seo-data-and-lifecycle">8.1 SEO data and lifecycle</a></li>
+<li><a href="#metadata-indexing-and-link-policy" id="toc-metadata-indexing-and-link-policy">8.2 Metadata, indexing and
+link policy</a></li>
+</ul></li>
+<li><a href="#search-monetization-and-content-operations" id="toc-search-monetization-and-content-operations">9. Search,
+monetization and content operations</a>
+<ul>
+<li><a href="#internal-search" id="toc-internal-search">9.1 Internal
+search</a></li>
+<li><a href="#commercial-controls" id="toc-commercial-controls">9.2
+Commercial controls</a></li>
+<li><a href="#media-and-sources" id="toc-media-and-sources">9.3 Media
+and sources</a></li>
+</ul></li>
+<li><a href="#security-authorization-and-operations" id="toc-security-authorization-and-operations">10. Security,
+authorization and operations</a>
+<ul>
+<li><a href="#recommended-stack-subject-to-technical-sign-off" id="toc-recommended-stack-subject-to-technical-sign-off">10.1
+Recommended stack (subject to technical sign-off)</a></li>
+</ul></li>
+<li><a href="#performance-accessibility-and-seo-delivery" id="toc-performance-accessibility-and-seo-delivery">11. Performance,
+accessibility and SEO delivery</a></li>
+<li><a href="#acceptance-tests-admin-24-approved" id="toc-acceptance-tests-admin-24-approved">12. Acceptance tests — admin
+(24 approved)</a></li>
+<li><a href="#acceptance-tests-public-website-20-baseline" id="toc-acceptance-tests-public-website-20-baseline">13. Acceptance
+tests — public website (20 baseline)</a></li>
+<li><a href="#delivery-plan-handoff-and-decisions" id="toc-delivery-plan-handoff-and-decisions">14. Delivery plan, handoff
+and decisions</a>
+<ul>
+<li><a href="#recommended-build-sequence" id="toc-recommended-build-sequence">14.1 Recommended build
+sequence</a></li>
+<li><a href="#required-developer-handoff-artifacts" id="toc-required-developer-handoff-artifacts">14.2 Required developer
+handoff artifacts</a></li>
+<li><a href="#explicit-open-items-requiring-sign-off" id="toc-explicit-open-items-requiring-sign-off">14.3 Explicit open items
+requiring sign-off</a></li>
+</ul></li>
+</ul>
+</nav>
+<p>DEVELOPER MASTER REQUIREMENTS | VERSION 2.0</p>
+<p>Independent NFR-first rodeo editorial website + custom publishing CMS
++ SEO Intelligence</p>
+<p>Prepared: 28 October 2026 | Status: Approved functional architecture;
+visual direction pending final sign-off</p>
+<p>Purpose: A buildable specification for a developer or development
+team. No code is authorized by this document alone.</p>
+<h1 id="document-control">Document control</h1>
+<table>
+<colgroup>
+<col style="width: 50%"/>
+<col style="width: 50%"/>
+</colgroup>
+<thead>
+<tr class="header">
+<th>Item</th>
+<th>Decision</th>
+</tr>
+</thead>
+<tbody>
+<tr class="odd">
+<td>Product</td>
+<td>NFRGuide.com — independent rodeo information publisher</td>
+</tr>
+<tr class="even">
+<td>Editorial reference</td>
+<td>SportingSpy publishing philosophy and CMS field structure; separate
+brand</td>
+</tr>
+<tr class="odd">
+<td>Approved</td>
+<td>Content architecture, article-first model, logical data
+architecture, admin UX and 24 admin acceptance tests</td>
+</tr>
+<tr class="even">
+<td>Selected design direction</td>
+<td>Concept C: cinematic dark header/hero + clean light editorial
+reading surfaces</td>
+</tr>
+<tr class="odd">
+<td>Not yet final</td>
+<td>Exact visual mockups, brand tokens, implementation stack/deployment,
+executable Prisma schema and migrations</td>
+</tr>
+<tr class="even">
+<td>Out of scope</td>
+<td>Stream hosting, ticket transactions, live score ingestion, official
+competitor statistics database</td>
+</tr>
+</tbody>
+</table>
+<h1 id="how-to-use-this-document">How to use this document</h1>
+<ol type="1">
+<li><p>Review Sections 1–5 for scope, information architecture and page
+behavior.</p></li>
+<li><p>Implement Section 6 as the editorial CMS contract and Section 7
+as the data-model contract.</p></li>
+<li><p>Implement Sections 8–11 for SEO, security, performance and
+operational reliability.</p></li>
+<li><p>Use Sections 12–14 as delivery phases, acceptance gates and open
+decision log.</p></li>
+<li><p>Raise any conflicting or unspecified requirement before
+implementation; do not silently invent event facts or publishing
+policies.</p></li>
+</ol>
+<h1 id="product-mission-and-non-negotiable-rules">1. Product mission and
+non-negotiable rules</h1>
+<p>NFRGuide is an independent information and editorial publication
+covering the National Finals Rodeo (NFR) and wider rodeo world. It helps
+fans find reliable schedules, competition explanations, results
+coverage, legitimate viewing information, tickets and travel guidance,
+entertainment and other fan experiences.</p>
+<ul>
+<li><p>Independent publisher: no representation as an official NFR,
+PRCA, broadcaster, ticketing provider or event organizer. Include clear
+independent-site identity and editorial/about/disclosure pages.</p></li>
+<li><p>Article-first: articles are the primary editorial unit.
+Competitor profiles, results, schedules and news are articles with
+optional structured relationships—not a live statistics
+platform.</p></li>
+<li><p>Original, sourced, accurate and useful content. Time-sensitive
+dates, viewing rights, ticket availability and prices require
+verification and review dates.</p></li>
+<li><p>No unauthorized stream hosting or embedded pirated feeds; direct
+users to legitimate sources.</p></li>
+<li><p>No fake statistics, SEO scores, event dates, countdowns, audience
+counts or search engine indexing claims.</p></li>
+<li><p>AdSense and affiliate monetization must be transparent, clearly
+disclosed and subordinate to the reader experience.</p></li>
+<li><p>Custom admin/CMS, not WordPress or Sanity; existing SportingSpy
+approach is a reference, not a shared brand or database.</p></li>
+</ul>
+<h1 id="public-information-architecture">2. Public information
+architecture</h1>
+<table>
+<colgroup>
+<col style="width: 50%"/>
+<col style="width: 50%"/>
+</colgroup>
+<thead>
+<tr class="header">
+<th>Primary section</th>
+<th>Coverage and required discovery</th>
+</tr>
+</thead>
+<tbody>
+<tr class="odd">
+<td>NFR Competition</td>
+<td>NFR overview; 10 rounds; seven disciplines; schedules; editorial
+results and standings; contestant-related articles</td>
+</tr>
+<tr class="even">
+<td>NFR Entertainment</td>
+<td>Concerts, after-parties, watch parties, awards, meet-and-greets, fan
+experiences</td>
+</tr>
+<tr class="odd">
+<td>NFR Events &amp; Shopping</td>
+<td>Cowboy Christmas, Junior NFR, Miss Rodeo America, exhibitions,
+merchandise-related guides</td>
+</tr>
+<tr class="even">
+<td>NFR Plan &amp; Watch</td>
+<td>Authorized TV/streaming information, tickets, hotels, travel, venue,
+transport and Las Vegas guides</td>
+</tr>
+<tr class="odd">
+<td>More Rodeo</td>
+<td>Permanent hubs by geography/theme; recurring rodeo events; annual
+editions; associated articles</td>
+</tr>
+</tbody>
+</table>
+<p>Seven NFR disciplines: Bareback Riding, Steer Wrestling, Team Roping,
+Saddle Bronc Riding, Tie-Down Roping, Barrel Racing and Bull Riding.</p>
+<h2 id="entity-distinctions">2.1 Entity distinctions</h2>
+<table>
+<colgroup>
+<col style="width: 33%"/>
+<col style="width: 33%"/>
+<col style="width: 33%"/>
+</colgroup>
+<thead>
+<tr class="header">
+<th>Entity</th>
+<th>Meaning</th>
+<th>Example</th>
+</tr>
+</thead>
+<tbody>
+<tr class="odd">
+<td>Rodeo Hub</td>
+<td>Permanent editorial landing page; geographic or thematic</td>
+<td>Canadian Rodeo; College Rodeo</td>
+</tr>
+<tr class="even">
+<td>Rodeo Event</td>
+<td>Stable recurring event identity independent of hub</td>
+<td>Calgary Stampede</td>
+</tr>
+<tr class="odd">
+<td>Event Edition</td>
+<td>Specific occurrence/year with verified details</td>
+<td>Calgary Stampede 2027</td>
+</tr>
+<tr class="even">
+<td>Article</td>
+<td>Editorial story/guide; optional hub/event/edition/discipline
+relationships</td>
+<td>How to Watch Calgary Stampede 2027</td>
+</tr>
+</tbody>
+</table>
+<p>Events may belong to multiple hubs. Hub membership must not determine
+event canonical URLs. Evergreen articles need no edition. NFR may share
+event/edition data models but use dedicated flagship navigation and
+templates.</p>
+<h2 id="canonical-url-proposal">2.2 Canonical URL proposal</h2>
+<table>
+<colgroup>
+<col style="width: 50%"/>
+<col style="width: 50%"/>
+</colgroup>
+<thead>
+<tr class="header">
+<th>Type</th>
+<th>Proposed pattern</th>
+</tr>
+</thead>
+<tbody>
+<tr class="odd">
+<td>More Rodeo index</td>
+<td>/rodeo-events/</td>
+</tr>
+<tr class="even">
+<td>Hub</td>
+<td>/rodeo-events/canada/</td>
+</tr>
+<tr class="odd">
+<td>Event</td>
+<td>/rodeo-events/calgary-stampede/</td>
+</tr>
+<tr class="even">
+<td>Edition</td>
+<td>/rodeo-events/calgary-stampede/2027/</td>
+</tr>
+<tr class="odd">
+<td>Article</td>
+<td>/articles/how-to-watch-calgary-stampede-2027/</td>
+</tr>
+<tr class="even">
+<td>Admin</td>
+<td>/admin/... (private and protected)</td>
+</tr>
+</tbody>
+</table>
+<p>Final URL routing for the four NFR primary sections must be frozen
+before implementation. Enforce one resolved public path per published
+entity, and redirect on published slug changes. Do not derive event URLs
+from hub slugs.</p>
+<h1 id="public-website-page-templates-and-behavior">3. Public website:
+page templates and behavior</h1>
+<table>
+<colgroup>
+<col style="width: 50%"/>
+<col style="width: 50%"/>
+</colgroup>
+<thead>
+<tr class="header">
+<th>Template</th>
+<th>Required components</th>
+</tr>
+</thead>
+<tbody>
+<tr class="odd">
+<td>Homepage</td>
+<td>Cinematic lead story; latest NFR; quick links; competition; Plan
+&amp; Watch; entertainment; events/shopping; More Rodeo; evergreen
+content; footer</td>
+</tr>
+<tr class="even">
+<td>Primary section landing</td>
+<td>Editorial introduction; featured story; topic subnavigation; latest
+and evergreen articles</td>
+</tr>
+<tr class="odd">
+<td>Rodeo hub</td>
+<td>Original introduction; linked recurring events; featured articles;
+SEO metadata; curated or filtered content</td>
+</tr>
+<tr class="even">
+<td>Recurring event</td>
+<td>Evergreen identity, organizer, venue where verified, disciplines,
+editions and related articles</td>
+</tr>
+<tr class="odd">
+<td>Event edition</td>
+<td>Edition label/year, verified dates/timezone/venue, lifecycle,
+sources, schedules and related coverage</td>
+</tr>
+<tr class="even">
+<td>Article detail</td>
+<td>Headline, optional deck, author/date, image, summary, rich content,
+sources, relevant disclosure, related articles</td>
+</tr>
+<tr class="odd">
+<td>Category/archive</td>
+<td>Clear title, description, filtered content, pagination and
+canonical/indexing logic</td>
+</tr>
+<tr class="even">
+<td>Discipline guide</td>
+<td>Evergreen explanation, related NFR/event articles, relevant rules
+and terminology</td>
+</tr>
+<tr class="odd">
+<td>Author profile</td>
+<td>Bio, editorial credentials where applicable, published articles</td>
+</tr>
+<tr class="even">
+<td>Search</td>
+<td>Published eligible content, type filters, pagination, zero-result
+guidance</td>
+</tr>
+<tr class="odd">
+<td>Static/legal</td>
+<td>About, contact, editorial policy, corrections, privacy, affiliate
+disclosure, terms as needed</td>
+</tr>
+</tbody>
+</table>
+<h2 id="homepage-composition">3.1 Homepage composition</h2>
+<ol start="6" type="1">
+<li><p>Site header and five-section navigation; prominent
+search.</p></li>
+<li><p>Lead cinematic editorial hero with headline, description and
+article link; no invented claims.</p></li>
+<li><p>Latest NFR coverage (automatic feed with manual editorial
+overrides).</p></li>
+<li><p>NFR quick-access row: schedules, results, disciplines, how to
+watch, tickets.</p></li>
+<li><p>Competition highlights and discipline guides.</p></li>
+<li><p>Plan &amp; Watch guides; entertainment and fan
+experiences.</p></li>
+<li><p>Events &amp; Shopping coverage.</p></li>
+<li><p>More Rodeo hubs, events and selected worldwide guides.</p></li>
+<li><p>Evergreen learning resources, clearly identified ads where
+applicable, trust/legal footer.</p></li>
+</ol>
+<p>Homepage sections are controlled from admin using approved section
+types, manual curation and/or filtered feeds. Provide preview and
+publish controls; avoid an unrestricted page builder.</p>
+<h2 id="article-page-behavior">3.2 Article page behavior</h2>
+<ul>
+<li><p>One H1, optional secondary editorial deck, distinct excerpt,
+author, published/updated/reviewed dates as appropriate.</p></li>
+<li><p>Featured image with rights/credit and contextual ALT text. Rich
+text with semantic headings, lists, quotes, tables, accessible links and
+responsive images.</p></li>
+<li><p>For relevant guides, concise answer near top; optional
+auto-generated table of contents for longer articles.</p></li>
+<li><p>Clear citations/sources and commercial disclosures; related
+articles and contextual links.</p></li>
+<li><p>Article type changes validation and optional components, not the
+core article storage or editor.</p></li>
+<li><p>Draft preview must be authenticated or securely tokenized,
+noindex and never exposed through public search/sitemaps.</p></li>
+</ul>
+<h1 id="visual-design-specification-concept-c">4. Visual design
+specification — Concept C</h1>
+<p>Selected direction: Hybrid Premium Sports Publication. A cinematic,
+dark rodeo-inspired masthead and hero combined with clean light
+editorial content sections. The generated Step 5B design board is a
+concept reference, not an approved pixel-perfect implementation or
+verified source of event facts.</p>
+<table>
+<colgroup>
+<col style="width: 50%"/>
+<col style="width: 50%"/>
+</colgroup>
+<thead>
+<tr class="header">
+<th>Token / component</th>
+<th>Proposed design value / behavior</th>
+</tr>
+</thead>
+<tbody>
+<tr class="odd">
+<td>Primary charcoal</td>
+<td>~#0F1115 — dark masthead, hero overlays and footer</td>
+</tr>
+<tr class="even">
+<td>Deep navy</td>
+<td>~#1E293B — dark surfaces, utility components</td>
+</tr>
+<tr class="odd">
+<td>Western gold accent</td>
+<td>~#D4A757 — restrained buttons, active indicators, links</td>
+</tr>
+<tr class="even">
+<td>Terrain brown</td>
+<td>~#8B5E3C — secondary heritage accent, sparingly</td>
+</tr>
+<tr class="odd">
+<td>Warm sand</td>
+<td>~#F7F3EA — editorial background</td>
+</tr>
+<tr class="even">
+<td>White</td>
+<td>~#FFFFFF — article canvas and cards</td>
+</tr>
+<tr class="odd">
+<td>Headings</td>
+<td>Premium editorial display serif, e.g. Playfair Display; verify
+licensing and rendering</td>
+</tr>
+<tr class="even">
+<td>Body/UI</td>
+<td>Legible modern sans, e.g. Inter; 16–18 px body target</td>
+</tr>
+<tr class="odd">
+<td>Desktop grid</td>
+<td>12-column system, max content width ~1200–1320 px</td>
+</tr>
+<tr class="even">
+<td>Article reading column</td>
+<td>~680–760 px for readable long-form text</td>
+</tr>
+<tr class="odd">
+<td>Spacing</td>
+<td>Consistent 4/8-point spacing scale; clear editorial rhythm</td>
+</tr>
+<tr class="even">
+<td>Cards</td>
+<td>Photo-led with restrained borders/shadows, category/date and clear
+titles</td>
+</tr>
+<tr class="odd">
+<td>Buttons</td>
+<td>Accessible primary accent CTA, secondary outline, visible focus</td>
+</tr>
+<tr class="even">
+<td>Images</td>
+<td>16:9 editorial hero; consistent 3:2 or 4:3 cards; responsive
+srcset</td>
+</tr>
+<tr class="odd">
+<td>Navigation</td>
+<td>Desktop horizontal five-section nav; mobile expandable drawer and
+search</td>
+</tr>
+</tbody>
+</table>
+<p>Colors, typefaces and dimensions are proposed starting tokens; final
+brand tokens and screen mockups require explicit visual approval. Do not
+reproduce inaccurate text/dates from generated imagery.</p>
+<h2 id="responsive-behavior">4.1 Responsive behavior</h2>
+<ul>
+<li><p>Mobile-first layouts; practical viewport checks at ~360, 390,
+768, 1024 and 1440 px, plus fluid resizing.</p></li>
+<li><p>Desktop: horizontal nav, wide hero, multi-column cards; optional
+article sidebar/table of contents.</p></li>
+<li><p>Tablet: reduced columns and simplified header as needed.</p></li>
+<li><p>Mobile: menu drawer, single-column article, 1–2-column cards
+where readable, no horizontal overflow.</p></li>
+<li><p>Touch targets, contrast, keyboard access, skip navigation,
+semantic landmarks, focus and reduced-motion preferences.</p></li>
+<li><p>Reserve ad/image dimensions to reduce layout shifts; never put
+intrusive ads between essential answer and source context.</p></li>
+</ul>
+<h2 id="reusable-public-component-library">4.2 Reusable public component
+library</h2>
+<ul>
+<li><p>SiteHeader, MegaMenu/MobileDrawer, SearchTrigger, Breadcrumbs,
+Footer.</p></li>
+<li><p>EditorialHero, ArticleCard (feature/standard/compact),
+ArticleGrid, SectionHeading, TopicChips.</p></li>
+<li><p>QuickLinkGrid, DisciplineCard, RodeoHubCard, EventCard,
+EditionStatus, VerifiedDateDisplay.</p></li>
+<li><p>ArticleHeader, AuthorByline, ArticleBody, TableOfContents,
+SourceList, RelatedArticles, DisclosureBanner.</p></li>
+<li><p>AdSlot with explicit labeling and reserved space, Pagination,
+EmptyState, ErrorState, ImageWithCredit.</p></li>
+</ul>
+<h1 id="custom-cms-12-admin-modules">5. Custom CMS: 12 admin
+modules</h1>
+<table>
+<colgroup>
+<col style="width: 50%"/>
+<col style="width: 50%"/>
+</colgroup>
+<thead>
+<tr class="header">
+<th>Module</th>
+<th>Required screens and actions</th>
+</tr>
+</thead>
+<tbody>
+<tr class="odd">
+<td>Overview</td>
+<td>Publishing counts, assigned drafts, review queue, scheduled items,
+SEO priorities, edition reminders, job failures</td>
+</tr>
+<tr class="even">
+<td>Articles</td>
+<td>List/filter/search; new/edit; preview; revisions; validation;
+publish/schedule/archive</td>
+</tr>
+<tr class="odd">
+<td>Rodeo Coverage</td>
+<td>Hubs, recurring events, editions, disciplines, venues; associations
+and editorial links</td>
+</tr>
+<tr class="even">
+<td>Editorial Organization</td>
+<td>Categories, tags, article types, SEO profiles and related article
+controls</td>
+</tr>
+<tr class="odd">
+<td>Media Library</td>
+<td>Upload, asset search, metadata, credit/rights, usages and safe
+deletion</td>
+</tr>
+<tr class="even">
+<td>Sources &amp; References</td>
+<td>Source directory, type, official status, verification date, linked
+articles</td>
+</tr>
+<tr class="odd">
+<td>SEO Intelligence</td>
+<td>Overview, issues, content audit, rules, sitemaps/robots, redirects,
+integrations, reports</td>
+</tr>
+<tr class="even">
+<td>Website &amp; Navigation</td>
+<td>Menus, page sections, curated content, preview and publication</td>
+</tr>
+<tr class="odd">
+<td>Analytics &amp; Search</td>
+<td>Connected analytics, internal search queries, zero-result
+reports</td>
+</tr>
+<tr class="even">
+<td>Monetization</td>
+<td>Commercial links, sponsorship/affiliate disclosures, ad placement
+configuration</td>
+</tr>
+<tr class="odd">
+<td>Team &amp; Permissions</td>
+<td>Users, invitations, roles, permissions, sessions and access
+history</td>
+</tr>
+<tr class="even">
+<td>System Settings</td>
+<td>Site defaults, integrations, jobs, logs, backups and operational
+health</td>
+</tr>
+</tbody>
+</table>
+<h2 id="admin-interaction-standards">5.1 Admin interaction
+standards</h2>
+<ul>
+<li><p>Persistent sidebar/topbar, breadcrumbs, global search, New
+Article, notifications and environment label.</p></li>
+<li><p>Server-side pagination, sorting, filters and permission-safe bulk
+actions on lists.</p></li>
+<li><p>All forms: explicit required markers, inline validation, save
+feedback, loading/error/empty states.</p></li>
+<li><p>Autosave reports Saving/Saved/Failed honestly and protects
+unsaved changes.</p></li>
+<li><p>Destructive actions require confirmation and are logged.</p></li>
+<li><p>Desktop-first admin with usable mobile workflows; no reliance on
+hover-only interactions.</p></li>
+</ul>
+<h1 id="editorial-editor-and-workflow">6. Editorial editor and
+workflow</h1>
+<h2 id="required-sportingspy-aligned-field-order">6.1 Required
+SportingSpy-aligned field order</h2>
+<ol start="15" type="1">
+<li><p>Main Headline (required to publish).</p></li>
+<li><p>Secondary Editorial Deck (optional; one-line
+subheading).</p></li>
+<li><p>Editorial Excerpt / Summary (required for published article
+cards/previews).</p></li>
+<li><p>Article Body (validated structured rich-text JSON).</p></li>
+<li><p>SEO Title (independently editable; length advisory, not a rigid
+universal cutoff).</p></li>
+<li><p>Meta Description (independently editable; may be suggested from
+excerpt).</p></li>
+<li><p>Image SEO Title.</p></li>
+<li><p>Image ALT Text (contextual, editable per placement).</p></li>
+</ol>
+<p>Additional editor panels: article type, primary category, tags,
+optional hub/event/edition/discipline associations, featured media,
+image credit/rights, sources, author/reviewer, canonical/robots,
+affiliate/sponsor disclosure, publication schedule, revisions and audit
+history.</p>
+<h2 id="configurable-article-types">6.2 Configurable article types</h2>
+<p>Seed types: News; Event Update; Event Guide; Schedule; Results &amp;
+Standings; How to Watch; Preview; Competitor Profile; Rules &amp;
+Format; History; Records &amp; Past Winners; Entertainment Guide; Ticket
+Guide; Venue Guide; Travel Guide; Product Buying Guide; Product Review;
+General Information. Types are configurable through admin and share one
+editor; type-specific SEO profiles and conditional validation.</p>
+<h2 id="workflow">6.3 Workflow</h2>
+<p>Draft → In Review → Approved/Scheduled → Published → Archived, with
+preview, unpublish, corrections, review dates and revision restoration.
+“Approved” can be represented as a review state rather than a public
+content status. Solo Super Admin may move through stages without
+separate users, but authorization is still enforced.</p>
+<ol start="23" type="1">
+<li><p>Create draft; autosave and record revisions.</p></li>
+<li><p>Assign classification and optional rodeo relationships; attach
+sources and media.</p></li>
+<li><p>Run field, integrity, rights, disclosure and SEO checks.</p></li>
+<li><p>Submit for review or self-approve if authorized.</p></li>
+<li><p>Preview exact public rendering.</p></li>
+<li><p>Publish immediately or schedule with explicit timezone.</p></li>
+<li><p>At scheduled execution, revalidate; on failure leave unpublished
+and notify/log.</p></li>
+<li><p>On updates, maintain dates, revisions, canonical paths and
+redirects.</p></li>
+</ol>
+<h2 id="publishing-blockers-versus-advice">6.4 Publishing blockers
+versus advice</h2>
+<p>Confirmed security, legal/compliance, ownership/rights, required
+fields, invalid URL/relationship and critical technical failures block
+publication. Routine SEO suggestions warn but do not block. Uncertain
+automated factual checks request human review rather than asserting a
+claim is false. Suppression of confirmed blockers is not available to
+ordinary editors.</p>
+<h1 id="logical-database-schema-contract">7. Logical database schema
+contract</h1>
+<p>PostgreSQL relational design; UUID IDs for most entities; timestamps
+in UTC with display timezone; explicit foreign keys, unique constraints,
+indexes and deletion rules. Prisma is the preferred ORM but executable
+models, SQL constraints and migrations remain developer deliverables.
+The table inventory is logical and may expand for auth/ownership
+infrastructure.</p>
+<h2 id="core-entities">7.1 Core entities</h2>
+<table>
+<colgroup>
+<col style="width: 50%"/>
+<col style="width: 50%"/>
+</colgroup>
+<thead>
+<tr class="header">
+<th>Group</th>
+<th>Tables / associations</th>
+</tr>
+</thead>
+<tbody>
+<tr class="odd">
+<td>Editorial</td>
+<td>articles, article_types, categories, tags, article_tags, authors,
+article_revisions, article_relations</td>
+</tr>
+<tr class="even">
+<td>Rodeo</td>
+<td>rodeo_hubs, rodeo_events, hub_events, event_editions, venues,
+disciplines, event_disciplines</td>
+</tr>
+<tr class="odd">
+<td>Article links</td>
+<td>article_hub_links, article_event_links, article_edition_links,
+article_discipline_links</td>
+</tr>
+<tr class="even">
+<td>Evidence/media</td>
+<td>media_assets, article_media, sources, article_sources</td>
+</tr>
+<tr class="odd">
+<td>Commercial</td>
+<td>commercial_links, article_commercial_disclosures</td>
+</tr>
+<tr class="even">
+<td>Website</td>
+<td>navigation_menus, navigation_items, page_layouts, page_sections</td>
+</tr>
+<tr class="odd">
+<td>Identity</td>
+<td>users, roles, permissions, user_roles, role_permissions,
+auth_sessions, audit_logs</td>
+</tr>
+<tr class="even">
+<td>SEO</td>
+<td>seo_profiles, seo_metadata, seo_rules, seo_rule_scopes, seo_scans,
+seo_findings, seo_scan_findings, seo_finding_events, redirects,
+url_registry</td>
+</tr>
+<tr class="odd">
+<td>Operations</td>
+<td>background_jobs, job_attempts, search_query_analytics,
+site_settings</td>
+</tr>
+</tbody>
+</table>
+<h2 id="entity-fields-and-constraints">7.2 Entity fields and
+constraints</h2>
+<table>
+<colgroup>
+<col style="width: 50%"/>
+<col style="width: 50%"/>
+</colgroup>
+<thead>
+<tr class="header">
+<th>Entity</th>
+<th>Minimum fields and invariants</th>
+</tr>
+</thead>
+<tbody>
+<tr class="odd">
+<td>articles</td>
+<td>id; type_id; primary_category_id; author_id; headline; deck?;
+excerpt; body_json; slug; status; published_at?; scheduled_at?;
+reviewed_at?; featured_media_id?; unique resolved public path</td>
+</tr>
+<tr class="even">
+<td>rodeo_hubs</td>
+<td>id; parent_id?; title; slug; introduction; status; sort_order; no
+hierarchy cycles</td>
+</tr>
+<tr class="odd">
+<td>rodeo_events</td>
+<td>id; name; slug; description; organizer_name?; official_url?; status;
+is_flagship; unique stable slug</td>
+</tr>
+<tr class="even">
+<td>event_editions</td>
+<td>id; event_id; edition_slug; label; year?; start_at?; end_at?;
+timezone?; venue_id?; status; verified_at?;
+unique(event_id,edition_slug); end &gt;= start</td>
+</tr>
+<tr class="odd">
+<td>article_*_links</td>
+<td>Composite uniqueness on each pair; optional associations; edition
+must be consistent with its parent event</td>
+</tr>
+<tr class="even">
+<td>media_assets</td>
+<td>id; storage_key; mime_type; bytes; dimensions; credit;
+rights_status; uploaded_by; unique storage key</td>
+</tr>
+<tr class="odd">
+<td>article_media</td>
+<td>article_id; media_id; usage_key; contextual alt_text; caption;
+sort_order</td>
+</tr>
+<tr class="even">
+<td>sources</td>
+<td>id; title; publisher?; url; source_type; last_checked_at?</td>
+</tr>
+<tr class="odd">
+<td>article_revisions</td>
+<td>id; article_id; revision_no; snapshot; edited_by; created_at;
+unique(article_id,revision_no)</td>
+</tr>
+<tr class="even">
+<td>seo_rules</td>
+<td>id; unique code; category; severity; enabled; config_json;
+version</td>
+</tr>
+<tr class="odd">
+<td>seo_findings</td>
+<td>id; rule_id; owner reference; stable fingerprint; status; severity;
+first/last seen; resolution; historical events</td>
+</tr>
+<tr class="even">
+<td>redirects</td>
+<td>id; normalized source_path; target_path; status_code; active; unique
+active source; no loops</td>
+</tr>
+<tr class="odd">
+<td>url_registry</td>
+<td>unique normalized public path and enforceable entity ownership</td>
+</tr>
+<tr class="even">
+<td>background_jobs</td>
+<td>id; type; payload; status; run_after; dedupe_key; attempt_count;
+idempotent processing</td>
+</tr>
+</tbody>
+</table>
+<h2 id="database-integrity-requirements">7.3 Database integrity
+requirements</h2>
+<ul>
+<li><p>One stable event record may link to many hubs and editions; do
+not duplicate events for each hub.</p></li>
+<li><p>Edition uniqueness is (event_id, edition_slug), not merely
+(event_id, year). Some events may have multiple occurrences per
+year.</p></li>
+<li><p>All article associations use junction tables with composite
+unique keys.</p></li>
+<li><p>Protect referenced entities from destructive deletion; archive or
+soft-delete where appropriate.</p></li>
+<li><p>Normalize and reserve public URLs transactionally; ensure
+redirect generation when published slugs change.</p></li>
+<li><p>No unchecked polymorphic owner references: SEO metadata/findings
+and URL registry require explicit FK ownership or a validated ownership
+registry.</p></li>
+<li><p>Enforce data constraints in DB where feasible and repeat business
+validations in application services.</p></li>
+<li><p>Do not store arrays of relational IDs in JSON when a proper
+junction table is available.</p></li>
+</ul>
+<h2 id="deliverables-required-from-developer">7.4 Deliverables required
+from developer</h2>
+<ul>
+<li><p>Complete Prisma schema, enum definitions, relations, indexes,
+unique constraints and SQL migrations.</p></li>
+<li><p>Physical ERD including junction tables, SEO ownership, sessions
+and job infrastructure.</p></li>
+<li><p>Seed data for five primary sections, seven NFR disciplines,
+article types, roles and SEO profiles.</p></li>
+<li><p>Migration plan, rollback strategy, backup/restore test and
+automated referential-integrity tests.</p></li>
+</ul>
+<h1 id="seo-intelligence-specification">8. SEO Intelligence
+specification</h1>
+<p>One configurable rule engine shared by editor checks and scheduled
+audits. Do not create separate competing SEO engines. Checks must be
+explainable and rule-scoped, with persisted scan and finding
+history.</p>
+<table>
+<colgroup>
+<col style="width: 50%"/>
+<col style="width: 50%"/>
+</colgroup>
+<thead>
+<tr class="header">
+<th>12 groups</th>
+<th>Expected checks</th>
+</tr>
+</thead>
+<tbody>
+<tr class="odd">
+<td>1. On-page</td>
+<td>SEO title, meta description, headings, primary topic clarity</td>
+</tr>
+<tr class="even">
+<td>2. Search appearance</td>
+<td>Duplicate titles/descriptions, snippet readiness</td>
+</tr>
+<tr class="odd">
+<td>3. Technical</td>
+<td>Canonicals, noindex, URL collisions, sitemap eligibility</td>
+</tr>
+<tr class="even">
+<td>4. Content/topic</td>
+<td>Completeness, readability, useful answers, factual context</td>
+</tr>
+<tr class="odd">
+<td>5. External links</td>
+<td>Official source verification, link health, sponsored
+classification</td>
+</tr>
+<tr class="even">
+<td>6. Internal links</td>
+<td>Orphan content, broken references, contextual linking</td>
+</tr>
+<tr class="odd">
+<td>7. Image SEO</td>
+<td>ALT, credit, image rights, optimization</td>
+</tr>
+<tr class="even">
+<td>8. Structured data</td>
+<td>Article/NewsArticle, CollectionPage, SportsEvent only when
+warranted</td>
+</tr>
+<tr class="odd">
+<td>9. AI search readiness</td>
+<td>Direct answers, source clarity, entity context</td>
+</tr>
+<tr class="even">
+<td>10. Freshness</td>
+<td>Review dates, stale event/viewing/ticket information</td>
+</tr>
+<tr class="odd">
+<td>11. Event SEO</td>
+<td>Hub/event/edition consistency and lifecycle</td>
+</tr>
+<tr class="even">
+<td>12. Redirects</td>
+<td>Loops, chains, invalid targets and status codes</td>
+</tr>
+</tbody>
+</table>
+<h2 id="seo-data-and-lifecycle">8.1 SEO data and lifecycle</h2>
+<ul>
+<li><p>seo_profiles configure checks by article type; seo_rules store
+code, severity, enabled state, version and thresholds; seo_rule_scopes
+override applicability.</p></li>
+<li><p>seo_scans track scope, status, engine version, timestamps and
+initiator.</p></li>
+<li><p>seo_findings use stable fingerprint, severity, owner, status
+(open/resolved/reopened/suppressed where permitted), first/last
+detection.</p></li>
+<li><p>seo_scan_findings record evidence from each scan;
+seo_finding_events record all status changes and reasons.</p></li>
+<li><p>Editors can navigate from issue to affected content/field. Only
+authorized roles can suppress non-blocking findings, with reason and
+optional expiry.</p></li>
+<li><p>No fabricated SEO score, ranking, indexing or analytics.
+Connected Search Console/Bing data must be labeled as actual verified
+integration data.</p></li>
+<li><p>Expensive full-site scans and link checks execute asynchronously,
+not on public page requests.</p></li>
+</ul>
+<h2 id="metadata-indexing-and-link-policy">8.2 Metadata, indexing and
+link policy</h2>
+<ul>
+<li><p>Canonical, robots and sitemap eligibility must derive from one
+central policy. Draft/unpublished/private/noindex pages are excluded
+from public XML sitemaps.</p></li>
+<li><p>Normal editorial source links are followable by default; internal
+links use normal anchor markup.</p></li>
+<li><p>Affiliate/paid links use rel="sponsored" and visible disclosure.
+Untrusted links may use nofollow; UGC uses ugc if introduced.</p></li>
+<li><p>Use JSON-LD types that reflect actual content. An article about
+an event is not automatically a SportsEvent page.</p></li>
+<li><p>Redirects must avoid loops/chains; use 301/302/307/308 as
+appropriate and validate destination safety.</p></li>
+</ul>
+<h1 id="search-monetization-and-content-operations">9. Search,
+monetization and content operations</h1>
+<h2 id="internal-search">9.1 Internal search</h2>
+<p>Launch with PostgreSQL full-text search over published, eligible
+articles, hubs, events and editions. Provide content-type filters,
+pagination, relevant ranking and useful zero-results guidance. Record
+aggregate normalized search queries and result counts with a retention
+policy; do not collect unnecessary personal data.</p>
+<h2 id="commercial-controls">9.2 Commercial controls</h2>
+<p>Commercial link registry records destination, partner, relationship
+type, status and optional tracking configuration. Editorial link
+insertion distinguishes normal, sponsored, untrusted and future UGC
+links. Visible disclosures are mandatory where appropriate. Ad slots
+must be labeled, reserved in layout, policy-compliant and not mistaken
+for editorial recommendations.</p>
+<h2 id="media-and-sources">9.3 Media and sources</h2>
+<p>Use object storage for media, with safe upload validation, resizing,
+credit/rights fields and contextual ALT text. Keep a reusable source
+directory and article-source verification notes. Time-sensitive
+viewing/ticket information must have suitable references and review
+dates.</p>
+<h1 id="security-authorization-and-operations">10. Security,
+authorization and operations</h1>
+<ul>
+<li><p>Use vetted authentication libraries; secure password hashing,
+session rotation, MFA for privileged roles, rate limits and secure
+reset/recovery flows.</p></li>
+<li><p>Role-based permissions: Super Admin, Administrator, Editor,
+Author and SEO Manager. Enforce on server and APIs, not only sidebar
+visibility.</p></li>
+<li><p>Audit create/edit/publish/unpublish/permission/SEO
+rule/redirect/commercial changes.</p></li>
+<li><p>Protect against XSS, CSRF, injection, SSRF through URL fetches,
+unsafe uploads and open redirects; validate rich-text nodes and external
+URLs.</p></li>
+<li><p>Persistent background job queue for scheduled publishing, SEO
+scans, sitemap updates and link checks; retries, idempotency,
+deduplication, failure monitoring.</p></li>
+<li><p>Backups, restore testing, error monitoring, log retention,
+secrets management and environment separation
+(development/staging/production).</p></li>
+<li><p>Respect copyright and privacy; no unauthorized live-stream
+content or copyrighted media without appropriate rights.</p></li>
+</ul>
+<h2 id="recommended-stack-subject-to-technical-sign-off">10.1
+Recommended stack (subject to technical sign-off)</h2>
+<p>Next.js (App Router), React, TypeScript, PostgreSQL, Prisma, Tailwind
+CSS, Tiptap/ProseMirror, object storage, a durable worker/queue, Vitest
+and Playwright. Deployment vendor, auth library, cache, queue provider
+and analytics integrations require a documented implementation decision
+before development. Avoid hard-coding infrastructure assumptions.</p>
+<h1 id="performance-accessibility-and-seo-delivery">11. Performance,
+accessibility and SEO delivery</h1>
+<ul>
+<li><p>Indexable public content should use server-side rendering or
+static generation with appropriate revalidation.</p></li>
+<li><p>Responsive image optimization, lazy loading below the fold,
+caching, pagination and minimal client-side JavaScript.</p></li>
+<li><p>Target good Core Web Vitals at p75: LCP &lt;= 2.5 s, INP &lt;=
+200 ms, CLS &lt;= 0.1; measure rather than guarantee.</p></li>
+<li><p>Target WCAG 2.2 AA for key user journeys: keyboard access, focus,
+contrast, labels, landmarks, skip links and reduced motion.</p></li>
+<li><p>Robots, XML sitemaps, canonical tags, redirects, structured data
+and preview protections must be validated in staging.</p></li>
+<li><p>Use verified event data; do not manufacture dates, tickets,
+prices, streaming availability, athlete results or countdowns.</p></li>
+</ul>
+<h1 id="acceptance-tests-admin-24-approved">12. Acceptance tests — admin
+(24 approved)</h1>
+<table>
+<colgroup>
+<col style="width: 50%"/>
+<col style="width: 50%"/>
+</colgroup>
+<thead>
+<tr class="header">
+<th>ID</th>
+<th>Pass condition</th>
+</tr>
+</thead>
+<tbody>
+<tr class="odd">
+<td>ADM-01</td>
+<td>Authorized login creates secure session with correct
+permissions</td>
+</tr>
+<tr class="even">
+<td>ADM-02</td>
+<td>Unauthorized API/admin action rejected server-side</td>
+</tr>
+<tr class="odd">
+<td>ADM-03</td>
+<td>Article create/autosave persists; status accurate</td>
+</tr>
+<tr class="even">
+<td>ADM-04</td>
+<td>Restore revision creates new revision; history intact</td>
+</tr>
+<tr class="odd">
+<td>ADM-05</td>
+<td>Evergreen article publishes without edition</td>
+</tr>
+<tr class="even">
+<td>ADM-06</td>
+<td>Edition link enforces matching parent event</td>
+</tr>
+<tr class="odd">
+<td>ADM-07</td>
+<td>Missing required field blocks publication with actionable error</td>
+</tr>
+<tr class="even">
+<td>ADM-08</td>
+<td>Nonblocking SEO warning allows authorized publication</td>
+</tr>
+<tr class="odd">
+<td>ADM-09</td>
+<td>Confirmed compliance blocker prevents publication</td>
+</tr>
+<tr class="even">
+<td>ADM-10</td>
+<td>Scheduled publish uses explicit timezone and correct execution</td>
+</tr>
+<tr class="odd">
+<td>ADM-11</td>
+<td>Scheduled validation failure leaves article unpublished and logs
+alert</td>
+</tr>
+<tr class="even">
+<td>ADM-12</td>
+<td>Event in multiple hubs remains single canonical event</td>
+</tr>
+<tr class="odd">
+<td>ADM-13</td>
+<td>Changing hub association does not change event URL</td>
+</tr>
+<tr class="even">
+<td>ADM-14</td>
+<td>Published slug change creates valid redirect</td>
+</tr>
+<tr class="odd">
+<td>ADM-15</td>
+<td>Repeated SEO scan does not duplicate active finding</td>
+</tr>
+<tr class="even">
+<td>ADM-16</td>
+<td>Resolved issue reappears as reopened with history</td>
+</tr>
+<tr class="odd">
+<td>ADM-17</td>
+<td>Affiliate link uses correct classification/disclosure</td>
+</tr>
+<tr class="even">
+<td>ADM-18</td>
+<td>Missing required media rights blocks unsafe publication</td>
+</tr>
+<tr class="odd">
+<td>ADM-19</td>
+<td>Article search/filter/pagination correct and permission-safe</td>
+</tr>
+<tr class="even">
+<td>ADM-20</td>
+<td>Homepage reordering previews before publication</td>
+</tr>
+<tr class="odd">
+<td>ADM-21</td>
+<td>Job retry does not duplicate publication/side effects</td>
+</tr>
+<tr class="even">
+<td>ADM-22</td>
+<td>Admin essential flows work on mobile</td>
+</tr>
+<tr class="odd">
+<td>ADM-23</td>
+<td>Disconnected SEO integration shows no fabricated metrics</td>
+</tr>
+<tr class="even">
+<td>ADM-24</td>
+<td>Archiving referenced event preserves related content</td>
+</tr>
+</tbody>
+</table>
+<h1 id="acceptance-tests-public-website-20-baseline">13. Acceptance
+tests — public website (20 baseline)</h1>
+<table>
+<colgroup>
+<col style="width: 50%"/>
+<col style="width: 50%"/>
+</colgroup>
+<thead>
+<tr class="header">
+<th>ID</th>
+<th>Pass condition</th>
+</tr>
+</thead>
+<tbody>
+<tr class="odd">
+<td>WEB-01</td>
+<td>Five-section navigation works on desktop and mobile</td>
+</tr>
+<tr class="even">
+<td>WEB-02</td>
+<td>Homepage sections curated from admin</td>
+</tr>
+<tr class="odd">
+<td>WEB-03</td>
+<td>Article page renders approved editorial fields</td>
+</tr>
+<tr class="even">
+<td>WEB-04</td>
+<td>Valid page metadata and canonical</td>
+</tr>
+<tr class="odd">
+<td>WEB-05</td>
+<td>Hub lists associated events without duplication</td>
+</tr>
+<tr class="even">
+<td>WEB-06</td>
+<td>Event links valid editions and articles</td>
+</tr>
+<tr class="odd">
+<td>WEB-07</td>
+<td>Edition shows verified or explicitly unknown dates</td>
+</tr>
+<tr class="even">
+<td>WEB-08</td>
+<td>Evergreen articles do not require edition</td>
+</tr>
+<tr class="odd">
+<td>WEB-09</td>
+<td>Search returns relevant published eligible content</td>
+</tr>
+<tr class="even">
+<td>WEB-10</td>
+<td>Draft/private previews inaccessible publicly</td>
+</tr>
+<tr class="odd">
+<td>WEB-11</td>
+<td>Slug changes redirect correctly</td>
+</tr>
+<tr class="even">
+<td>WEB-12</td>
+<td>Sitemap/robots follow central indexability policy</td>
+</tr>
+<tr class="odd">
+<td>WEB-13</td>
+<td>Structured data matches page type</td>
+</tr>
+<tr class="even">
+<td>WEB-14</td>
+<td>Responsive images with accessible text</td>
+</tr>
+<tr class="odd">
+<td>WEB-15</td>
+<td>Affiliate disclosures and rel attributes correct</td>
+</tr>
+<tr class="even">
+<td>WEB-16</td>
+<td>Keyboard-accessible navigation and article content</td>
+</tr>
+<tr class="odd">
+<td>WEB-17</td>
+<td>Ads do not cause avoidable layout shifts</td>
+</tr>
+<tr class="even">
+<td>WEB-18</td>
+<td>Layouts work across agreed responsive viewports</td>
+</tr>
+<tr class="odd">
+<td>WEB-19</td>
+<td>Public pages expose no admin-only data</td>
+</tr>
+<tr class="even">
+<td>WEB-20</td>
+<td>404/error states help reader recover</td>
+</tr>
+</tbody>
+</table>
+<h1 id="delivery-plan-handoff-and-decisions">14. Delivery plan, handoff
+and decisions</h1>
+<h2 id="recommended-build-sequence">14.1 Recommended build sequence</h2>
+<table>
+<colgroup>
+<col style="width: 50%"/>
+<col style="width: 50%"/>
+</colgroup>
+<thead>
+<tr class="header">
+<th>Phase</th>
+<th>Deliverable / exit gate</th>
+</tr>
+</thead>
+<tbody>
+<tr class="odd">
+<td>0. Design and technical freeze</td>
+<td>Approve final Concept C mockups, route map, stack/deployment, ERD,
+Prisma and migration design</td>
+</tr>
+<tr class="even">
+<td>1. Platform foundation</td>
+<td>Auth/RBAC, database, admin shell, media storage, audit logging,
+staging</td>
+</tr>
+<tr class="odd">
+<td>2. Editorial core</td>
+<td>Article editor/listing, types/categories/tags, sources, revisions,
+publishing</td>
+</tr>
+<tr class="even">
+<td>3. Rodeo relationships</td>
+<td>Hubs, events, editions, disciplines, venues and article links</td>
+</tr>
+<tr class="odd">
+<td>4. Public pages</td>
+<td>Homepage, five sections, article, hub/event/edition, search and
+legal pages</td>
+</tr>
+<tr class="even">
+<td>5. SEO and commercial</td>
+<td>Metadata, schema, sitemaps, redirects, rules, findings, disclosures
+and ad slots</td>
+</tr>
+<tr class="odd">
+<td>6. Operational hardening</td>
+<td>Scheduling, background jobs, analytics integrations, security,
+accessibility and performance</td>
+</tr>
+<tr class="even">
+<td>7. UAT and launch</td>
+<td>Pass agreed acceptance tests, restore rehearsal, content QA, staging
+sign-off, production launch</td>
+</tr>
+</tbody>
+</table>
+<h2 id="required-developer-handoff-artifacts">14.2 Required developer
+handoff artifacts</h2>
+<ul>
+<li><p>Final physical ERD and executable Prisma models plus SQL
+migrations.</p></li>
+<li><p>Screen designs and responsive component inventory;
+route-to-template map.</p></li>
+<li><p>API contracts, validation rules, role-permission matrix and
+publishing state machine.</p></li>
+<li><p>SEO rules catalog with IDs, severities, scopes and sample
+findings.</p></li>
+<li><p>Seed data and staging content; migration/backup/rollback
+instructions.</p></li>
+<li><p>Automated unit/integration/e2e tests and acceptance test
+results.</p></li>
+<li><p>Deployment architecture, environment variables list (without
+secrets), monitoring and operations runbook.</p></li>
+<li><p>Editor/operator guide covering articles, sources, editions, SEO
+issues, homepage curation and commercial disclosures.</p></li>
+</ul>
+<h2 id="explicit-open-items-requiring-sign-off">14.3 Explicit open items
+requiring sign-off</h2>
+<ol start="31" type="1">
+<li><p>Approve final pixel-level Concept C screens for homepage,
+article, NFR landing, More Rodeo hub and mobile. The current generated
+board is illustrative only.</p></li>
+<li><p>Confirm final NFR section URL paths, article URL pattern and
+public navigation dropdown structure.</p></li>
+<li><p>Select actual brand fonts, logo artwork, licensed imagery and
+exact color tokens.</p></li>
+<li><p>Approve implementation stack versions, hosting, storage,
+authentication library, queue and integrations.</p></li>
+<li><p>Review developer-produced physical ERD, Prisma schema, migration
+strategy and ownership constraints.</p></li>
+<li><p>Agree content publishing policy, source verification thresholds,
+correction policy and commercial disclosure wording.</p></li>
+<li><p>Agree launch content inventory, editorial owners, performance
+test targets and deployment readiness gates.</p></li>
+</ol>
+<p>CHANGE CONTROL: Any departure from the approved article-first
+architecture, five primary sections, CMS editorial field order,
+canonical URL principles, SEO Intelligence rule model or acceptance
+criteria requires documented approval before implementation.</p>
+<p>END OF DEVELOPER REQUIREMENTS — v2.0</p>
+</main><div class="footer">NFRGuide.com · Independent rodeo editorial publishing platform · Developer handoff</div></body>
+</html>

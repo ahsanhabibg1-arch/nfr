@@ -1,0 +1,6 @@
+# https://nfrguide.com/robots.txt
+User-agent: *
+Allow: /
+Disallow: /admin/
+
+Sitemap: https://nfrguide.com/sitemap.xml

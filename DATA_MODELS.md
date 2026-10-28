@@ -1,0 +1,305 @@
+# NFRGuide.com — Data Models & Schema Contracts
+
+This document details the TypeScript contracts used in Phase 0 alongside the planned relational schema (PostgreSQL DDL and Prisma ORM models) for Phase 1.
+
+---
+
+## 1. Core TypeScript Contracts (Phase 0)
+
+All primary contracts reside in `src/types/index.ts` and `src/types/admin.ts`.
+
+### Article (`src/types/index.ts`)
+```ts
+export type ArticleType =
+  | 'feature'
+  | 'analysis'
+  | 'guide'
+  | 'news'
+  | 'opinion'
+  | 'interview'
+  | 'historical'
+  | 'Event Guide'
+  | 'Shopping Guide'
+  | 'Entertainment Guide'
+  | 'Logistics Guide'
+  | 'Round Recap'
+  | 'Aggregate Analysis'
+  | 'Discipline Primer'
+  | 'Athlete Profile'
+  | 'Stock Contractor Profile'
+  | 'Gear & Tack Review'
+  | 'Travel & Hospitality';
+
+export type ArticleWorkflowStatus =
+  | 'draft'
+  | 'in_review'
+  | 'approved'
+  | 'scheduled'
+  | 'published'
+  | 'archived';
+
+export interface Article {
+  id: string;
+  slug: string;
+  title: string;
+  headline?: string;
+  deck: string;
+  excerpt: string;
+  category: PrimarySection;
+  subcategory?: string;
+  articleType: ArticleType;
+  status: 'published' | 'draft' | 'archived';
+  workflowStatus?: ArticleWorkflowStatus;
+  readTime: string;
+  author: Author;
+  publishedAt: string;
+  updatedAt?: string;
+  reviewedAt?: string;
+  scheduledAt?: string;
+  heroImage: string;
+  imageRightsStatus?: MediaRightsStatus;
+  imageSeoTitle?: string;
+  imageAltText?: string;
+  seoTitle?: string;
+  seoDescription?: string;
+  canonicalUrl?: string;
+  seo?: {
+    title?: string;
+    description?: string;
+  };
+  disclosure?: string;
+  disclosureNote?: string;
+  relatedArticleIds?: string[];
+  associatedDisciplineIds?: string[];
+  associatedHubIds?: string[];
+  associatedEventIds?: string[];
+  associatedEditionIds?: string[];
+  sources?: SourceCitation[];
+  structuredBody?: ContentBlock[];
+}
+```
+
+### Structured Content Blocks (`ContentBlock`)
+```ts
+export type ContentBlock =
+  | { type: 'paragraph'; text: string; dropCap?: boolean }
+  | { type: 'heading'; level: 2 | 3; text: string; id?: string }
+  | { type: 'quote'; quote: string; citation: string; role?: string }
+  | { type: 'table'; headers: string[]; rows: string[][]; caption?: string }
+  | { type: 'callout'; text: string; style: 'info' | 'warning' | 'stat' | 'neutral' }
+  | { type: 'image'; url: string; caption: string; altText: string; photographer?: string }
+  | { type: 'sourceLink'; title: string; url: string; organization: string }
+  | { type: 'list'; items: string[]; ordered: boolean }
+  | { type: 'divider' };
+```
+
+### Article Revisions & Audit Log (`ArticleRevision`)
+```ts
+export interface ArticleRevision {
+  id: string;
+  articleId: string;
+  timestamp: string;
+  actorName: string;
+  actorRole: string;
+  status: ArticleWorkflowStatus;
+  summary: string;
+  snapshot: Partial<Article>;
+}
+```
+
+---
+
+## 2. Relational Mapping Blueprint (Phase 1 PostgreSQL / Prisma)
+
+When migrating to a persistent PostgreSQL database, the TypeScript interfaces map cleanly to the following relational models:
+
+```prisma
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+enum WorkflowStatus {
+  DRAFT
+  IN_REVIEW
+  APPROVED
+  SCHEDULED
+  PUBLISHED
+  ARCHIVED
+}
+
+enum ImageRightsStatus {
+  STAFF_PHOTO
+  EDITORIAL_POOL
+  PRCA_ARCHIVE
+  LICENSED_CREATIVE
+  UNRESOLVED
+}
+
+model Article {
+  id                 String             @id @default(uuid())
+  slug               String             @unique
+  title              String
+  deck               String?
+  excerpt            String
+  category           String
+  subcategory        String?
+  articleType        String
+  workflowStatus     WorkflowStatus     @default(DRAFT)
+  readTime           String?
+  publishedAt        DateTime?
+  scheduledAt        DateTime?
+  updatedAt          DateTime           @updatedAt
+  heroImageUrl       String?
+  imageRightsStatus  ImageRightsStatus  @default(UNRESOLVED)
+  imageSeoTitle      String?
+  imageAltText       String?
+  seoTitle           String?
+  seoDescription     String?
+  canonicalUrl       String?
+  disclosureType     String             @default("editorial-independent")
+  disclosureNote     String?
+
+  // Relations
+  authorId           String
+  author             User               @relation(fields: [authorId], references: [id])
+  revisions          ArticleRevision[]
+  contentBlocks      ArticleBlock[]
+  sources            ArticleSource[]
+  disciplines        ArticleDiscipline[]
+  events             ArticleEvent[]
+  hubs               ArticleHub[]
+  editions           ArticleEdition[]
+
+  @@index([slug])
+  @@index([workflowStatus])
+  @@index([category])
+}
+
+model ArticleBlock {
+  id         String   @id @default(uuid())
+  articleId  String
+  article    Article  @relation(fields: [articleId], references: [id], onDelete: Cascade)
+  sortOrder  Int
+  blockType  String   // paragraph, heading, quote, table, callout, image, sourceLink, list, divider
+  data       Json     // Typed structured content payload
+
+  @@index([articleId, sortOrder])
+}
+
+model ArticleRevision {
+  id         String         @id @default(uuid())
+  articleId  String
+  article    Article        @relation(fields: [articleId], references: [id], onDelete: Cascade)
+  actorId    String
+  actor      User           @relation(fields: [actorId], references: [id])
+  status     WorkflowStatus
+  summary    String
+  snapshot   Json
+  createdAt  DateTime       @default(now())
+
+  @@index([articleId, createdAt])
+}
+
+model User {
+  id           String            @id @default(uuid())
+  email        String            @unique
+  name         String
+  role         String            // ADMIN, EDITOR, CONTRIBUTOR
+  credentials  String?
+  bio          String?
+  articles     Article[]
+  revisions    ArticleRevision[]
+}
+
+model RodeoHub {
+  id          String         @id
+  slug        String         @unique
+  title       String
+  city        String
+  state       String
+  description String
+  articles    ArticleHub[]
+}
+
+model RecurringRodeoEvent {
+  id               String         @id
+  slug             String         @unique
+  name             String
+  location         String
+  traditionalMonth String
+  description      String
+  articles         ArticleEvent[]
+}
+
+model EventEdition {
+  id             String           @id
+  slug           String           @unique
+  year           Int
+  name           String
+  totalPurse     String
+  venue          String
+  articles       ArticleEdition[]
+}
+
+model Discipline {
+  id          String              @id
+  slug        String              @unique
+  name        String
+  summary     String
+  articles    ArticleDiscipline[]
+}
+
+// Join Tables for Many-to-Many Relationships
+model ArticleDiscipline {
+  articleId    String
+  disciplineId String
+  article      Article    @relation(fields: [articleId], references: [id], onDelete: Cascade)
+  discipline   Discipline @relation(fields: [disciplineId], references: [id])
+
+  @@id([articleId, disciplineId])
+}
+
+model ArticleHub {
+  articleId String
+  hubId     String
+  article   Article  @relation(fields: [articleId], references: [id], onDelete: Cascade)
+  hub       RodeoHub @relation(fields: [hubId], references: [id])
+
+  @@id([articleId, hubId])
+}
+
+model ArticleEvent {
+  articleId String
+  eventId   String
+  article   Article             @relation(fields: [articleId], references: [id], onDelete: Cascade)
+  event     RecurringRodeoEvent @relation(fields: [eventId], references: [id])
+
+  @@id([articleId, eventId])
+}
+
+model ArticleEdition {
+  articleId String
+  editionId String
+  article   Article      @relation(fields: [articleId], references: [id], onDelete: Cascade)
+  edition   EventEdition @relation(fields: [editionId], references: [id])
+
+  @@id([articleId, editionId])
+}
+
+model ArticleSource {
+  id          String  @id @default(uuid())
+  articleId   String
+  article     Article @relation(fields: [articleId], references: [id], onDelete: Cascade)
+  title       String
+  url         String
+  publisher   String
+  year        String?
+
+  @@index([articleId])
+}
+```

@@ -1,0 +1,6 @@
+{
+  "name": "NFRGuide",
+  "description": "Independent rodeo editorial publication covering the National Finals Rodeo and premier rodeo events.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
