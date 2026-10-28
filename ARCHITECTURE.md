@@ -133,3 +133,39 @@ Typography:
 ├── Body Text & UI:     Inter / -apple-system / sans-serif
 └── Code & Data:        JetBrains Mono / Menlo / monospace
 ```
+
+---
+
+# Phase 1 / Batch 01 — Next.js App Router Architecture
+
+> Added 2026-10-28. The sections above describe the preserved Phase 0 Vite/React
+> prototype (repo root). Batch 01 introduces a parallel Next.js application at
+> `apps/web/` without modifying the Phase 0 app.
+
+## Application layout
+- **`/` (repo root):** Phase 0 Vite + React Router SPA — preserved as reference.
+- **`apps/web/`:** Next.js 16.4.3 App Router + React 19 + Tailwind CSS v4. Self-contained
+  (`package.json`, lockfile); no monorepo tooling.
+
+## Rendering model (server/client boundaries)
+- **Server Components:** public page shells and route metadata (`generateMetadata`),
+  article/section/discipline pages, `robots.ts`, `sitemap.ts`.
+- **Client Components (`'use client'`):** `SearchModal`, `SiteHeader`/mobile nav,
+  `PublicChrome` (search shell), homepage (`HomeView`), category archive, all
+  `admin/*` CMS screens, the article editor and rich block editor.
+
+## Key modules (`apps/web`)
+- `lib/content.ts` — read-only, published-only content adapter (the single seam to
+  the future database). Public pages never import `ALL_ARTICLES` directly.
+- `lib/seo.tsx` — Next Metadata API builders + Article/Breadcrumb JSON-LD (one
+  `SITE_URL` canonical/robots policy).
+- `lib/url.ts` — outbound URL protocol allowlist (http/https/mailto/tel/relative).
+- `next.config.mjs` — `trailingSlash: true`, 5 legacy → canonical HTTP 308 redirects,
+  `turbopack.root` pinned to `apps/web`.
+- `views/*` — Phase 0 page bodies ported to props-driven views; `components/*` reused
+  with `react-router-dom` replaced by `next/link` + `next/navigation`.
+
+## Data flow (Batch 01)
+Public (server) → `lib/content.ts` → static published seed (`data/mockEditorialData`).
+Admin (client) → `data/articleStore.ts` → browser `sessionStorage` (prototype only;
+NOT shared, NOT server state, does not drive public SSR). See KNOWN_LIMITATIONS.md.

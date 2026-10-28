@@ -73,3 +73,41 @@ All admin routes are prefixed with `/admin/` and wrapped inside `AdminShell` (`s
 - **Scroll Restoration**: Automatic scroll-to-top on route change implemented in `src/App.tsx`.
 - **404 Handling**: Wildcard route (`*`) redirects unmapped paths to a dedicated editorial 404 page with breadcrumb navigation back to `/`.
 - **Trailing Slash Normalization**: Route helper functions in `src/config/routes.ts` enforce consistent trailing slashes across all internal navigation anchors.
+
+---
+
+# Phase 1 / Batch 01 — Next.js App Router Route Map
+
+> Added 2026-10-28. Routes below are implemented in `apps/web/app` using file-based
+> App Router. Canonical trailing slash enforced via `trailingSlash: true`.
+
+## Public routes
+| Path | File | Rendering |
+|---|---|---|
+| `/` | `app/(public)/page.tsx` | Static shell + server metadata |
+| `/competition/`, `/entertainment/`, `/events-shopping/`, `/plan-watch/`, `/rodeo-events/` | `app/(public)/[section]/page.tsx` | SSG (`generateStaticParams`, `dynamicParams=false`) |
+| `/articles/[slug]/` | `app/(public)/articles/[slug]/page.tsx` | SSG (published only); unknown/unpublished → 404 |
+| `/disciplines/[slug]/` | `app/(public)/disciplines/[slug]/page.tsx` | SSG (7) |
+| `/categories/[slug]/` | `app/(public)/categories/[slug]/page.tsx` | Dynamic + server metadata |
+| `/robots.txt` | `app/robots.ts` | Generated |
+| `/sitemap.xml` | `app/sitemap.ts` | Generated (published URLs only; admin excluded) |
+| `*` | `app/not-found.tsx` | 404 |
+
+## Server-level permanent redirects (HTTP 308) — `next.config.mjs`
+- `/nfr-competition/` → `/competition/`
+- `/nfr-entertainment/` → `/entertainment/`
+- `/nfr-events-and-shopping/` → `/events-shopping/`
+- `/nfr-plan-and-watch/` → `/plan-watch/`
+- `/more-rodeo/` → `/rodeo-events/`
+
+(Each also has a `/:path*` wildcard variant.) These replace the Phase 0 client-side
+`<Navigate>` redirects with true HTTP permanent redirects. The trailing-slash form is
+a single hop; the no-slash form passes through Next's trailing-slash normalization
+first (inherent to `trailingSlash: true`).
+
+## Admin routes
+All under `app/admin/` (dynamic, `noindex`, disallowed in robots): `/admin/`,
+`/admin/articles/`, `/admin/articles/new/`, `/admin/articles/[id]/edit/`,
+`/admin/rodeo-coverage/`, `/admin/editorial-organization/`, `/admin/media/`,
+`/admin/sources/`, `/admin/seo/`, `/admin/website/`, `/admin/analytics/`,
+`/admin/monetization/`, `/admin/team/`, `/admin/settings/`.

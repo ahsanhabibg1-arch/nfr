@@ -45,12 +45,12 @@ export const RichBlockEditor: React.FC<RichBlockEditorProps> = ({ blocks, onChan
   };
 
   // Insert a new block at index
-  const addBlock = (type: ContentBlock['type'], insertAtIndex?: number) => {
+  const addBlock = (type: ContentBlock['type'], insertAtIndex?: number, headingLevel: 2 | 3 = 2) => {
     let newBlock: ContentBlock;
 
     switch (type) {
       case 'heading':
-        newBlock = { type: 'heading', level: 2, text: '' };
+        newBlock = { type: 'heading', level: headingLevel, text: '' };
         break;
       case 'paragraph':
         newBlock = { type: 'paragraph', text: '', isDropCap: false };
@@ -106,6 +106,9 @@ export const RichBlockEditor: React.FC<RichBlockEditorProps> = ({ blocks, onChan
           ordered: false,
           items: ['Key takeaway point 1', 'Key takeaway point 2', 'Key takeaway point 3'],
         };
+        break;
+      case 'disclosure':
+        newBlock = { type: 'disclosure', text: '', variant: 'editorial' };
         break;
       case 'divider':
         newBlock = { type: 'divider' };
@@ -582,6 +585,21 @@ export const RichBlockEditor: React.FC<RichBlockEditorProps> = ({ blocks, onChan
                 </div>
               )}
 
+              {block.type === 'disclosure' && (
+                <div className="space-y-1">
+                  <textarea
+                    rows={2}
+                    value={block.text}
+                    onChange={(e) => updateBlock(index, { ...block, text: e.target.value })}
+                    placeholder="Reader transparency / FTC disclosure statement (e.g. affiliate relationship)..."
+                    className="w-full text-sm font-sans italic text-stone-700 bg-stone-50 border border-stone-200 rounded-xs p-2 focus:ring-0 placeholder:text-stone-300"
+                  />
+                  <span className="text-[10px] font-mono text-stone-400 block">
+                    Rendered inline as a reader disclosure notice in the published article.
+                  </span>
+                </div>
+              )}
+
               {block.type === 'divider' && (
                 <div className="py-2 text-center text-xs font-mono text-stone-400">
                   <hr className="border-t border-stone-300 mb-1" />
@@ -607,20 +625,21 @@ export const RichBlockEditor: React.FC<RichBlockEditorProps> = ({ blocks, onChan
                 <span className="text-[11px] font-mono text-stone-400 w-full mb-1">Select block type to insert:</span>
                 {[
                   { label: '+ Paragraph', type: 'paragraph' as const },
-                  { label: '+ Heading 2', type: 'heading' as const },
-                  { label: '+ Heading 3', type: 'heading' as const },
+                  { label: '+ Heading 2', type: 'heading' as const, level: 2 as const },
+                  { label: '+ Heading 3', type: 'heading' as const, level: 3 as const },
                   { label: '+ Quote', type: 'quote' as const },
                   { label: '+ Table', type: 'table' as const },
                   { label: '+ Callout', type: 'callout' as const },
                   { label: '+ Image', type: 'image' as const },
                   { label: '+ Source Link', type: 'sourceLink' as const },
                   { label: '+ List', type: 'list' as const },
+                  { label: '+ Disclosure', type: 'disclosure' as const },
                   { label: '+ Divider', type: 'divider' as const },
                 ].map((item) => (
                   <button
                     key={item.label}
                     type="button"
-                    onClick={() => addBlock(item.type, index)}
+                    onClick={() => addBlock(item.type, index, (item as { level?: 2 | 3 }).level ?? 2)}
                     className="px-2 py-1 text-xs font-medium text-stone-700 bg-stone-100 hover:bg-stone-200 rounded-xs transition-colors"
                   >
                     {item.label}
@@ -648,11 +667,19 @@ export const RichBlockEditor: React.FC<RichBlockEditorProps> = ({ blocks, onChan
           </button>
           <button
             type="button"
-            onClick={() => addBlock('heading')}
+            onClick={() => addBlock('heading', undefined, 2)}
             className="px-3 py-1.5 text-xs font-sans font-medium bg-white border border-stone-300 hover:border-[#D4A757] hover:text-[#8B5E3C] text-stone-800 rounded-xs transition-colors flex items-center gap-1.5"
           >
             <span className="font-serif font-bold text-xs">H2</span>
             <span>Heading</span>
+          </button>
+          <button
+            type="button"
+            onClick={() => addBlock('heading', undefined, 3)}
+            className="px-3 py-1.5 text-xs font-sans font-medium bg-white border border-stone-300 hover:border-[#D4A757] hover:text-[#8B5E3C] text-stone-800 rounded-xs transition-colors flex items-center gap-1.5"
+          >
+            <span className="font-serif font-bold text-xs">H3</span>
+            <span>Sub-Heading</span>
           </button>
           <button
             type="button"
@@ -701,6 +728,14 @@ export const RichBlockEditor: React.FC<RichBlockEditorProps> = ({ blocks, onChan
           >
             <span className="text-stone-500">🔗</span>
             <span>Citation Link</span>
+          </button>
+          <button
+            type="button"
+            onClick={() => addBlock('disclosure')}
+            className="px-3 py-1.5 text-xs font-sans font-medium bg-white border border-stone-300 hover:border-[#D4A757] hover:text-[#8B5E3C] text-stone-800 rounded-xs transition-colors flex items-center gap-1.5"
+          >
+            <span className="text-stone-500 italic font-serif">ⓘ</span>
+            <span>Disclosure</span>
           </button>
           <button
             type="button"

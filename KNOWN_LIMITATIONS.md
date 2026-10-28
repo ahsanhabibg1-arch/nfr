@@ -68,3 +68,54 @@ The following systems are intentional client-side demonstration implementations:
 - **Local & Sample Photography**:
   - Images are bundled as local static assets or curated editorial action photography.
   - There is no cloud blob storage (GCS / S3) upload pipeline in Phase 0. The Media Picker operates against the curated demonstration catalog.
+
+---
+
+# Phase 1 / Batch 01 — Updated Limitations (Next.js migration)
+
+> Added 2026-10-28. Applies to the new `apps/web/` Next.js application. The Phase 0
+> boundaries above still describe the preserved root Vite app.
+
+## Persistence (unchanged intent, clarified)
+- The admin CMS still writes only to the browser's **`sessionStorage`** via
+  `data/articleStore.ts`. This is a **client-only prototype** and is explicitly
+  **not** server state: it is not shared across users/devices and does **not** drive
+  server-rendered public pages.
+- Server-rendered public pages read **static published seed data** through the
+  read-only adapter `lib/content.ts`. Creating/editing an article in the admin does
+  not change public SSR output in Batch 01. Real persistence (PostgreSQL/Prisma)
+  arrives in a later batch behind the same adapter signatures.
+
+## Authentication & authorization (unchanged)
+- No real auth. `/admin/*` is a prototype: `force-dynamic`, `robots noindex`, and
+  disallowed in `robots.txt`. It must **not** be exposed on any public deployment
+  until server-side authentication and RBAC are implemented. Role switching remains
+  a UI simulation.
+
+## Rendering / SEO
+- Homepage and Category archive are Client Components (interactive); they are
+  server-side rendered to HTML but could be refined into finer-grained Server
+  Components later. Article, section, and discipline pages are Server Components.
+- Unknown or unpublished `/articles/[slug]/` return HTTP 404 + `noindex` (no draft
+  leakage). There are no unpublished seed articles, so the draft-specific path is
+  covered only indirectly by the unknown-slug 404.
+- Site-wide SEO scanning is still simulated (out of Batch 01 scope); the
+  `seoValidator` utilities are retained for future backend integration.
+
+## Tooling
+- **Bun is the lockfile manager but is not installed**; npm was used. The root
+  baseline install required `--legacy-peer-deps` (npm's strict peer resolution vs
+  the project's `esbuild`/Vite 8 ranges — no versions were upgraded). Confirm the
+  package manager going forward.
+
+## Phase 0 documentation inaccuracies corrected in Batch 01
+These claims from Phase 0 docs were found inaccurate during the audit and are now
+addressed in `apps/web`:
+1. **"Reset Demo Store"** (KNOWN_LIMITATIONS Phase 0 §2) was never implemented in
+   the Phase 0 code. It remains unimplemented; do not rely on it.
+2. **"Link protocol sanitization"** (QA_REPORT §3.1) did not exist in Phase 0 code.
+   It is now real in `apps/web` via `lib/url.ts` (allowlist), wired into article
+   source links.
+3. **"10 block types supported in editor"**: Phase 0's editor could author only 9
+   (no Disclosure) and its "Heading 3" button produced an H2. Both are fixed in
+   `apps/web` (Disclosure is authorable; H3 creates a real H3).
