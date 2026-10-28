@@ -2,18 +2,16 @@
 
 import React from 'react';
 import Link from 'next/link';
-import { SEVEN_DISCIPLINES } from '../data/mockEditorialData';
-import { getDisciplineBySlug, getArticlesByDiscipline } from '../lib/content';
+import { getRodeoDisciplineBySlug, getPublishedArticlesByDiscipline, getAllDisciplines } from '../lib/content';
 import { DisciplineGuideHeader } from '../components/editorial/DisciplineGuideHeader';
 import { RelatedArticles } from '../components/editorial/RelatedArticles';
 import { ROUTES } from '../config/routes';
 
-// Server component (Batch 01 §10). The route resolves the slug param and handles
-// 404 via notFound(); this view assumes a resolvable discipline but keeps a
-// defensive fallback.
-export const DisciplineGuideView: React.FC<{ slug: string }> = ({ slug }) => {
-  const discipline = getDisciplineBySlug(slug);
-  const relatedArticles = discipline ? getArticlesByDiscipline(slug) : [];
+// Async server component (Batch 02 §9). The route resolves the slug and handles
+// 404 via notFound(); the discipline guide + related articles come from the DB.
+export async function DisciplineGuideView({ slug }: { slug: string }) {
+  const discipline = await getRodeoDisciplineBySlug(slug);
+  const relatedArticles = discipline ? await getPublishedArticlesByDiscipline(slug) : [];
 
   if (!discipline) {
     return (
@@ -35,7 +33,7 @@ export const DisciplineGuideView: React.FC<{ slug: string }> = ({ slug }) => {
   }
 
   // Other disciplines for quick navigation
-  const otherDisciplines = SEVEN_DISCIPLINES.filter((d) => d.id !== discipline.id);
+  const otherDisciplines = (await getAllDisciplines()).filter((d) => d.id !== discipline.id);
 
   return (
     <div className="w-full bg-[#F7F3EA] text-[#0F1115] py-8 sm:py-12">
@@ -173,4 +171,4 @@ export const DisciplineGuideView: React.FC<{ slug: string }> = ({ slug }) => {
       </div>
     </div>
   );
-};
+}

@@ -1,0 +1,553 @@
+// NFRGuide.com — Relational Editorial Schema (Phase 1 / Batch 02)
+// PostgreSQL + Prisma. Grounded in Master Requirements v2.0 §7 (logical schema),
+// Batch 02 §4 (entity set), DATA_MODELS.md, and the existing TypeScript contracts.
+//
+// Scope note: this batch builds the schema + a READ layer. No authentication,
+// no RBAC enforcement, no activated CMS writes (those are Batch 03). The
+// identity tables (User/Role/Permission/UserRole/AuditLog) and SEO-intelligence
+// tables (SeoRule/SeoFinding/SeoAuditRun) are the foundation only.
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+// ============================================================================
+// ENUMS
+// ============================================================================
+
+enum WorkflowStatus {
+  DRAFT
+  IN_REVIEW
+  APPROVED
+  SCHEDULED
+  PUBLISHED
+  ARCHIVED
+}
+
+enum ImageRightsStatus {
+  STAFF_PHOTO
+  EDITORIAL_POOL
+  PRCA_ARCHIVE
+  LICENSED_CREATIVE
+  UNRESOLVED
+}
+
+enum SourceClassification {
+  OFFICIAL
+  INDEPENDENT_REFERENCE
+  HISTORICAL_ARCHIVE
+}
+
+enum SourceStatus {
+  VERIFIED
+  NEEDS_REVIEW
+  EXPIRED
+}
+
+enum SeoSeverity {
+  CRITICAL
+  WARNING
+  NOTICE
+  PASSED
+}
+
+enum SeoFindingStatus {
+  OPEN
+  IN_PROGRESS
+  RESOLVED
+  IGNORED
+}
+
+enum RedirectStatus {
+  ACTIVE
+  DISABLED
+}
+
+enum UserAccountStatus {
+  ACTIVE
+  INVITED
+  SUSPENDED
+}
+
+// ============================================================================
+// EDITORIAL CORE
+// ============================================================================
+
+/// Editorial byline identity (distinct from auth User — Master Reqs §7.1 authors).
+model Author {
+  id            String    @id @default(uuid())
+  slug          String    @unique
+  name          String
+  role          String
+  avatar        String?
+  bio           String?
+  credentials   String?
+  editorialBeat String?
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
+  articles      Article[]
+}
+
+/// One of the five approved primary sections (and future sub-sections).
+model Category {
+  id          String    @id @default(uuid())
+  slug        String    @unique
+  name        String    @unique
+  description String?
+  sortOrder   Int       @default(0)
+  articles    Article[]
+}
+
+model Tag {
+  id       String       @id @default(uuid())
+  slug     String       @unique
+  name     String
+  articles ArticleTag[]
+}
+
+model Article {
+  id          String   @id @default(uuid())
+  slug        String   @unique
+
+  // Approved eight primary editorial fields (URL slug kept separate, above).
+  title       String // 01 Main Headline (H1)
+  deck        String? // 02 Secondary Editorial Deck
+  excerpt     String // 03 Editorial Excerpt / Summary
+  // 04 Article Body => ArticleBlock[] (relational, below)
+  // 05 SEO Title, 06 Meta Description => ArticleSeo (1:1, below)
+  imageSeoTitle String? // 07 Image SEO Title
+  imageAltText  String? // 08 Image ALT Text
+
+  subcategory       String?
+  articleType       String
+  workflowStatus    WorkflowStatus    @default(DRAFT)
+  readTime          String?
+  wordCount         Int?
+  isLeadHero        Boolean           @default(false)
+  isFeatured        Boolean           @default(false)
+
+  heroImageUrl      String?
+  imageCredit       String?
+  imageCaption      String?
+  imageRightsStatus ImageRightsStatus @default(UNRESOLVED)
+
+  disclosureType    String            @default("editorial-independent")
+  disclosureNote    String?
+
+  takeaways         String[]          @default([])
+
+  publishedAt       DateTime?
+  scheduledAt       DateTime?
+  reviewedAt        DateTime?
+  createdAt         DateTime          @default(now())
+  updatedAt         DateTime          @updatedAt
+
+  // Relations
+  authorId    String
+  author      Author   @relation(fields: [authorId], references: [id])
+  categoryId  String
+  category    Category @relation(fields: [categoryId], references: [id])
+
+  blocks      ArticleBlock[]
+  seo         ArticleSeo?
+  revisions   ArticleRevision[]
+  workflow    EditorialWorkflowHistory[]
+  tags        ArticleTag[]
+  sources     ArticleSource[]
+  media       ArticleMedia[]
+  disciplines ArticleDiscipline[]
+  hubs        ArticleHub[]
+  events      ArticleEvent[]
+  editions    ArticleEdition[]
+  seoFindings SeoFinding[]
+
+  // Self-relation for curated related articles.
+  relatedTo   ArticleRelation[] @relation("ArticleRelationSource")
+  relatedFrom ArticleRelation[] @relation("ArticleRelationTarget")
+
+  @@index([workflowStatus])
+  @@index([categoryId])
+  @@index([publishedAt])
+  @@index([workflowStatus, publishedAt])
+}
+
+/// Curated article-to-article relationships (replaces relatedArticleIds JSON).
+model ArticleRelation {
+  sourceId  String
+  targetId  String
+  source    Article @relation("ArticleRelationSource", fields: [sourceId], references: [id], onDelete: Cascade)
+  target    Article @relation("ArticleRelationTarget", fields: [targetId], references: [id], onDelete: Cascade)
+
+  @@id([sourceId, targetId])
+}
+
+/// Structured article body. JSON `data` is justified: block shapes are a flexible
+/// discriminated union; blockType + sortOrder stay queryable columns.
+model ArticleBlock {
+  id        String  @id @default(uuid())
+  articleId String
+  article   Article @relation(fields: [articleId], references: [id], onDelete: Cascade)
+  sortOrder Int
+  blockType String // paragraph|heading|quote|table|callout|image|sourceLink|list|disclosure|divider
+  data      Json
+
+  @@unique([articleId, sortOrder])
+  @@index([articleId])
+}
+
+/// Per-article SEO payload (Master Reqs §5 / Batch 02 §4 ArticleSEO).
+model ArticleSeo {
+  id                 String  @id @default(uuid())
+  articleId          String  @unique
+  article            Article @relation(fields: [articleId], references: [id], onDelete: Cascade)
+  seoTitle           String? // 05 SEO Title
+  metaDescription    String? // 06 Meta Description
+  canonicalUrl       String?
+  ogImage            String?
+  robots             String  @default("index, follow")
+  structuredDataType String  @default("Article")
+}
+
+model ArticleRevision {
+  id        String         @id @default(uuid())
+  articleId String
+  article   Article        @relation(fields: [articleId], references: [id], onDelete: Cascade)
+  revisionNo Int
+  actorName String
+  actorRole String
+  status    WorkflowStatus
+  summary   String
+  snapshot  Json
+  createdAt DateTime       @default(now())
+
+  @@unique([articleId, revisionNo])
+  @@index([articleId, createdAt])
+}
+
+/// Workflow state transition log (distinct from content revisions).
+model EditorialWorkflowHistory {
+  id         String         @id @default(uuid())
+  articleId  String
+  article    Article        @relation(fields: [articleId], references: [id], onDelete: Cascade)
+  fromStatus WorkflowStatus?
+  toStatus   WorkflowStatus
+  actorName  String
+  note       String?
+  createdAt  DateTime       @default(now())
+
+  @@index([articleId, createdAt])
+}
+
+model ArticleTag {
+  articleId String
+  tagId     String
+  article   Article @relation(fields: [articleId], references: [id], onDelete: Cascade)
+  tag       Tag     @relation(fields: [tagId], references: [id], onDelete: Cascade)
+
+  @@id([articleId, tagId])
+}
+
+// ============================================================================
+// EVIDENCE & MEDIA
+// ============================================================================
+
+/// Reusable source directory.
+model Source {
+  id              String               @id @default(uuid())
+  title           String
+  url             String
+  publisher       String?
+  type            String?
+  classification  SourceClassification @default(INDEPENDENT_REFERENCE)
+  status          SourceStatus         @default(NEEDS_REVIEW)
+  verificationDate DateTime?
+  articles        ArticleSource[]
+
+  @@index([status])
+}
+
+model ArticleSource {
+  articleId String
+  sourceId  String
+  article   Article @relation(fields: [articleId], references: [id], onDelete: Cascade)
+  source    Source  @relation(fields: [sourceId], references: [id], onDelete: Cascade)
+  note      String?
+  sortOrder Int     @default(0)
+
+  @@id([articleId, sourceId])
+}
+
+model MediaAsset {
+  id           String            @id @default(uuid())
+  storageKey   String            @unique
+  url          String
+  filename     String
+  mimeType     String?
+  dimensions   String?
+  bytes        Int?
+  format       String?
+  seoTitle     String?
+  altText      String?
+  credit       String?
+  rightsStatus ImageRightsStatus @default(UNRESOLVED)
+  uploadedAt   DateTime          @default(now())
+  articles     ArticleMedia[]
+}
+
+model ArticleMedia {
+  articleId String
+  mediaId   String
+  article   Article    @relation(fields: [articleId], references: [id], onDelete: Cascade)
+  media     MediaAsset @relation(fields: [mediaId], references: [id], onDelete: Cascade)
+  usageKey  String // e.g. "hero", "inline-1"
+  altText   String?
+  caption   String?
+  sortOrder Int    @default(0)
+
+  @@id([articleId, usageKey])
+  @@index([mediaId])
+}
+
+// ============================================================================
+// RODEO COVERAGE
+// ============================================================================
+
+/// The seven NFR disciplines. Rich evergreen guide body stored as JSON (`guide`)
+/// — a flexible nested structure that does not benefit from further tables yet.
+model Discipline {
+  id          String              @id @default(uuid())
+  slug        String              @unique
+  name        String
+  shortName   String?
+  category    String? // Roughstock | Timed Event
+  tagline     String?
+  summary     String
+  image       String?
+  imageCredit String?
+  guide       Json?
+  sortOrder   Int                 @default(0)
+  articles    ArticleDiscipline[]
+  events      EventDiscipline[]
+}
+
+model RodeoHub {
+  id          String       @id @default(uuid())
+  slug        String       @unique
+  title       String
+  region      String?
+  circuitType String?
+  description String?
+  annualEventsCount Int    @default(0)
+  sortOrder   Int          @default(0)
+  articles    ArticleHub[]
+}
+
+/// Stable recurring event identity, independent of any hub (Master Reqs §2.1).
+model RodeoEvent {
+  id           String               @id @default(uuid())
+  slug         String               @unique
+  name         String
+  location     String?
+  traditionalMonth String?
+  status       String?
+  description  String?
+  organizerName String?
+  officialUrl  String?
+  isFlagship   Boolean              @default(false)
+  editions     RodeoEventEdition[]
+  articles     ArticleEvent[]
+}
+
+/// Specific occurrence/year. Unique per (eventId, editionSlug) — Master Reqs §7.2.
+model RodeoEventEdition {
+  id          String           @id @default(uuid())
+  eventId     String
+  event       RodeoEvent       @relation(fields: [eventId], references: [id], onDelete: Cascade)
+  editionSlug String
+  label       String
+  year        Int?
+  startAt     DateTime?
+  endAt       DateTime?
+  timezone    String?
+  purseBenchmark String?
+  venueId     String?
+  venue       Venue?           @relation(fields: [venueId], references: [id])
+  articles    ArticleEdition[]
+
+  @@unique([eventId, editionSlug])
+}
+
+model Venue {
+  id       String              @id @default(uuid())
+  slug     String              @unique
+  name     String
+  city     String?
+  state    String?
+  country  String?
+  editions RodeoEventEdition[]
+}
+
+model EventDiscipline {
+  disciplineId String
+  eventId      String
+  discipline   Discipline @relation(fields: [disciplineId], references: [id], onDelete: Cascade)
+  // Associates a discipline with a recurring event (composite unique).
+  // Event relation intentionally via id only to keep this light.
+  eventSlugRef String
+
+  @@id([disciplineId, eventId])
+}
+
+// Article ↔ Rodeo junction tables (composite unique keys — Master Reqs §7.3).
+model ArticleDiscipline {
+  articleId    String
+  disciplineId String
+  article      Article    @relation(fields: [articleId], references: [id], onDelete: Cascade)
+  discipline   Discipline @relation(fields: [disciplineId], references: [id], onDelete: Cascade)
+
+  @@id([articleId, disciplineId])
+}
+
+model ArticleHub {
+  articleId String
+  hubId     String
+  article   Article  @relation(fields: [articleId], references: [id], onDelete: Cascade)
+  hub       RodeoHub @relation(fields: [hubId], references: [id], onDelete: Cascade)
+
+  @@id([articleId, hubId])
+}
+
+model ArticleEvent {
+  articleId String
+  eventId   String
+  article   Article    @relation(fields: [articleId], references: [id], onDelete: Cascade)
+  event     RodeoEvent @relation(fields: [eventId], references: [id], onDelete: Cascade)
+
+  @@id([articleId, eventId])
+}
+
+model ArticleEdition {
+  articleId String
+  editionId String
+  article   Article           @relation(fields: [articleId], references: [id], onDelete: Cascade)
+  edition   RodeoEventEdition @relation(fields: [editionId], references: [id], onDelete: Cascade)
+
+  @@id([articleId, editionId])
+}
+
+// ============================================================================
+// PUBLISHING & SEO FOUNDATION (no scanning worker in this batch)
+// ============================================================================
+
+/// Normalized redirect registry. One active redirect per source path.
+model ArticleRedirect {
+  id         String         @id @default(uuid())
+  sourcePath String         @unique
+  targetPath String
+  statusCode Int            @default(308)
+  status     RedirectStatus @default(ACTIVE)
+  createdAt  DateTime       @default(now())
+}
+
+model SeoRule {
+  id          String       @id @default(uuid())
+  code        String       @unique
+  group       String
+  severity    SeoSeverity
+  enabled     Boolean      @default(true)
+  description String?
+  findings    SeoFinding[]
+}
+
+model SeoAuditRun {
+  id            String       @id @default(uuid())
+  scope         String
+  engineVersion String
+  startedAt     DateTime     @default(now())
+  completedAt   DateTime?
+  status        String       @default("completed")
+  findings      SeoFinding[]
+}
+
+model SeoFinding {
+  id           String           @id @default(uuid())
+  ruleId       String
+  rule         SeoRule          @relation(fields: [ruleId], references: [id])
+  auditRunId   String?
+  auditRun     SeoAuditRun?     @relation(fields: [auditRunId], references: [id])
+  articleId    String?
+  article      Article?         @relation(fields: [articleId], references: [id], onDelete: SetNull)
+  fingerprint  String           @unique
+  severity     SeoSeverity
+  status       SeoFindingStatus @default(OPEN)
+  evidence     String?
+  firstSeenAt  DateTime         @default(now())
+  lastSeenAt   DateTime         @default(now())
+
+  @@index([status])
+}
+
+// ============================================================================
+// IDENTITY FOUNDATION (tables only — no auth logic until Batch 03)
+// ============================================================================
+
+model User {
+  id          String            @id @default(uuid())
+  email       String            @unique
+  name        String
+  status      UserAccountStatus @default(INVITED)
+  createdAt   DateTime          @default(now())
+  roles       UserRole[]
+  auditLogs   AuditLog[]
+}
+
+model Role {
+  id          String           @id @default(uuid())
+  key         String           @unique // super_admin, administrator, editor, author, seo_manager
+  name        String
+  users       UserRole[]
+  permissions RolePermission[]
+}
+
+model Permission {
+  id    String           @id @default(uuid())
+  key   String           @unique
+  label String
+  roles RolePermission[]
+}
+
+model UserRole {
+  userId String
+  roleId String
+  user   User @relation(fields: [userId], references: [id], onDelete: Cascade)
+  role   Role @relation(fields: [roleId], references: [id], onDelete: Cascade)
+
+  @@id([userId, roleId])
+}
+
+model RolePermission {
+  roleId       String
+  permissionId String
+  role         Role       @relation(fields: [roleId], references: [id], onDelete: Cascade)
+  permission   Permission @relation(fields: [permissionId], references: [id], onDelete: Cascade)
+
+  @@id([roleId, permissionId])
+}
+
+model AuditLog {
+  id         String   @id @default(uuid())
+  actorId    String?
+  actor      User?    @relation(fields: [actorId], references: [id], onDelete: SetNull)
+  action     String
+  entityType String
+  entityId   String?
+  detail     String?
+  createdAt  DateTime @default(now())
+
+  @@index([entityType, createdAt])
+}

@@ -169,3 +169,24 @@ Typography:
 Public (server) → `lib/content.ts` → static published seed (`data/mockEditorialData`).
 Admin (client) → `data/articleStore.ts` → browser `sessionStorage` (prototype only;
 NOT shared, NOT server state, does not drive public SSR). See KNOWN_LIMITATIONS.md.
+
+---
+
+# Phase 1 / Batch 02 — Database-Backed Content (addendum)
+
+> Added 2026-10-28. Builds on the Batch 01 Next.js architecture above.
+
+- **Database:** PostgreSQL via **Prisma 6.19.3**. Schema:
+  `apps/web/prisma/schema.prisma` (34 tables / 33 FKs / 8 enums). See
+  `DATABASE_ARCHITECTURE.md`, `DATABASE_SETUP.md`, `DATA_MIGRATION_REPORT.md`.
+- **Server-only data layer:** `apps/web/lib/db.ts` (Prisma singleton, `server-only`)
+  → `apps/web/lib/content.ts` (published-only repository) → `apps/web/lib/mappers.ts`
+  (DB rows → existing `Article`/`Discipline` shapes). UI never imports Prisma.
+- **Public read path:** all public **article** surfaces (home feeds, 5 sections,
+  article detail, category archive, discipline guide + listings, related, search,
+  sitemap) are server-rendered from the repository with `workflowStatus = PUBLISHED`
+  enforced in-query. ISR `revalidate` added per route.
+- **Boundary:** non-article decorative modules (entertainment/shopping/plan-watch
+  cards, rodeo hub/event cards, learning, quick-access) remain Phase 0 static content;
+  the admin editor remains a client-only `sessionStorage` prototype (no DB writes).
+- **Status:** code complete; live-DB apply/seed/build pending a provided `DATABASE_URL`.

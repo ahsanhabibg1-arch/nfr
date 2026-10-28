@@ -12,12 +12,11 @@ import { EventsShoppingSection } from '../components/sections/EventsShoppingSect
 import { MoreRodeoSection } from '../components/sections/MoreRodeoSection';
 import { LearningSection } from '../components/sections/LearningSection';
 
+// Non-article decorative modules remain Phase 0 static content (documented
+// boundary, Batch 02 §9 / KNOWN_LIMITATIONS.md). Article feeds + disciplines
+// arrive as props from the server page, sourced from the database.
 import {
-  HERO_ARTICLE,
-  SECONDARY_HERO_STORIES,
-  LATEST_COVERAGE_ARTICLES,
   QUICK_ACCESS_ITEMS,
-  SEVEN_DISCIPLINES,
   PLAN_AND_WATCH_GUIDES,
   ENTERTAINMENT_FEATURES,
   SHOPPING_EVENTS,
@@ -28,91 +27,63 @@ import {
 import { Article, Discipline } from '../types';
 import { ROUTES } from '../config/routes';
 
-export const HomeView: React.FC = () => {
+export interface HomeViewProps {
+  heroArticle: Article;
+  secondaryStories: Article[];
+  latestArticles: Article[];
+  disciplines: Discipline[];
+}
+
+export const HomeView: React.FC<HomeViewProps> = ({
+  heroArticle,
+  secondaryStories,
+  latestArticles,
+  disciplines,
+}) => {
   const router = useRouter();
 
-  const handleSelectArticle = (article: Article) => {
-    router.push(ROUTES.ARTICLE(article.slug));
-  };
-
-  const handleSelectDiscipline = (discipline: Discipline) => {
-    router.push(ROUTES.DISCIPLINE(discipline.slug));
-  };
-
-  const handleSelectArticleBySlug = (slug: string) => {
-    router.push(ROUTES.ARTICLE(slug));
-  };
-
-  // Batch 01 bug fix (§14): navigate using the card's real article slug when one
-  // exists; otherwise fall back to the relevant section landing page instead of
-  // guessing an article from the title (the removed Phase 0 behaviour).
-  const goToArticleOrSection = (slug: string | undefined, sectionPath: string) => {
+  const handleSelectArticle = (article: Article) => router.push(ROUTES.ARTICLE(article.slug));
+  const handleSelectDiscipline = (discipline: Discipline) => router.push(ROUTES.DISCIPLINE(discipline.slug));
+  const handleSelectArticleBySlug = (slug: string) => router.push(ROUTES.ARTICLE(slug));
+  const goToArticleOrSection = (slug: string | undefined, sectionPath: string) =>
     router.push(slug ? ROUTES.ARTICLE(slug) : sectionPath);
-  };
-
   const handleNavigateSection = (sectionId: string) => {
-    const el = document.getElementById(sectionId);
-    if (el) {
-      el.scrollIntoView({ behavior: 'smooth' });
-    }
+    document.getElementById(sectionId)?.scrollIntoView({ behavior: 'smooth' });
   };
 
   return (
     <div className="w-full flex flex-col">
-      {/* SECTION A — Cinematic Editorial Hero */}
       <EditorialHero
-        leadArticle={HERO_ARTICLE}
-        secondaryStories={SECONDARY_HERO_STORIES}
+        leadArticle={heroArticle}
+        secondaryStories={secondaryStories}
         onSelectArticle={handleSelectArticle}
       />
 
-      {/* SECTION B — Latest NFR Coverage */}
-      <LatestCoverage
-        articles={LATEST_COVERAGE_ARTICLES}
-        onSelectArticle={handleSelectArticle}
-      />
+      <LatestCoverage articles={latestArticles} onSelectArticle={handleSelectArticle} />
 
-      {/* SECTION C — NFR Quick Access */}
-      <QuickAccess
-        items={QUICK_ACCESS_ITEMS}
-        onNavigateSection={handleNavigateSection}
-      />
+      <QuickAccess items={QUICK_ACCESS_ITEMS} onNavigateSection={handleNavigateSection} />
 
-      {/* SECTION D — NFR Competition (Seven Disciplines) */}
-      <CompetitionSection
-        disciplines={SEVEN_DISCIPLINES}
-        onSelectDiscipline={handleSelectDiscipline}
-      />
+      <CompetitionSection disciplines={disciplines} onSelectDiscipline={handleSelectDiscipline} />
 
-      {/* SECTION E — Plan & Watch */}
-      <PlanAndWatchSection
-        guides={PLAN_AND_WATCH_GUIDES}
-        onSelectArticleBySlug={handleSelectArticleBySlug}
-      />
+      <PlanAndWatchSection guides={PLAN_AND_WATCH_GUIDES} onSelectArticleBySlug={handleSelectArticleBySlug} />
 
-      {/* SECTION F — Entertainment & Fan Experiences */}
       <EntertainmentSection
         features={ENTERTAINMENT_FEATURES}
         onOpenArticle={(slug) => goToArticleOrSection(slug, ROUTES.ENTERTAINMENT)}
       />
 
-      {/* SECTION G — Events & Shopping */}
       <EventsShoppingSection
         events={SHOPPING_EVENTS}
         onOpenArticle={(slug) => goToArticleOrSection(slug, ROUTES.EVENTS_SHOPPING)}
       />
 
-      {/* SECTION H — More Rodeo */}
       <MoreRodeoSection
         hubs={RODEO_HUBS}
         recurringEvents={RECURRING_RODEO_EVENTS}
         onOpenArticle={() => router.push(ROUTES.MORE_RODEO)}
       />
 
-      {/* SECTION I — Evergreen Learning Resources */}
-      <LearningSection
-        resources={LEARNING_RESOURCES}
-      />
+      <LearningSection resources={LEARNING_RESOURCES} />
     </div>
   );
 };

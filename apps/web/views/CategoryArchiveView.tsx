@@ -1,33 +1,36 @@
 'use client';
 
 import React, { useState, useMemo } from 'react';
-import { getPublishedArticles, getSectionMetaByCategorySlug } from '../lib/content';
 import { Breadcrumbs } from '../components/editorial/Breadcrumbs';
 import { EditorialArticleGrid } from '../components/editorial/EditorialArticleGrid';
 import { ArticlePagination } from '../components/editorial/ArticlePagination';
 import { ContentEmptyState } from '../components/editorial/ContentEmptyState';
-import { ArticleType } from '../types';
+import { Article, ArticleType } from '../types';
 
 const PAGE_SIZE = 6;
 
-export const CategoryArchiveView: React.FC<{ slug: string }> = ({ slug }) => {
+export interface CategoryArchiveViewProps {
+  articles: Article[];
+  categoryName: string;
+  description?: string;
+  sectionPath?: string;
+}
+
+// Client view: receives the published category articles from the server page
+// (DB-backed) and performs type filtering + pagination in the browser.
+export const CategoryArchiveView: React.FC<CategoryArchiveViewProps> = ({
+  articles,
+  categoryName,
+  description,
+  sectionPath,
+}) => {
   const [activeType, setActiveType] = useState<'all' | ArticleType>('all');
   const [currentPage, setCurrentPage] = useState(1);
 
-  const sectionMeta = useMemo(() => getSectionMetaByCategorySlug(slug), [slug]);
-
-  const categoryName = sectionMeta?.categoryKey || slug.replace(/-/g, ' ').toUpperCase();
-
   const filteredArticles = useMemo(() => {
-    let pool = getPublishedArticles();
-    if (sectionMeta) {
-      pool = pool.filter((a) => a.category === sectionMeta.categoryKey);
-    }
-    if (activeType !== 'all') {
-      pool = pool.filter((a) => a.articleType === activeType);
-    }
-    return pool;
-  }, [sectionMeta, activeType]);
+    if (activeType === 'all') return articles;
+    return articles.filter((a) => a.articleType === activeType);
+  }, [articles, activeType]);
 
   const totalPages = Math.ceil(filteredArticles.length / PAGE_SIZE) || 1;
   const paginatedArticles = useMemo(() => {
@@ -43,16 +46,11 @@ export const CategoryArchiveView: React.FC<{ slug: string }> = ({ slug }) => {
   return (
     <div className="w-full bg-[#F7F3EA] text-[#0F1115] py-10 sm:py-14">
       <div className="max-w-[1280px] mx-auto px-4 sm:px-6 lg:px-8">
-        {/* Breadcrumb Navigation */}
         <Breadcrumbs
-          items={[
-            { label: 'Archives', path: '/' },
-            { label: categoryName },
-          ]}
+          items={[{ label: 'Archives', path: '/' }, { label: categoryName }]}
           className="mb-6"
         />
 
-        {/* Section Header */}
         <header className="mb-10 pb-6 border-b border-stone-300">
           <div className="text-xs uppercase tracking-widest font-sans font-bold text-[#8B5E3C] mb-2">
             Editorial Collection Archive
@@ -61,10 +59,9 @@ export const CategoryArchiveView: React.FC<{ slug: string }> = ({ slug }) => {
             {categoryName}
           </h1>
           <p className="mt-3 text-sm sm:text-base text-stone-600 font-sans max-w-3xl leading-relaxed">
-            {sectionMeta?.description || 'Browse all published journalism, technical breakdowns, rules guides, and event features.'}
+            {description || 'Browse all published journalism, technical breakdowns, rules guides, and event features.'}
           </p>
 
-          {/* Type Filter Controls */}
           <div className="mt-6 flex items-center gap-2 overflow-x-auto pb-2 scrollbar-none">
             <span className="text-[11px] font-mono text-stone-500 uppercase tracking-wider mr-1">
               Article Type:
@@ -85,7 +82,6 @@ export const CategoryArchiveView: React.FC<{ slug: string }> = ({ slug }) => {
           </div>
         </header>
 
-        {/* Article Grid or Empty State */}
         {paginatedArticles.length > 0 ? (
           <div className="space-y-10">
             <EditorialArticleGrid articles={paginatedArticles} columns={3} />
@@ -100,10 +96,12 @@ export const CategoryArchiveView: React.FC<{ slug: string }> = ({ slug }) => {
             title={`No ${activeType !== 'all' ? activeType : ''} articles found`}
             description={`No editorial content currently matches your filter in the ${categoryName} archive.`}
             actionText="Clear Filter"
-            actionLink={sectionMeta?.path || '/'}
+            actionLink={sectionPath || '/'}
           />
         )}
       </div>
     </div>
   );
 };
+
+export default CategoryArchiveView;

@@ -13,7 +13,7 @@ import {
  * non-published content are excluded by construction (adapter returns published
  * only). This replaces the missing Phase 0 sitemap generator.
  */
-export default function sitemap(): MetadataRoute.Sitemap {
+export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
   const now = new Date();
   const entries: MetadataRoute.Sitemap = [
     { url: `${SITE_URL}/`, lastModified: now, changeFrequency: 'daily', priority: 1 },
@@ -37,7 +37,7 @@ export default function sitemap(): MetadataRoute.Sitemap {
     });
   }
 
-  for (const d of getAllDisciplines()) {
+  for (const d of await getAllDisciplines()) {
     entries.push({
       url: `${SITE_URL}/disciplines/${d.slug}/`,
       lastModified: now,
@@ -46,7 +46,7 @@ export default function sitemap(): MetadataRoute.Sitemap {
     });
   }
 
-  for (const a of getPublishedArticles()) {
+  for (const a of await getPublishedArticles()) {
     entries.push({
       url: `${SITE_URL}/articles/${a.slug}/`,
       lastModified: now,

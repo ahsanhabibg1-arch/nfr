@@ -119,3 +119,30 @@ addressed in `apps/web`:
 3. **"10 block types supported in editor"**: Phase 0's editor could author only 9
    (no Disclosure) and its "Heading 3" button produced an H2. Both are fixed in
    `apps/web` (Disclosure is authorable; H3 creates a real H3).
+
+---
+
+# Phase 1 / Batch 02 — Updated Limitations (database)
+
+> Added 2026-10-28.
+
+- **Live-DB verification pending credentials.** Schema, committed migration, seed,
+  repository, public integration, tests and docs are complete and pass all non-DB
+  checks (validate, generate, typecheck, 16 non-DB unit tests). `migrate deploy`,
+  `db seed`, `next build` (pre-renders DB content), the DB integration suite and
+  route smoke require a `DATABASE_URL` that was not provided (password guessing was
+  blocked by policy). Provide it and run `npm run db:setup` (see DATABASE_SETUP.md).
+- **Admin CMS is still a client-only prototype.** It writes to browser
+  `sessionStorage` only; **no database writes are activated** and there are no
+  public create/update/delete endpoints. Database-backed public content and the
+  admin prototype are intentionally separate; CMS persistence is **not** complete.
+- **No authentication or RBAC.** Identity tables (User/Role/Permission/UserRole/
+  AuditLog) are inert foundation for Batch 03; no secure authorization exists yet.
+- **Documented static boundary (§9).** Non-article decorative modules (entertainment
+  features, shopping events, plan & watch guide cards, rodeo hub & event cards,
+  learning resources, quick-access) remain Phase 0 static content and are not yet in
+  the content database. All true article surfaces are DB-backed.
+- **Prisma 6, not 7.** Prisma 7 removes `url` from the schema datasource and requires
+  a `prisma.config.ts` + driver adapter; stable 6.19.3 was used deliberately.
+- **No media object storage / SEO scanner / scheduled-publish worker** (all out of
+  Batch 02 scope).

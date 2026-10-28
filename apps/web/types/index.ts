@@ -257,3 +257,13 @@ export interface BreadcrumbItem {
   label: string;
   path?: string;
 }
+
+/** Lightweight published-article index row used by the client search modal. */
+export interface SearchIndexItem {
+  id: string;
+  slug: string;
+  title: string;
+  deck: string;
+  category: string;
+  readTime: string;
+}

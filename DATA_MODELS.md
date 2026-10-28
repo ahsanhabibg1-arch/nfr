@@ -303,3 +303,27 @@ model ArticleSource {
   @@index([articleId])
 }
 ```
+
+---
+
+# Phase 1 / Batch 02 — Executable Prisma Schema (addendum)
+
+> Added 2026-10-28. The Phase 0 blueprint above has been superseded by an
+> executable, normalized schema at `apps/web/prisma/schema.prisma` and its
+> committed initial migration at `apps/web/prisma/migrations/`.
+
+Key refinements over the Phase 0 blueprint:
+- Editorial byline **Author** is modeled separately from the future auth **User**.
+- Structured body is relational **ArticleBlock** rows (`blockType` + `data` JSON,
+  ordered), not a JSON blob on Article.
+- Per-article SEO is a 1:1 **ArticleSeo** table; the eight editor fields map as
+  documented in `DATABASE_ARCHITECTURE.md`.
+- Rodeo model preserves the recurring-event vs edition distinction:
+  **RodeoEvent** is hub-independent; **RodeoEventEdition** is unique on
+  `(eventId, editionSlug)` with an optional **Venue**.
+- All article↔entity relationships use junction tables with composite PKs;
+  curated related articles use **ArticleRelation** (not a JSON id array).
+- Added foundation tables: **ArticleRedirect**, **SeoRule/SeoAuditRun/SeoFinding**,
+  **User/Role/Permission/UserRole/RolePermission/AuditLog** (no auth logic yet).
+
+See `DATABASE_ARCHITECTURE.md` for the full entity/relationship walkthrough.

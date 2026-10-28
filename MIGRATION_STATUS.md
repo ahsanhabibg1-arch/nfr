@@ -75,3 +75,41 @@ Owner sign-off on §K decisions (PHASE1_BATCH01_REPORT.md): package manager,
 frozen NFR URLs, Next 16/React 19, `apps/web` layout, deployment/auth/DB choices.
 Then Batch 02 replaces `lib/content.ts` reads with Prisma/PostgreSQL behind the
 same function signatures.
+
+---
+
+# Phase 1 / Batch 02 — Database Status (addendum)
+
+**Updated:** 2026-10-28 · PostgreSQL + Prisma 6.19.3 in `apps/web`.
+
+## Batch 02 completion criteria (§17)
+
+| # | Criterion | Status |
+|---|---|---|
+| 1 | PostgreSQL configured & reachable | ⏸ server running on :5432; `DATABASE_URL` not yet provided |
+| 2 | Prisma schema valid | ✅ `prisma validate` |
+| 3 | Initial migrations apply | ⏸ migration SQL generated + committed; `migrate deploy` pending DB |
+| 4 | Seed idempotent | ✅ written (upsert + child reset); ⏸ execution pending DB |
+| 5 | Repositories work | ✅ compile/typecheck; ⏸ runtime pending DB |
+| 6 | All public article surfaces read DB | ✅ wired (home, sections, article, category, discipline, search, sitemap) |
+| 7 | Eligibility enforced server-side | ✅ `PUBLISHED` filter in-query |
+| 8 | Sitemap reflects published DB content | ✅ `app/sitemap.ts` async DB-backed |
+| 9 | Existing public UI functional | ✅ typecheck; ⏸ runtime build pending DB |
+| 10 | Admin prototype intact & separate | ✅ unchanged client `sessionStorage` prototype |
+| 11 | DB integration tests pass | ⏸ written; skip without DB; run when seeded DB configured |
+| 12 | TypeScript + production build pass | TS ✅; build ⏸ pending DB |
+| 13 | Documentation complete | ✅ |
+
+## Commands
+```bash
+cd apps/web
+cp .env.example .env            # set DATABASE_URL (see DATABASE_SETUP.md)
+npm run db:setup                # migrate deploy + generate + seed
+npm run build && npm run start  # verify SSG + serve
+npm run test                    # vitest (DB integration runs when DB present)
+npm run test:routes             # HTTP route smoke (server running)
+```
+
+## Batch 03 prerequisites
+Owner-provided `DATABASE_URL`; then auth + server RBAC + activated CMS writes build
+on the identity tables and the typed read repository.

@@ -1,6 +1,6 @@
 import type { Metadata } from 'next';
 import { notFound } from 'next/navigation';
-import { getPublishedArticleBySlug, getPublishedArticles } from '@/lib/content';
+import { getPublishedArticleBySlug, getPublishedArticleSlugs } from '@/lib/content';
 import { ArticleView } from '@/views/ArticleView';
 import { buildMetadata, articleJsonLd, breadcrumbJsonLd, JsonLd } from '@/lib/seo';
 import { ROUTES } from '@/config/routes';
@@ -11,13 +11,15 @@ function categorySlug(category: string): string {
   return category.toLowerCase().replace(/[^a-z0-9]+/g, '-');
 }
 
-export function generateStaticParams() {
-  return getPublishedArticles().map((a) => ({ slug: a.slug }));
+export const revalidate = 60;
+
+export async function generateStaticParams() {
+  return (await getPublishedArticleSlugs()).map((slug) => ({ slug }));
 }
 
 export async function generateMetadata({ params }: Params): Promise<Metadata> {
   const { slug } = await params;
-  const article = getPublishedArticleBySlug(slug);
+  const article = await getPublishedArticleBySlug(slug);
   if (!article) {
     return buildMetadata({
       title: 'Dispatch Unavailable',
@@ -42,7 +44,7 @@ export async function generateMetadata({ params }: Params): Promise<Metadata> {
 
 export default async function ArticlePage({ params }: Params) {
   const { slug } = await params;
-  const article = getPublishedArticleBySlug(slug);
+  const article = await getPublishedArticleBySlug(slug);
   // Eligibility policy: unpublished/unknown slugs never render publicly (404).
   if (!article) notFound();
 

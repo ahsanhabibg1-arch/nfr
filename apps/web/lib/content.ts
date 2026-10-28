@@ -1,84 +1,213 @@
-/**
- * NFRGuide — Temporary Content Access Layer (Batch 01)
- * ----------------------------------------------------------------------------
- * A read-only adapter that isolates the Phase 0 static mock editorial data from
- * the public, server-rendered pages. Every public read goes through here so
- * that:
- *   1. Public surfaces never import `ALL_ARTICLES` directly (Master Reqs §3.2,
- *      Batch 01 §11), and the future PostgreSQL/Prisma backend can replace this
- *      single module without touching page components.
- *   2. Unpublished content (draft/in_review/approved/scheduled/archived) is
- *      never returned to server-rendered public responses (eligibility policy).
- *
- * IMPORTANT: This is NOT a database and NOT production persistence. It is a
- * synchronous, in-memory, read-only view over typed seed data. It deliberately
- * does NOT read the admin `articleStore` (browser sessionStorage), which remains
- * a client-only admin prototype — see KNOWN_LIMITATIONS.md.
- */
-
-import { Article, Discipline, PrimarySection } from '../types';
-import {
-  ALL_ARTICLES,
-  SEVEN_DISCIPLINES,
-  getDisciplineBySlug as rawGetDisciplineBySlug,
-} from '../data/mockEditorialData';
-import { isArticlePubliclyEligible } from '../utils/contentEligibility';
+import 'server-only';
+import { WorkflowStatus } from '@prisma/client';
+import { prisma } from './db';
+import { articleInclude, toArticle, toDiscipline } from './mappers';
+import { Article, Discipline, SearchIndexItem } from '../types';
 import { PRIMARY_SECTIONS, SectionMeta } from '../config/routes';
 
-/** All publicly eligible (published) articles. */
-export function getPublishedArticles(): Article[] {
-  return ALL_ARTICLES.filter(isArticlePubliclyEligible);
+/**
+ * NFRGuide — Server-only published content repository (Batch 02 §8).
+ *
+ * Every PUBLIC read goes through here. All article reads are constrained to
+ * `workflowStatus = PUBLISHED`, so draft / in_review / approved / scheduled /
+ * archived content can never reach a public response (eligibility is enforced
+ * in the database query, not the client). This module is `server-only`.
+ *
+ * It replaces the Batch 01 static adapter of the same name and path, so the
+ * public pages' imports are unchanged (their calls simply became `await`ed).
+ *
+ * BOUNDARY (documented, Batch 02 §9): articles, categories and disciplines are
+ * database-backed. The non-article homepage/section decorative modules
+ * (entertainment features, shopping events, plan & watch guide cards, rodeo hub
+ * & event cards, learning resources, quick-access) remain Phase 0 static content
+ * and are NOT yet in the content database — see KNOWN_LIMITATIONS.md.
+ */
+
+const PUBLISHED = WorkflowStatus.PUBLISHED;
+
+// ---- Articles --------------------------------------------------------------
+
+export async function getPublishedArticles(): Promise<Article[]> {
+  const rows = await prisma.article.findMany({
+    where: { workflowStatus: PUBLISHED },
+    include: articleInclude,
+    orderBy: { publishedAt: 'desc' },
+  });
+  return rows.map(toArticle);
 }
 
-/** A single published article by slug, or undefined if missing/unpublished. */
-export function getPublishedArticleBySlug(slug: string): Article | undefined {
-  const art = ALL_ARTICLES.find((a) => a.slug === slug);
-  return art && isArticlePubliclyEligible(art) ? art : undefined;
+export async function getPublishedArticleBySlug(slug: string): Promise<Article | null> {
+  const row = await prisma.article.findFirst({
+    where: { slug, workflowStatus: PUBLISHED },
+    include: articleInclude,
+  });
+  return row ? toArticle(row) : null;
 }
 
-/** Published articles in a primary section, by its canonical category key. */
-export function getArticlesBySection(categoryKey: PrimarySection | string): Article[] {
-  return getPublishedArticles().filter((a) => a.category === categoryKey);
+export async function getPublishedArticlesBySection(categoryKey: string): Promise<Article[]> {
+  const rows = await prisma.article.findMany({
+    where: { workflowStatus: PUBLISHED, category: { name: categoryKey } },
+    include: articleInclude,
+    orderBy: { publishedAt: 'desc' },
+  });
+  return rows.map(toArticle);
 }
 
-/** Alias kept for category archive semantics (same published-only guarantee). */
-export function getArticlesByCategory(categoryKey: PrimarySection | string): Article[] {
-  return getArticlesBySection(categoryKey);
+export async function getPublishedArticlesByCategory(categorySlug: string): Promise<Article[]> {
+  const rows = await prisma.article.findMany({
+    where: { workflowStatus: PUBLISHED, category: { slug: categorySlug } },
+    include: articleInclude,
+    orderBy: { publishedAt: 'desc' },
+  });
+  return rows.map(toArticle);
 }
 
-/** Published articles related to a discipline (explicit links, else section fallback). */
-export function getArticlesByDiscipline(disciplineSlug: string, limit = 3): Article[] {
-  const discipline = rawGetDisciplineBySlug(disciplineSlug);
-  const pool = getPublishedArticles();
-  if (!discipline) return [];
-  if (discipline.relatedArticleSlugs && discipline.relatedArticleSlugs.length > 0) {
-    return pool.filter((a) => discipline.relatedArticleSlugs?.includes(a.slug));
-  }
-  return pool.filter((a) => a.category === 'NFR Competition').slice(0, limit);
+export async function getPublishedArticlesByDiscipline(
+  disciplineSlug: string,
+  limit = 3,
+): Promise<Article[]> {
+  const linked = await prisma.article.findMany({
+    where: { workflowStatus: PUBLISHED, disciplines: { some: { discipline: { slug: disciplineSlug } } } },
+    include: articleInclude,
+    orderBy: { publishedAt: 'desc' },
+  });
+  if (linked.length > 0) return linked.map(toArticle);
+
+  // Fallback: competition coverage when no explicit links exist.
+  const fallback = await prisma.article.findMany({
+    where: { workflowStatus: PUBLISHED, category: { name: 'NFR Competition' } },
+    include: articleInclude,
+    orderBy: { publishedAt: 'desc' },
+    take: limit,
+  });
+  return fallback.map(toArticle);
 }
 
-/** Related published articles for an article id (shared tags/category heuristic). */
-export function getRelatedArticles(currentArticleId: string, limit = 3): Article[] {
-  const current = ALL_ARTICLES.find((a) => a.id === currentArticleId);
-  const pool = getPublishedArticles().filter((a) => a.id !== currentArticleId);
-  if (!current) return pool.slice(0, limit);
+export async function getRelatedPublishedArticles(
+  articleId: string,
+  limit = 3,
+): Promise<Article[]> {
+  const curated = await prisma.article.findMany({
+    where: {
+      workflowStatus: PUBLISHED,
+      id: { not: articleId },
+      relatedFrom: { some: { sourceId: articleId } },
+    },
+    include: articleInclude,
+    take: limit,
+  });
+  if (curated.length > 0) return curated.map(toArticle);
 
-  if (current.relatedArticleIds && current.relatedArticleIds.length > 0) {
-    const linked = pool.filter((a) => current.relatedArticleIds?.includes(a.id));
-    if (linked.length > 0) return linked.slice(0, limit);
-  }
-  return pool.filter((a) => a.category === current.category).slice(0, limit);
+  const current = await prisma.article.findUnique({
+    where: { id: articleId },
+    select: { categoryId: true },
+  });
+  const rows = await prisma.article.findMany({
+    where: {
+      workflowStatus: PUBLISHED,
+      id: { not: articleId },
+      ...(current ? { categoryId: current.categoryId } : {}),
+    },
+    include: articleInclude,
+    orderBy: { publishedAt: 'desc' },
+    take: limit,
+  });
+  return rows.map(toArticle);
 }
 
-export function getAllDisciplines(): Discipline[] {
-  return SEVEN_DISCIPLINES;
+/** Batch 01 compatibility alias (same published-only guarantee). */
+export const getRelatedArticles = getRelatedPublishedArticles;
+
+export async function getPublishedArticleSlugs(): Promise<string[]> {
+  const rows = await prisma.article.findMany({
+    where: { workflowStatus: PUBLISHED },
+    select: { slug: true },
+  });
+  return rows.map((r) => r.slug);
 }
 
-export function getDisciplineBySlug(slug: string): Discipline | undefined {
-  return rawGetDisciplineBySlug(slug);
+// ---- Homepage feeds --------------------------------------------------------
+
+export async function getHeroArticle(): Promise<Article | null> {
+  const lead = await prisma.article.findFirst({
+    where: { workflowStatus: PUBLISHED, isLeadHero: true },
+    include: articleInclude,
+    orderBy: { publishedAt: 'desc' },
+  });
+  if (lead) return toArticle(lead);
+  const latest = await prisma.article.findFirst({
+    where: { workflowStatus: PUBLISHED },
+    include: articleInclude,
+    orderBy: { publishedAt: 'desc' },
+  });
+  return latest ? toArticle(latest) : null;
 }
 
-/** Section metadata by its route key (competition, entertainment, …). */
+export async function getSecondaryHeroStories(limit = 2, excludeId?: string): Promise<Article[]> {
+  const rows = await prisma.article.findMany({
+    where: {
+      workflowStatus: PUBLISHED,
+      isFeatured: true,
+      ...(excludeId ? { id: { not: excludeId } } : {}),
+    },
+    include: articleInclude,
+    orderBy: { publishedAt: 'desc' },
+    take: limit,
+  });
+  return rows.map(toArticle);
+}
+
+export async function getLatestArticles(limit = 6, excludeIds: string[] = []): Promise<Article[]> {
+  const rows = await prisma.article.findMany({
+    where: {
+      workflowStatus: PUBLISHED,
+      ...(excludeIds.length ? { id: { notIn: excludeIds } } : {}),
+    },
+    include: articleInclude,
+    orderBy: { publishedAt: 'desc' },
+    take: limit,
+  });
+  return rows.map(toArticle);
+}
+
+export async function getPublishedSearchIndex(): Promise<SearchIndexItem[]> {
+  const rows = await prisma.article.findMany({
+    where: { workflowStatus: PUBLISHED },
+    select: { id: true, slug: true, title: true, deck: true, readTime: true, category: { select: { name: true } } },
+    orderBy: { publishedAt: 'desc' },
+  });
+  return rows.map((r) => ({
+    id: r.id,
+    slug: r.slug,
+    title: r.title,
+    deck: r.deck ?? '',
+    category: r.category.name,
+    readTime: r.readTime ?? '',
+  }));
+}
+
+// ---- Categories & disciplines ---------------------------------------------
+
+export async function getPublishedCategories(): Promise<{ slug: string; name: string }[]> {
+  const rows = await prisma.category.findMany({ orderBy: { sortOrder: 'asc' } });
+  return rows.map((c) => ({ slug: c.slug, name: c.name }));
+}
+
+export async function getAllDisciplines(): Promise<Discipline[]> {
+  const rows = await prisma.discipline.findMany({ orderBy: { sortOrder: 'asc' } });
+  return rows.map(toDiscipline);
+}
+
+export async function getRodeoDisciplineBySlug(slug: string): Promise<Discipline | null> {
+  const row = await prisma.discipline.findUnique({ where: { slug } });
+  return row ? toDiscipline(row) : null;
+}
+
+/** Batch 01 compatibility alias. */
+export const getDisciplineBySlug = getRodeoDisciplineBySlug;
+
+// ---- Section route metadata (static routing config, not DB) ----------------
+
 export function getSectionMeta(sectionKey: string): SectionMeta | undefined {
   return PRIMARY_SECTIONS[sectionKey];
 }
@@ -87,12 +216,9 @@ export function getAllSectionKeys(): string[] {
   return Object.keys(PRIMARY_SECTIONS);
 }
 
-/** Map a category-archive slug back to its section metadata, if it is one. */
 export function getSectionMetaByCategorySlug(slug: string): SectionMeta | undefined {
   const clean = slug.toLowerCase();
   return Object.values(PRIMARY_SECTIONS).find(
-    (s) =>
-      s.id === clean ||
-      s.categoryKey.toLowerCase().replace(/[^a-z0-9]+/g, '-') === clean,
+    (s) => s.id === clean || s.categoryKey.toLowerCase().replace(/[^a-z0-9]+/g, '-') === clean,
   );
 }

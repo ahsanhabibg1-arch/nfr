@@ -5,25 +5,27 @@ import {
   ROUTES
 } from '../config/routes';
 import {
-  SEVEN_DISCIPLINES,
   PLAN_AND_WATCH_GUIDES,
   ENTERTAINMENT_FEATURES,
   SHOPPING_EVENTS,
   RODEO_HUBS,
   RECURRING_RODEO_EVENTS
 } from '../data/mockEditorialData';
-import { getArticlesBySection } from '../lib/content';
+import { getPublishedArticlesBySection, getAllDisciplines } from '../lib/content';
 import { SectionLandingHero } from '../components/editorial/SectionLandingHero';
 import { EditorialArticleGrid } from '../components/editorial/EditorialArticleGrid';
 import { ImageWithCredit } from '../components/ImageWithCredit';
 import { AdSlot } from '../components/AdSlot';
 
-// Server component (Batch 01 §10): section is resolved from the route param and
-// passed in; data comes from the published-only content adapter.
-export const SectionLandingView: React.FC<{ sectionKey: string }> = ({ sectionKey }) => {
+// Async server component (Batch 02 §9): the section article feed and the
+// discipline grid come from the database; section-specific decorative modules
+// (plan/watch guides, entertainment, shopping, hubs, events) remain Phase 0
+// static content (documented boundary).
+export async function SectionLandingView({ sectionKey }: { sectionKey: string }) {
   const sectionMeta = PRIMARY_SECTIONS[sectionKey];
 
-  const sectionArticles = getArticlesBySection(sectionMeta.categoryKey);
+  const sectionArticles = await getPublishedArticlesBySection(sectionMeta.categoryKey);
+  const disciplines = await getAllDisciplines();
   const featuredStory = sectionArticles[0];
   const secondaryStories = sectionArticles.slice(1);
 
@@ -108,7 +110,7 @@ export const SectionLandingView: React.FC<{ sectionKey: string }> = ({ sectionKe
             </div>
 
             <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
-              {SEVEN_DISCIPLINES.map((d) => (
+              {disciplines.map((d) => (
                 <Link
                   key={d.id}
                   href={ROUTES.DISCIPLINE(d.slug)}
@@ -290,4 +292,4 @@ export const SectionLandingView: React.FC<{ sectionKey: string }> = ({ sectionKe
       </div>
     </div>
   );
-};
+}

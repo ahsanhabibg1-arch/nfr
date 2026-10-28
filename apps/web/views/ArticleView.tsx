@@ -1,7 +1,7 @@
 import React from 'react';
 import Link from 'next/link';
 import { Article } from '../types';
-import { getRelatedArticles } from '../lib/content';
+import { getRelatedPublishedArticles } from '../lib/content';
 import { ArticleHeader } from '../components/editorial/ArticleHeader';
 import { ArticleBody } from '../components/editorial/ArticleBody';
 import { TableOfContents, TOCItem } from '../components/editorial/TableOfContents';
@@ -16,7 +16,7 @@ import { ROUTES } from '../config/routes';
  * published article from the route. The Phase 0 "Phase 0 Route" prototype banner
  * has been removed (Batch 01 §14).
  */
-export const ArticleView: React.FC<{ article: Article }> = ({ article }) => {
+export async function ArticleView({ article }: { article: Article }) {
   const tocItems: TOCItem[] = (article.structuredBody || [])
     .filter(
       (block): block is { type: 'heading'; level: 2 | 3; text: string; id?: string } =>
@@ -28,7 +28,7 @@ export const ArticleView: React.FC<{ article: Article }> = ({ article }) => {
       level: block.level,
     }));
 
-  const related = getRelatedArticles(article.id, 3);
+  const related = await getRelatedPublishedArticles(article.id, 3);
 
   return (
     <div className="w-full bg-[#F7F3EA] text-[#0F1115] py-8 sm:py-12">
@@ -128,6 +128,6 @@ export const ArticleView: React.FC<{ article: Article }> = ({ article }) => {
       </div>
     </div>
   );
-};
+}
 
 export default ArticleView;

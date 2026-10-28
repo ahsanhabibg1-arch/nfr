@@ -1,9 +1,15 @@
 import type { Metadata } from 'next';
 import { CategoryArchiveView } from '@/views/CategoryArchiveView';
-import { getSectionMetaByCategorySlug } from '@/lib/content';
+import {
+  getSectionMetaByCategorySlug,
+  getPublishedArticlesBySection,
+  getPublishedArticlesByCategory,
+} from '@/lib/content';
 import { buildMetadata } from '@/lib/seo';
 
 type Params = { params: Promise<{ slug: string }> };
+
+export const revalidate = 60;
 
 export async function generateMetadata({ params }: Params): Promise<Metadata> {
   const { slug } = await params;
@@ -20,5 +26,18 @@ export async function generateMetadata({ params }: Params): Promise<Metadata> {
 
 export default async function CategoryPage({ params }: Params) {
   const { slug } = await params;
-  return <CategoryArchiveView slug={slug} />;
+  const meta = getSectionMetaByCategorySlug(slug);
+  const articles = meta
+    ? await getPublishedArticlesBySection(meta.categoryKey)
+    : await getPublishedArticlesByCategory(slug);
+  const categoryName = meta?.categoryKey || slug.replace(/-/g, ' ').toUpperCase();
+
+  return (
+    <CategoryArchiveView
+      articles={articles}
+      categoryName={categoryName}
+      description={meta?.description}
+      sectionPath={meta?.path}
+    />
+  );
 }

@@ -7,13 +7,15 @@ import { ROUTES } from '@/config/routes';
 
 type Params = { params: Promise<{ slug: string }> };
 
-export function generateStaticParams() {
-  return getAllDisciplines().map((d) => ({ slug: d.slug }));
+export const revalidate = 300;
+
+export async function generateStaticParams() {
+  return (await getAllDisciplines()).map((d) => ({ slug: d.slug }));
 }
 
 export async function generateMetadata({ params }: Params): Promise<Metadata> {
   const { slug } = await params;
-  const d = getDisciplineBySlug(slug);
+  const d = await getDisciplineBySlug(slug);
   if (!d) {
     return buildMetadata({
       title: 'Discipline Not Found',
@@ -33,7 +35,7 @@ export async function generateMetadata({ params }: Params): Promise<Metadata> {
 
 export default async function DisciplinePage({ params }: Params) {
   const { slug } = await params;
-  const d = getDisciplineBySlug(slug);
+  const d = await getDisciplineBySlug(slug);
   if (!d) notFound();
 
   return (

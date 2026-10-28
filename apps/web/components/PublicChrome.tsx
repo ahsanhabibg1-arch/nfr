@@ -5,15 +5,25 @@ import { useRouter } from 'next/navigation';
 import { SiteHeader } from './SiteHeader';
 import { SiteFooter } from './SiteFooter';
 import { SearchModal } from './SearchModal';
-import { Article, Discipline } from '../types';
+import { Discipline, SearchIndexItem } from '../types';
 import { ROUTES } from '../config/routes';
 
 /**
  * Client chrome for the public site: owns the search-modal state and the global
- * ⌘K / Ctrl+K shortcut, wraps server-rendered page content between the header
- * and footer. Replaces the Phase 0 React Router <Layout> + <Outlet>.
+ * ⌘K / Ctrl+K shortcut. The search index + disciplines are fetched server-side
+ * (DB-backed) and passed in as props.
  */
-export const PublicChrome: React.FC<{ children: React.ReactNode }> = ({ children }) => {
+export interface PublicChromeProps {
+  children: React.ReactNode;
+  searchArticles?: SearchIndexItem[];
+  searchDisciplines?: Discipline[];
+}
+
+export const PublicChrome: React.FC<PublicChromeProps> = ({
+  children,
+  searchArticles = [],
+  searchDisciplines = [],
+}) => {
   const [searchOpen, setSearchOpen] = useState(false);
   const router = useRouter();
 
@@ -36,11 +46,13 @@ export const PublicChrome: React.FC<{ children: React.ReactNode }> = ({ children
       <SearchModal
         isOpen={searchOpen}
         onClose={() => setSearchOpen(false)}
-        onSelectArticle={(a: Article) => {
+        searchArticles={searchArticles}
+        searchDisciplines={searchDisciplines}
+        onSelectArticle={(a) => {
           setSearchOpen(false);
           router.push(ROUTES.ARTICLE(a.slug));
         }}
-        onSelectDiscipline={(d: Discipline) => {
+        onSelectDiscipline={(d) => {
           setSearchOpen(false);
           router.push(ROUTES.DISCIPLINE(d.slug));
         }}
