@@ -1,0 +1,56 @@
+@import "tailwindcss";
+
+@theme {
+  --color-charcoal: #0F1115;
+  --color-navy: #1E293B;
+  --color-gold: #D4A757;
+  --color-gold-hover: #C59642;
+  --color-gold-subtle: rgba(212, 167, 87, 0.12);
+  --color-terrain: #8B5E3C;
+  --color-sand: #F7F3EA;
+  --color-sand-muted: #EDE6D6;
+
+  --font-serif: "Playfair Display", Georgia, Cambria, "Times New Roman", Times, serif;
+  --font-sans: "Plus Jakarta Sans", -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+}
+
+/* Custom Base & Utility Classes */
+:root {
+  color-scheme: light dark;
+}
+
+body {
+  font-family: var(--font-sans);
+  background-color: var(--color-charcoal);
+  color: var(--color-navy);
+  margin: 0;
+  padding: 0;
+  overflow-x: hidden;
+}
+
+/* Smooth Focus Rings */
+:focus-visible {
+  outline: 2px solid var(--color-gold);
+  outline-offset: 2px;
+}
+
+/* Editorial Drop Cap */
+.drop-cap::first-letter {
+  font-family: var(--font-serif);
+  font-size: 3.5rem;
+  line-height: 0.85;
+  float: left;
+  margin-right: 0.65rem;
+  margin-top: 0.2rem;
+  color: var(--color-charcoal);
+  font-weight: 700;
+}
+
+/* Lightweight fade-in used by modals/drawers (was undefined in Phase 0). */
+@keyframes nfr-fade-in {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+.animate-fade-in {
+  animation: nfr-fade-in 160ms ease-out;
+}
