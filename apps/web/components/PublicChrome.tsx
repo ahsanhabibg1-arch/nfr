@@ -7,22 +7,25 @@ import { SiteFooter } from './SiteFooter';
 import { SearchModal } from './SearchModal';
 import { Discipline, SearchIndexItem } from '../types';
 import { ROUTES } from '../config/routes';
+import type { PublicNavigation } from '../lib/cms/navTypes';
 
 /**
  * Client chrome for the public site: owns the search-modal state and the global
- * ⌘K / Ctrl+K shortcut. The search index + disciplines are fetched server-side
- * (DB-backed) and passed in as props.
+ * ⌘K / Ctrl+K shortcut. The search index, disciplines and navigation menus are
+ * fetched server-side (DB-backed, with a static fallback) and passed in as props.
  */
 export interface PublicChromeProps {
   children: React.ReactNode;
   searchArticles?: SearchIndexItem[];
   searchDisciplines?: Discipline[];
+  nav?: PublicNavigation;
 }
 
 export const PublicChrome: React.FC<PublicChromeProps> = ({
   children,
   searchArticles = [],
   searchDisciplines = [],
+  nav,
 }) => {
   const [searchOpen, setSearchOpen] = useState(false);
   const router = useRouter();
@@ -40,9 +43,9 @@ export const PublicChrome: React.FC<PublicChromeProps> = ({
 
   return (
     <div className="min-h-screen flex flex-col bg-[#F7F3EA]">
-      <SiteHeader onOpenSearch={() => setSearchOpen(true)} />
+      <SiteHeader onOpenSearch={() => setSearchOpen(true)} navItems={nav?.header} />
       <main className="flex-1">{children}</main>
-      <SiteFooter />
+      <SiteFooter sections={nav?.footerSections} academy={nav?.footerAcademy} />
       <SearchModal
         isOpen={searchOpen}
         onClose={() => setSearchOpen(false)}

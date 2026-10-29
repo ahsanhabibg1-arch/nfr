@@ -2,7 +2,7 @@ import 'server-only';
 import { prisma } from '../db';
 import { articleInclude, toArticle } from '../mappers';
 import type { Article, ArticleRevision, ArticleWorkflowStatus } from '../../types';
-import { WorkflowStatus } from '@prisma/client';
+import { Prisma, WorkflowStatus } from '@prisma/client';
 
 /**
  * Server-only admin reads (Batch 03). Unlike the public repository
@@ -59,40 +59,132 @@ export interface AdminArticleRow {
   createdById: string | null;
 }
 
-export async function getAdminArticleList(): Promise<AdminArticleRow[]> {
-  const rows = await prisma.article.findMany({
-    orderBy: [{ updatedAt: 'desc' }],
-    include: { author: true, category: true },
-  });
-  return rows.map((r) => ({
-    id: r.id,
-    slug: r.slug,
-    title: r.title,
-    category: r.category.name,
-    subcategory: r.subcategory,
-    authorName: r.author.name,
-    articleType: r.articleType,
-    workflowStatus: STATUS_TO_TS[r.workflowStatus],
-    publishedAt: r.publishedAt ? r.publishedAt.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' }) : null,
-    createdById: r.createdById,
-  }));
+const TS_TO_STATUS: Record<string, WorkflowStatus> = {
+  draft: 'DRAFT', in_review: 'IN_REVIEW', approved: 'APPROVED', scheduled: 'SCHEDULED', published: 'PUBLISHED', archived: 'ARCHIVED',
+};
+
+export interface ArticleListParams {
+  q?: string;
+  status?: string;        // lowercase workflow status
+  categorySlug?: string;
+  disciplineSlug?: string;
+  authorName?: string;
+  sort?: 'updated' | 'created' | 'published';
+  dir?: 'asc' | 'desc';
+  page?: number;
+  pageSize?: number;
 }
 
-export interface AdminOverviewStats {
+export interface ArticleListResult {
+  rows: AdminArticleRow[];
   total: number;
-  published: number;
-  draft: number;
-  inReview: number;
-  scheduled: number;
+  page: number;
+  pageSize: number;
+  totalPages: number;
 }
 
-export async function getAdminOverviewStats(): Promise<AdminOverviewStats> {
-  const [total, published, draft, inReview, scheduled] = await Promise.all([
-    prisma.article.count(),
-    prisma.article.count({ where: { workflowStatus: 'PUBLISHED' } }),
-    prisma.article.count({ where: { workflowStatus: 'DRAFT' } }),
-    prisma.article.count({ where: { workflowStatus: 'IN_REVIEW' } }),
-    prisma.article.count({ where: { workflowStatus: 'SCHEDULED' } }),
+/** Server-side article search / filter / sort / pagination (Batch 04 §5). */
+export async function getAdminArticleList(params: ArticleListParams = {}): Promise<ArticleListResult> {
+  const page = Math.max(1, params.page ?? 1);
+  const pageSize = Math.min(50, Math.max(5, params.pageSize ?? 10));
+
+  const where: Prisma.ArticleWhereInput = {};
+  if (params.status && TS_TO_STATUS[params.status]) where.workflowStatus = TS_TO_STATUS[params.status];
+  if (params.categorySlug) where.category = { slug: params.categorySlug };
+  if (params.disciplineSlug) where.disciplines = { some: { discipline: { slug: params.disciplineSlug } } };
+  if (params.authorName) where.author = { name: params.authorName };
+  if (params.q) {
+    where.OR = [
+      { title: { contains: params.q, mode: 'insensitive' } },
+      { excerpt: { contains: params.q, mode: 'insensitive' } },
+      { author: { name: { contains: params.q, mode: 'insensitive' } } },
+    ];
+  }
+
+  const sortField = params.sort === 'created' ? 'createdAt' : params.sort === 'published' ? 'publishedAt' : 'updatedAt';
+  const dir = params.dir === 'asc' ? 'asc' : 'desc';
+
+  const [total, rows] = await Promise.all([
+    prisma.article.count({ where }),
+    prisma.article.findMany({
+      where,
+      orderBy: { [sortField]: dir },
+      skip: (page - 1) * pageSize,
+      take: pageSize,
+      include: { author: true, category: true },
+    }),
   ]);
-  return { total, published, draft, inReview, scheduled };
+
+  return {
+    rows: rows.map((r) => ({
+      id: r.id, slug: r.slug, title: r.title, category: r.category.name, subcategory: r.subcategory,
+      authorName: r.author.name, articleType: r.articleType, workflowStatus: STATUS_TO_TS[r.workflowStatus],
+      publishedAt: r.publishedAt ? r.publishedAt.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' }) : null,
+      createdById: r.createdById,
+    })),
+    total,
+    page,
+    pageSize,
+    totalPages: Math.max(1, Math.ceil(total / pageSize)),
+  };
+}
+
+export interface DashboardData {
+  statusCounts: Record<ArticleWorkflowStatus, number>;
+  total: number;
+  bySection: { name: string; published: number }[];
+  byDiscipline: { name: string; slug: string; published: number }[];
+  recentlyUpdated: { id: string; title: string; status: ArticleWorkflowStatus; updatedAt: string }[];
+  pendingReviews: { id: string; title: string; authorName: string; updatedAt: string }[];
+  recentActivity: { id: string; action: string; entityType: string; entityId: string | null; actorName: string; at: string }[];
+  scopedToOwn: boolean;
+}
+
+const ALL_STATUSES: WorkflowStatus[] = ['DRAFT', 'IN_REVIEW', 'APPROVED', 'SCHEDULED', 'PUBLISHED', 'ARCHIVED'];
+
+/**
+ * Real editorial dashboard metrics (Batch 04 §4). Published counts are public;
+ * private lists (recently updated, pending reviews) are scoped to the viewer's
+ * own content unless they can view all (editors+). No fabricated analytics.
+ */
+export async function getDashboardData(opts: { viewerId: string; canViewAll: boolean }): Promise<DashboardData> {
+  const ownScope = opts.canViewAll ? {} : { createdById: opts.viewerId };
+
+  const [counts, publishedRows, discLinks, recentlyUpdated, pending, activity] = await Promise.all([
+    prisma.article.groupBy({ by: ['workflowStatus'], _count: { _all: true } }),
+    prisma.article.findMany({ where: { workflowStatus: 'PUBLISHED' }, select: { category: { select: { name: true } } } }),
+    prisma.articleDiscipline.findMany({ where: { article: { workflowStatus: 'PUBLISHED' } }, select: { discipline: { select: { name: true, slug: true } } } }),
+    prisma.article.findMany({ where: ownScope, orderBy: { updatedAt: 'desc' }, take: 8, select: { id: true, title: true, workflowStatus: true, updatedAt: true } }),
+    prisma.article.findMany({ where: { workflowStatus: 'IN_REVIEW', ...ownScope }, orderBy: { updatedAt: 'desc' }, take: 8, select: { id: true, title: true, updatedAt: true, author: { select: { name: true } } } }),
+    prisma.auditLog.findMany({ orderBy: { createdAt: 'desc' }, take: 12, include: { actor: { select: { name: true } } } }),
+  ]);
+
+  const statusCounts = ALL_STATUSES.reduce((acc, s) => { acc[STATUS_TO_TS[s]] = 0; return acc; }, {} as Record<ArticleWorkflowStatus, number>);
+  let total = 0;
+  for (const c of counts) { statusCounts[STATUS_TO_TS[c.workflowStatus]] = c._count._all; total += c._count._all; }
+
+  const sectionTally = new Map<string, number>();
+  for (const r of publishedRows) sectionTally.set(r.category.name, (sectionTally.get(r.category.name) ?? 0) + 1);
+
+  const discTally = new Map<string, { name: string; slug: string; published: number }>();
+  for (const l of discLinks) {
+    const key = l.discipline.slug;
+    const e = discTally.get(key) ?? { name: l.discipline.name, slug: l.discipline.slug, published: 0 };
+    e.published += 1;
+    discTally.set(key, e);
+  }
+
+  const fmt = (d: Date) => d.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
+  const fmtTime = (d: Date) => d.toLocaleString('en-US', { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' });
+
+  return {
+    statusCounts,
+    total,
+    bySection: [...sectionTally.entries()].map(([name, published]) => ({ name, published })).sort((a, b) => b.published - a.published),
+    byDiscipline: [...discTally.values()].sort((a, b) => b.published - a.published),
+    recentlyUpdated: recentlyUpdated.map((a) => ({ id: a.id, title: a.title, status: STATUS_TO_TS[a.workflowStatus], updatedAt: fmt(a.updatedAt) })),
+    pendingReviews: pending.map((a) => ({ id: a.id, title: a.title, authorName: a.author.name, updatedAt: fmt(a.updatedAt) })),
+    recentActivity: activity.map((a) => ({ id: a.id, action: a.action, entityType: a.entityType, entityId: a.entityId, actorName: a.actor?.name ?? 'System', at: fmtTime(a.createdAt) })),
+    scopedToOwn: !opts.canViewAll,
+  };
 }

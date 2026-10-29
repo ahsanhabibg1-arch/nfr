@@ -580,3 +580,21 @@ model AuditLog {
 
   @@index([entityType, createdAt])
 }
+
+/// Site navigation (Batch 04 §F). `location` groups menus (header / footer-*).
+/// `isSystem` protects canonical primary-section links from deletion; the five
+/// section routes and seven discipline routes are never renamed/removed here.
+model NavigationItem {
+  id         String   @id @default(uuid())
+  location   String
+  label      String
+  url        String
+  sortOrder  Int      @default(0)
+  isExternal Boolean  @default(false)
+  isSystem   Boolean  @default(false)
+  visible    Boolean  @default(true)
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+
+  @@index([location, sortOrder])
+}

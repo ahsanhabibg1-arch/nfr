@@ -3,8 +3,43 @@
 import React, { useState } from 'react';
 import Link from 'next/link';
 import { ROUTES } from '../config/routes';
+import type { NavLink } from '../lib/cms/navTypes';
 
 type PolicyKey = 'about' | 'editorial' | 'corrections' | 'affiliate' | 'privacy' | 'terms' | 'contact' | null;
+
+// Static fallbacks mirror the original footer menus; used when the DB-backed
+// navigation is empty or unavailable.
+const SECTIONS_FALLBACK: NavLink[] = [
+  { label: 'NFR Competition & Disciplines', url: ROUTES.COMPETITION, isExternal: false },
+  { label: 'NFR Entertainment & Concerts', url: ROUTES.ENTERTAINMENT, isExternal: false },
+  { label: 'Cowboy Christmas & Shopping', url: ROUTES.EVENTS_SHOPPING, isExternal: false },
+  { label: 'NFR Plan & Watch Guides', url: ROUTES.PLAN_WATCH, isExternal: false },
+  { label: 'More Rodeo (Hubs & Major Events)', url: ROUTES.MORE_RODEO, isExternal: false },
+];
+const ACADEMY_FALLBACK: NavLink[] = [
+  { label: 'The 8-Second Rule Explainer', url: ROUTES.ARTICLE('inside-the-chutes-nfr-roughstock-intensity'), isExternal: false },
+  { label: '50/50 Scoring Mechanics', url: ROUTES.DISCIPLINE('saddle-bronc-riding'), isExternal: false },
+  { label: 'The 10-Round Average Formula', url: ROUTES.ARTICLE('the-anatomy-of-the-10-round-average'), isExternal: false },
+  { label: 'TV & Streaming Directory', url: ROUTES.ARTICLE('how-to-watch-nfr-streaming-cable-cord-cutters'), isExternal: false },
+  { label: 'Thomas & Mack Venue Tips', url: ROUTES.ARTICLE('navigating-thomas-and-mack-center-guide'), isExternal: false },
+];
+
+const FooterLinks: React.FC<{ links: NavLink[] }> = ({ links }) => (
+  <ul className="space-y-2.5 text-xs text-stone-300">
+    {links.map((l) => (
+      <li key={l.url + l.label}>
+        <Link
+          href={l.url}
+          target={l.isExternal ? '_blank' : undefined}
+          rel={l.isExternal ? 'noopener noreferrer' : undefined}
+          className="hover:text-white transition-colors"
+        >
+          {l.label}
+        </Link>
+      </li>
+    ))}
+  </ul>
+);
 
 const POLICIES: Record<string, { title: string; content: string }> = {
   about: {
@@ -37,8 +72,15 @@ const POLICIES: Record<string, { title: string; content: string }> = {
   }
 };
 
-export const SiteFooter: React.FC = () => {
+interface SiteFooterProps {
+  sections?: NavLink[];
+  academy?: NavLink[];
+}
+
+export const SiteFooter: React.FC<SiteFooterProps> = ({ sections, academy }) => {
   const [activePolicy, setActivePolicy] = useState<PolicyKey>(null);
+  const sectionLinks = sections && sections.length > 0 ? sections : SECTIONS_FALLBACK;
+  const academyLinks = academy && academy.length > 0 ? academy : ACADEMY_FALLBACK;
 
   return (
     <footer className="w-full bg-[#0F1115] text-stone-400 font-sans border-t border-white/10 pt-16 pb-12">
@@ -73,33 +115,7 @@ export const SiteFooter: React.FC = () => {
             <h4 className="text-xs uppercase tracking-widest font-bold text-[#D4A757] mb-4">
               Editorial Sections
             </h4>
-            <ul className="space-y-2.5 text-xs text-stone-300">
-              <li>
-                <Link href={ROUTES.COMPETITION} className="hover:text-white transition-colors">
-                  NFR Competition &amp; Disciplines
-                </Link>
-              </li>
-              <li>
-                <Link href={ROUTES.ENTERTAINMENT} className="hover:text-white transition-colors">
-                  NFR Entertainment &amp; Concerts
-                </Link>
-              </li>
-              <li>
-                <Link href={ROUTES.EVENTS_SHOPPING} className="hover:text-white transition-colors">
-                  Cowboy Christmas &amp; Shopping
-                </Link>
-              </li>
-              <li>
-                <Link href={ROUTES.PLAN_WATCH} className="hover:text-white transition-colors">
-                  NFR Plan &amp; Watch Guides
-                </Link>
-              </li>
-              <li>
-                <Link href={ROUTES.MORE_RODEO} className="hover:text-white transition-colors">
-                  More Rodeo (Hubs &amp; Major Events)
-                </Link>
-              </li>
-            </ul>
+            <FooterLinks links={sectionLinks} />
           </div>
 
           {/* Col 4: Spectator Guides & Learning */}
@@ -107,48 +123,7 @@ export const SiteFooter: React.FC = () => {
             <h4 className="text-xs uppercase tracking-widest font-bold text-[#D4A757] mb-4">
               Spectator Academy
             </h4>
-            <ul className="space-y-2.5 text-xs text-stone-300">
-              <li>
-                <Link 
-                  href={ROUTES.ARTICLE('inside-the-chutes-nfr-roughstock-intensity')} 
-                  className="hover:text-white transition-colors"
-                >
-                  The 8-Second Rule Explainer
-                </Link>
-              </li>
-              <li>
-                <Link 
-                  href={ROUTES.DISCIPLINE('saddle-bronc-riding')} 
-                  className="hover:text-white transition-colors"
-                >
-                  50/50 Scoring Mechanics
-                </Link>
-              </li>
-              <li>
-                <Link 
-                  href={ROUTES.ARTICLE('the-anatomy-of-the-10-round-average')} 
-                  className="hover:text-white transition-colors"
-                >
-                  The 10-Round Average Formula
-                </Link>
-              </li>
-              <li>
-                <Link 
-                  href={ROUTES.ARTICLE('how-to-watch-nfr-streaming-cable-cord-cutters')} 
-                  className="hover:text-white transition-colors"
-                >
-                  TV &amp; Streaming Directory
-                </Link>
-              </li>
-              <li>
-                <Link 
-                  href={ROUTES.ARTICLE('navigating-thomas-and-mack-center-guide')} 
-                  className="hover:text-white transition-colors"
-                >
-                  Thomas &amp; Mack Venue Tips
-                </Link>
-              </li>
-            </ul>
+            <FooterLinks links={academyLinks} />
           </div>
 
           {/* Col 5: Institutional & Policy */}

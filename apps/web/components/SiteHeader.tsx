@@ -4,23 +4,28 @@ import React, { useState } from 'react';
 import Link from 'next/link';
 import { usePathname, useRouter } from 'next/navigation';
 import { ROUTES } from '../config/routes';
+import type { NavLink } from '../lib/cms/navTypes';
 
 interface SiteHeaderProps {
   onOpenSearch: () => void;
+  navItems?: NavLink[];
 }
 
-const NAV_ROUTES = [
+// Static fallback mirrors the five canonical primary sections; used when the
+// DB-backed navigation is empty or unavailable.
+const NAV_FALLBACK: NavLink[] = [
   { name: 'NFR Competition', path: ROUTES.COMPETITION },
   { name: 'NFR Entertainment', path: ROUTES.ENTERTAINMENT },
   { name: 'NFR Events & Shopping', path: ROUTES.EVENTS_SHOPPING },
   { name: 'NFR Plan & Watch', path: ROUTES.PLAN_WATCH },
   { name: 'More Rodeo', path: ROUTES.MORE_RODEO },
-];
+].map((r) => ({ label: r.name, url: r.path, isExternal: false }));
 
-export const SiteHeader: React.FC<SiteHeaderProps> = ({ onOpenSearch }) => {
+export const SiteHeader: React.FC<SiteHeaderProps> = ({ onOpenSearch, navItems }) => {
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
   const pathname = usePathname();
   const router = useRouter();
+  const navLinks = navItems && navItems.length > 0 ? navItems : NAV_FALLBACK;
 
   const handleQuickAccessClick = () => {
     if (pathname === '/') {
@@ -60,21 +65,23 @@ export const SiteHeader: React.FC<SiteHeaderProps> = ({ onOpenSearch }) => {
             className="hidden lg:flex items-center gap-7 text-xs font-semibold tracking-wider uppercase font-sans text-stone-300"
             aria-label="Primary Navigation"
           >
-            {NAV_ROUTES.map((item) => {
-              const isActive = pathname === item.path || pathname.startsWith(item.path);
+            {navLinks.map((item) => {
+              const isActive = !item.isExternal && (pathname === item.url || pathname.startsWith(item.url));
               return (
                 <Link
-                  key={item.path}
-                  href={item.path}
+                  key={item.url}
+                  href={item.url}
+                  target={item.isExternal ? '_blank' : undefined}
+                  rel={item.isExternal ? 'noopener noreferrer' : undefined}
                   className={`whitespace-nowrap shrink-0 py-2 transition-colors relative hover:text-white ${
                     isActive ? 'text-[#D4A757] font-bold' : 'text-stone-300'
                   }`}
                 >
-                  {item.name}
+                  {item.label}
                   {isActive && (
-                    <span 
-                      className="absolute bottom-0 left-0 w-full h-[2px] bg-[#D4A757]" 
-                      aria-hidden="true" 
+                    <span
+                      className="absolute bottom-0 left-0 w-full h-[2px] bg-[#D4A757]"
+                      aria-hidden="true"
                     />
                   )}
                 </Link>
@@ -177,12 +184,14 @@ export const SiteHeader: React.FC<SiteHeaderProps> = ({ onOpenSearch }) => {
               <div className="text-[10px] font-mono uppercase tracking-widest text-stone-500 mb-2">
                 Primary Sections
               </div>
-              {NAV_ROUTES.map((item) => {
-                const isActive = pathname === item.path;
+              {navLinks.map((item) => {
+                const isActive = !item.isExternal && pathname === item.url;
                 return (
                   <Link
-                    key={item.path}
-                    href={item.path}
+                    key={item.url}
+                    href={item.url}
+                    target={item.isExternal ? '_blank' : undefined}
+                    rel={item.isExternal ? 'noopener noreferrer' : undefined}
                     onClick={() => setMobileMenuOpen(false)}
                     className={`w-full py-3 px-3 text-sm font-sans tracking-wide uppercase rounded transition-colors flex items-center justify-between ${
                       isActive
@@ -190,7 +199,7 @@ export const SiteHeader: React.FC<SiteHeaderProps> = ({ onOpenSearch }) => {
                         : 'text-stone-300 hover:bg-white/5 hover:text-white'
                     }`}
                   >
-                    <span>{item.name}</span>
+                    <span>{item.label}</span>
                     <span className="text-stone-600">&rarr;</span>
                   </Link>
                 );

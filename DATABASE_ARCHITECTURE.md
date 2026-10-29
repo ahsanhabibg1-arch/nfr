@@ -91,3 +91,15 @@ Master Requirements v2.0 §7, Batch 02 §4, and the Phase 0 TypeScript contracts
 - **ArticleRevision.actorId**, **EditorialWorkflowHistory.actorId** → User (SetNull).
 - Identity tables (User/Role/Permission/UserRole/RolePermission/AuditLog) are now active:
   roles/permissions seeded from the code matrix; audit logging writes real entries.
+
+## Batch 04 (2026-10-29)
+- **NavigationItem** (new): DB-backed site navigation; `(location, sortOrder)` index;
+  `isSystem` marks canonical/protected rows. Migration
+  `20261029100000_batch04_navigation`, generated offline and applied to dev + test
+  (least-privilege roles cannot create the shadow DB `migrate dev` needs — see
+  MIGRATION_STATUS.md).
+- Batch 04 adds five RBAC permissions (`rodeo.manage`, `taxonomy.manage`,
+  `author.manage`, `source.manage`, `navigation.manage`) to the `Permission`/
+  `RolePermission` tables via `roleSync`.
+- All Batch 04 mutations write `AuditLog` rows via the shared `lib/cms/guard.ts`.
+- No existing tables altered; no data reset.

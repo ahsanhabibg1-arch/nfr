@@ -22,7 +22,13 @@ export type Permission =
   | 'seo.config'
   | 'user.manage'
   | 'role.assign'
-  | 'system.config';
+  | 'system.config'
+  // Batch 04 module permissions (proposed; see RBAC_PERMISSION_MATRIX.md)
+  | 'rodeo.manage'
+  | 'taxonomy.manage'
+  | 'author.manage'
+  | 'source.manage'
+  | 'navigation.manage';
 
 export const ALL_ROLES: RoleKey[] = ['super_admin', 'administrator', 'editor', 'author', 'seo_manager'];
 
@@ -37,10 +43,14 @@ export const ROLE_LABELS: Record<RoleKey, string> = {
 const EDITOR_PERMS: Permission[] = [
   'cms.access', 'article.create', 'article.edit.own', 'article.edit.any',
   'article.submit', 'article.review', 'article.approve', 'article.publish', 'article.schedule',
+  // Editorial content management (Batch 04)
+  'rodeo.manage', 'taxonomy.manage', 'author.manage', 'source.manage',
 ];
 
 const ADMIN_PERMS: Permission[] = [
   ...EDITOR_PERMS, 'article.delete', 'seo.config', 'user.manage', 'role.assign',
+  // Site structure (Batch 04) — Admin/Super Admin only
+  'navigation.manage',
 ];
 
 export const ROLE_PERMISSIONS: Record<RoleKey, Permission[]> = {

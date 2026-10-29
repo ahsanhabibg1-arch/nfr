@@ -210,5 +210,21 @@ NOT shared, NOT server state, does not drive public SSR). See KNOWN_LIMITATIONS.
   + article path + sitemap) so editorial privacy is immediate.
 - **Admin route group:** `app/admin/(dashboard)/*` (gated shell) vs `app/admin/login/`
   (no shell). URLs unchanged.
-- **Boundary:** only Articles + Editor + workflow are DB-backed; admin modules 3–12 +
-  Overview remain UI/mock (documented).
+- **Boundary (Batch 03):** Articles + Editor + workflow DB-backed.
+
+## Batch 04 — editorial management modules
+- **DB-backed now:** Overview dashboard (real metrics + audit feed), Advanced
+  Article Management (server search/filter/sort/pagination), Rodeo Coverage,
+  Editorial Organization (categories/tags/authors), Sources & References, and
+  Website & Navigation. **Still UI/mock:** Media, SEO, Analytics, Monetization,
+  Team, Settings.
+- **Pattern:** Server Component route → Client view → `'use server'` action →
+  `'server-only'` service, with a shared guard (`lib/cms/guard.ts`) as the
+  default-deny enforcement + audit point. See EDITORIAL_CMS_ARCHITECTURE.md.
+- **Navigation:** new `NavigationItem` table drives the public header/footer via
+  `app/(public)/layout.tsx` → `PublicChrome` → `SiteHeader`/`SiteFooter`, with a
+  built-in static fallback and canonical-route protection. See NAVIGATION_MANAGEMENT.md.
+- **Integrity:** restrict-on-delete for anything referenced by published content;
+  URL-scheme validation on source/navigation URLs; five new RBAC permissions.
+- **HTTP cache test:** `npm run test:cache` verifies publish/unpublish visibility
+  over HTTP (8 points). See BATCH04_TEST_REPORT.md and PHASE1_BATCH04_REPORT.md.

@@ -340,3 +340,18 @@ See `DATABASE_ARCHITECTURE.md` for the full entity/relationship walkthrough.
 - `ArticleRevision.actorId` → `User`, `EditorialWorkflowHistory.actorId` → `User`.
 - Role / Permission / RolePermission are populated from the code RBAC matrix via `roleSync`.
 Existing seeded data preserved (no reset).
+
+## Batch 04 additions
+> Added 2026-10-29. Migration `20261029100000_batch04_navigation` (additive — one new table).
+
+- New **`NavigationItem`**: `location` (`header` | `footer-sections` |
+  `footer-academy`), `label`, `url`, `sortOrder`, `isExternal`, `isSystem`
+  (canonical/protected), `visible`, `createdAt`, `updatedAt`; indexed on
+  `(location, sortOrder)`. Backs the DB-driven header/footer with static fallback.
+- No other tables changed. The Batch 04 editorial modules operate over existing
+  tables: `Category`/`Tag`/`Author` (taxonomy), `Source`/`ArticleSource`
+  (references), `RodeoHub`/`RodeoEvent`/`RodeoEventEdition`/`Venue`/`Discipline`
+  and their `Article*` junctions (rodeo coverage), and `AuditLog` (activity feed).
+- Referential rule: `RodeoEventEdition` is unique per `(eventId, editionSlug)` —
+  the recurring-event vs. annual-edition split. Deletes are restrict-on-delete for
+  entities referenced by articles/editions (service-enforced).

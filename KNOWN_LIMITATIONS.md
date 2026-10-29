@@ -158,10 +158,26 @@ addressed in `apps/web`:
   concurrency, revisions and audit logging.
 - **First login requires bootstrap:** `cd apps/web; npm run bootstrap:admin`. No admin
   account ships; no hardcoded credentials; no public registration.
-- **Admin modules 3–12 + Overview remain UI-only / mock** this batch (Batch 03 §10
-  permits) — only Articles + Editor + workflow are DB-backed.
 - **No scheduled-publishing worker:** the `scheduled` state is retained but not
   auto-executed; publishing is manual. Scheduled content is never publicly exposed.
 - **Login rate limiter is in-memory (per-instance);** a multi-instance deployment needs a
   shared store. Password reset/recovery and MFA are future work.
 - No media object storage, no SEO scanning engine, no production deployment.
+
+## Batch 04 — editorial module limitations
+- **Now DB-backed:** Overview dashboard, Articles (server search/filter/sort/
+  pagination), Rodeo Coverage, Editorial Organization, Sources & References, and
+  Website & Navigation. **Still UI-only / mock:** Media Library, SEO Intelligence,
+  Analytics, Monetization, Team, Settings (future batches).
+- **Dashboard analytics are honest-empty:** traffic/search-console metrics show a
+  "not connected" notice rather than fabricated numbers — no analytics provider is
+  integrated.
+- **Navigation is single-level** (no nested dropdown submenus) and covers the
+  header + two footer columns; the policy/legal footer links remain in-component
+  modals. Canonical links are materialized into the DB only when an admin clicks
+  "Import canonical links" (until then the static fallback serves).
+- **Rodeo purse/schedule fields are free-text and unverified by design** — the UI
+  warns against entering unconfirmed figures; nothing is auto-populated.
+- **Production `npm run build` not run in the dev environment** (active dev server
+  holds `.next`/the Prisma engine on Windows); run it in a clean checkout as the
+  final pre-deploy gate. Typecheck + dev-route rendering + HTTP smoke all pass.

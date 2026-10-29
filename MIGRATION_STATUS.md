@@ -139,3 +139,28 @@ on the identity tables and the typed read repository.
 | 15 | Documentation complete | ✅ |
 
 First login: `cd apps/web; npm run bootstrap:admin` (see AUTHENTICATION_ARCHITECTURE.md).
+
+## Batch 04 — Navigation table
+
+| Migration | Applied (dev) | Applied (test) |
+|---|:--:|:--:|
+| `20261028000000_init` | ✅ | ✅ |
+| `20261029000000_batch03_auth_rbac` | ✅ | ✅ |
+| `20261029100000_batch04_navigation` (adds `NavigationItem`) | ✅ | ✅ |
+
+Batch 04 added exactly one table, `NavigationItem`; no existing tables were
+altered and no data was reset (the 11 seeded articles and 7 disciplines are
+untouched). The migration was generated **offline** — least-privilege DB roles
+cannot create the shadow database `prisma migrate dev` requires:
+
+```bash
+# generate (no shadow DB needed):
+npx prisma migrate diff \
+  --from-schema-datasource prisma/schema.prisma \
+  --to-schema-datamodel  prisma/schema.prisma \
+  --script > prisma/migrations/20261029100000_batch04_navigation/migration.sql
+# apply to dev and test:
+npx prisma migrate deploy
+DATABASE_URL="$TEST_DATABASE_URL" npx prisma migrate deploy
+npx prisma generate
+```

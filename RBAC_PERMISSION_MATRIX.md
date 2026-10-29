@@ -1,8 +1,9 @@
-# NFRGuide.com — RBAC Permission Matrix (Phase 1 / Batch 03)
+# NFRGuide.com — RBAC Permission Matrix (Phase 1 / Batch 03–04)
 
 Single source of truth: `apps/web/lib/auth/rbac.ts` (code-defined, **default-deny**),
 mirrored into the DB `Role`/`Permission`/`RolePermission` tables by `roleSync`. Enforced
-server-side in `lib/cms/articleService.ts` on every operation. Aligned with the Master
+server-side in `lib/cms/articleService.ts` (articles) and the per-module services via
+`lib/cms/guard.ts` (Batch 04) on every operation. Aligned with the Master
 Requirements §5.1/§6/§10 and the approved `PERMISSION_MATRIX` (Team module).
 
 | Permission | Super Admin | Administrator | Editor | Author | SEO Manager |
@@ -21,6 +22,22 @@ Requirements §5.1/§6/§10 and the approved `PERMISSION_MATRIX` (Team module).
 | `user.manage` | ✅ | ✅ | — | — | — |
 | `role.assign` | ✅ | ✅ | — | — | — |
 | `system.config` | ✅ | — | — | — | — |
+| `rodeo.manage` *(Batch 04)* | ✅ | ✅ | ✅ | — | — |
+| `taxonomy.manage` *(Batch 04)* | ✅ | ✅ | ✅ | — | — |
+| `author.manage` *(Batch 04)* | ✅ | ✅ | ✅ | — | — |
+| `source.manage` *(Batch 04)* | ✅ | ✅ | ✅ | — | — |
+| `navigation.manage` *(Batch 04)* | ✅ | ✅ | — | — | — |
+
+### Batch 04 permission rationale (⚠ pending owner approval — see PHASE1_BATCH04_REPORT §P)
+- **Content management** (`rodeo.manage`, `taxonomy.manage`, `author.manage`,
+  `source.manage`) is granted to **Editor and above** — these are everyday
+  editorial-desk operations over hubs/events/editions, categories/tags, author
+  bylines and citations.
+- **Site structure** (`navigation.manage`) is restricted to **Administrator and
+  Super Admin** — it changes the public header/footer for every page.
+- SEO Manager and Author receive none of the Batch 04 permissions. Enforcement
+  is verified in `tests/batch04.test.ts` (e.g. Author cannot manage rodeo, SEO
+  Manager cannot create sources/authors, Editor cannot manage navigation).
 
 ## Ownership rules
 - **Author** may edit/submit only **their own** articles (`createdById === user.id`) and
