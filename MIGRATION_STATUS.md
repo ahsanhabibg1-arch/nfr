@@ -164,3 +164,15 @@ npx prisma migrate deploy
 DATABASE_URL="$TEST_DATABASE_URL" npx prisma migrate deploy
 npx prisma generate
 ```
+
+**Canonical navigation seed.** `prisma db seed` now also runs
+`seedCanonicalNavigation()` — idempotent, create-missing-only; it never
+overwrites administrator-customized rows and never deletes navigation. Safe to
+re-run.
+
+**Batch 04 build verification (2026-10-29).** With the dev server stopped:
+`prisma validate` ✅ · `prisma generate` ✅ · `typecheck` ✅ ·
+`vitest run` **77/77** (deterministic ×3) ✅ · `next build` ✅ (28/28 static
+pages) · `test:routes` **24/24** (prod) ✅ · admin-auth smoke **6/6** (prod) ✅ ·
+`test:cache` **10/10** (dev) ✅. No data deleted, no migrations reset. See
+[BATCH04_TEST_REPORT.md](BATCH04_TEST_REPORT.md).

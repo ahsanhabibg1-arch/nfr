@@ -21,7 +21,7 @@ export async function deleteNavItemAction(id: string): Promise<ActionResult> {
 export async function setNavVisibleAction(id: string, visible: boolean): Promise<ActionResult> {
   try { const a = await requireActor('navigation.manage'); await nav.setNavVisible(a, id, visible); rev(); return { ok: true }; } catch (e) { return toActionError(e); }
 }
-export async function restoreCanonicalNavAction(): Promise<ActionResult<{ created: number }>> {
+export async function restoreCanonicalNavAction(): Promise<ActionResult<{ created: number; skipped: number }>> {
   try { const a = await requireActor('navigation.manage'); const r = await nav.restoreCanonicalNav(a); rev(); return { ok: true, ...r }; }
-  catch (e) { return toActionError(e) as ActionResult<{ created: number }>; }
+  catch (e) { return toActionError(e) as ActionResult<{ created: number; skipped: number }>; }
 }

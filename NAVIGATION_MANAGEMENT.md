@@ -54,9 +54,14 @@ exists at both the data layer and the component layer.
 
 ## 4. Canonical-route protection
 
-- `restoreCanonicalNav()` idempotently materializes the static menus into the
-  DB as **system rows** (`isSystem = true`, deterministic ids `nav-<location>-<n>`),
-  15 rows total. Admins click "Import canonical links" to start managing them.
+- `seedCanonicalNavigation()` (`lib/cms/navCanonical.ts`) materializes the static
+  menus into the DB as **system rows** (`isSystem = true`, deterministic ids
+  `nav-<location>-<n>`), 15 rows total. It is **create-missing-only**: idempotent,
+  never overwrites an administrator's customized label/order/visibility, and
+  never deletes a row (owner decisions 4 & 5).
+- It runs automatically from the **Prisma seed** (`prisma db seed`). The admin
+  "restore canonical links" action (`restoreCanonicalNav`) delegates to the same
+  function, so it is equally non-destructive.
 - System rows **cannot be deleted** (`forbidden`) — only hidden (`visible=false`).
 - Updating a system row **keeps its `url` and `location`**; only label, order
   and visibility are editable. This guarantees the five primary-section routes
@@ -83,4 +88,7 @@ so every public page's chrome updates. The public layout keeps
 `tests/batch04.test.ts`: `navigation.manage` enforcement (Editor forbidden,
 Admin allowed); URL validation (internal/external); static fallback when empty;
 `restoreCanonicalNav` creates 15 protected rows a public read then uses;
-system-row delete refusal; system-row update keeps url/location.
+system-row delete refusal; system-row update keeps url/location. Plus the
+canonical-seed tests: first-time init (15 created), idempotent repeat (0 created,
+15 skipped, no duplicates), no-overwrite of customized values, and no-deletion of
+existing custom rows.

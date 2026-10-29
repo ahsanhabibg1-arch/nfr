@@ -134,37 +134,54 @@ observable points — **10/10 pass**. See
 [BATCH04_TEST_REPORT.md](BATCH04_TEST_REPORT.md) for the points and the
 dev-vs-production caching note.
 
-## O. Testing & Regression
+## O. Testing & Regression (final sign-off — all green)
 
+- `npx prisma validate` — schema valid.  ·  `npx prisma generate` — Client v6.19.3.
 - `npm run typecheck` — clean.
-- `vitest run` against the test DB — **73/73** (incl. 23 new Batch 04 tests in
-  `tests/batch04.test.ts`).
-- `npm run test:cache` — 10/10.  ·  `npm run test:routes` — 24/24.
-- `scripts/admin-auth-smoke.mts` — 6/6 admin routes render 200 authenticated.
-- Production `npm run build` deferred (active dev server holds `.next`); run in a
-  clean checkout as the final gate — see BATCH04_TEST_REPORT §5.
+- `vitest run` against the test DB — **77/77** (incl. **27** Batch 04 tests in
+  `tests/batch04.test.ts`); deterministic on three consecutive runs.
+- **`npm run build` — PASS** (production build: compiled 10.2s, 28/28 static
+  pages, all routes). Ran after stopping the dev server (owner-approved).
+- `npm run test:routes` — **24/24** against the production server (`npm run start`).
+- `scripts/admin-auth-smoke.mts` — **6/6** admin routes render 200 authenticated
+  on the production build.
+- `npm run test:cache` — **10/10** (dev server; see BATCH04_TEST_REPORT §3 for
+  the prod-vs-dev rationale).
+- **Role-sync hardening:** `lib/auth/roleSync.ts` made idempotent + concurrency-
+  safe, fixing a flaky parallel-test race (BATCH04_TEST_REPORT §1.1).
 
-## P. Decisions Requiring Owner Approval
+Full detail and exact commands: [BATCH04_TEST_REPORT.md](BATCH04_TEST_REPORT.md).
 
-1. **Permission matrix for Batch 04 actions** (§K). Proposed: content modules
-   (rodeo/taxonomy/author/source) at **Editor** and above; site structure
-   (navigation) at **Administrator** and above. Please confirm or adjust.
-2. **Navigation seeding.** Canonical links are materialized only when an admin
-   clicks "Import canonical links" (until then the static fallback serves). If
-   you prefer them seeded automatically, say so and a seed step will be added.
+## P. Owner Decisions — Approved & Implemented
+
+The owner approved the following at Batch 04 sign-off; all are implemented:
+
+1. **Permission matrix** (§K): content modules (rodeo/taxonomy/author/source) at
+   **Editor+**; navigation at **Administrator+**. Shipped as-is — no change
+   needed. All mutations are server-side RBAC-checked and audited (decision 3).
+2. **Automatic canonical navigation seeding** (decision 4): the Prisma seed now
+   calls `seedCanonicalNavigation()` (`lib/cms/navCanonical.ts`) which creates
+   any missing canonical links as protected `isSystem` rows. It is idempotent
+   (create-missing-only), **never overwrites administrator-customized values**
+   (decision 5), and **never deletes** existing navigation. The static fallback
+   remains for uninitialized/unavailable-DB scenarios. The admin "restore
+   canonical links" action shares the same non-destructive implementation.
+   The five protected canonical section routes are preserved (decision 6).
+   Covered by four new tests (first-time init, idempotent repeat, no-overwrite,
+   no-deletion).
 
 ## Q. Files & How to Verify
 
-**New:** `lib/cms/{rodeoService,taxonomyService,sourceService,navigationService,navTypes,guard}.ts`,
+**New:** `lib/cms/{rodeoService,taxonomyService,sourceService,navigationService,navTypes,navCanonical,guard}.ts`,
 `app/admin/{rodeo-actions,taxonomy-actions,source-actions,navigation-actions}.ts`,
 `views/admin/{AdminRodeoCoveragePage,AdminEditorialOrgPage,AdminSourcesPage,AdminWebsiteNavPage}.tsx`,
 `prisma/migrations/20261029100000_batch04_navigation/`,
 `tests/batch04.test.ts`, `scripts/{cache-invalidation,admin-auth-smoke}.mts`,
 `scripts/server-only-hook.mjs`, and the seven Batch 04 docs.
-**Modified:** `lib/auth/rbac.ts`, `lib/cms/adminQueries.ts`,
+**Modified:** `lib/auth/{rbac,roleSync}.ts`, `lib/cms/adminQueries.ts`,
 `app/admin/(dashboard)/{page,articles/page,rodeo-coverage/page,editorial-organization/page,sources/page,website/page}.tsx`,
 `views/admin/AdminArticlesPage.tsx`, `components/{SiteHeader,SiteFooter,PublicChrome}.tsx`,
-`app/(public)/layout.tsx`, `prisma/schema.prisma`, `package.json`.
+`app/(public)/layout.tsx`, `prisma/schema.prisma`, `prisma/seed.ts`, `package.json`.
 
 **Verify:** see [BATCH04_TEST_REPORT.md §6](BATCH04_TEST_REPORT.md).
 

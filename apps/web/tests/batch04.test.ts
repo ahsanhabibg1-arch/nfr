@@ -1,5 +1,6 @@
 import { describe, it, expect, beforeAll, afterAll } from 'vitest';
 import type { PrismaClient } from '@prisma/client';
+import { seedCanonicalNavigation, CANONICAL_NAV_SEED } from '../lib/cms/navCanonical';
 import type { RoleKey } from '../lib/auth/rbac';
 import type { Actor } from '../lib/cms/guard';
 import type * as ArticleSvc from '../lib/cms/articleService';
@@ -239,6 +240,47 @@ suite('Batch 04 — editorial modules integration', () => {
     expect(after.location).toBe('header');     // locked
     expect(after.url).toBe(row.url);           // locked
     expect(after.label).toBe('Renamed');       // editable
+  });
+
+  // ---------- Canonical navigation seed (final sign-off §A) ----------
+  it('nav seed: first-time initialization creates all canonical rows as system rows', async () => {
+    await prisma.navigationItem.deleteMany({});
+    const r = await seedCanonicalNavigation(prisma);
+    expect(r.created).toBe(CANONICAL_NAV_SEED.length); // 15
+    expect(r.skipped).toBe(0);
+    expect(await prisma.navigationItem.count()).toBe(CANONICAL_NAV_SEED.length);
+    expect(await prisma.navigationItem.count({ where: { isSystem: false } })).toBe(0);
+  });
+
+  it('nav seed: repeated execution is idempotent — no duplicates, nothing new', async () => {
+    await prisma.navigationItem.deleteMany({});
+    await seedCanonicalNavigation(prisma);
+    const r2 = await seedCanonicalNavigation(prisma);
+    expect(r2.created).toBe(0);
+    expect(r2.skipped).toBe(CANONICAL_NAV_SEED.length);
+    expect(await prisma.navigationItem.count()).toBe(CANONICAL_NAV_SEED.length); // no dupes
+  });
+
+  it('nav seed: never overwrites an administrator-customized value', async () => {
+    await prisma.navigationItem.deleteMany({});
+    await seedCanonicalNavigation(prisma);
+    const id = CANONICAL_NAV_SEED[0].id;
+    await prisma.navigationItem.update({ where: { id }, data: { label: 'Admin Custom Label', sortOrder: 42, visible: false } });
+    const r = await seedCanonicalNavigation(prisma); // re-seed
+    expect(r.created).toBe(0);
+    const row = await prisma.navigationItem.findUniqueOrThrow({ where: { id } });
+    expect(row.label).toBe('Admin Custom Label'); // preserved
+    expect(row.sortOrder).toBe(42);               // preserved
+    expect(row.visible).toBe(false);              // preserved
+  });
+
+  it('nav seed: never deletes existing custom navigation', async () => {
+    await prisma.navigationItem.deleteMany({});
+    await seedCanonicalNavigation(prisma);
+    const custom = await prisma.navigationItem.create({ data: { location: 'header', label: 'Custom Promo', url: 'https://example.com/promo', isExternal: true, isSystem: false } });
+    await seedCanonicalNavigation(prisma); // must not remove the custom row
+    expect(await prisma.navigationItem.findUnique({ where: { id: custom.id } })).not.toBeNull();
+    expect(await prisma.navigationItem.count()).toBe(CANONICAL_NAV_SEED.length + 1);
   });
 
   // ---------- Dashboard + advanced article list (§3 dashboard, §5 list) ----------

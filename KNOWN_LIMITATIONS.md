@@ -174,10 +174,13 @@ addressed in `apps/web`:
   integrated.
 - **Navigation is single-level** (no nested dropdown submenus) and covers the
   header + two footer columns; the policy/legal footer links remain in-component
-  modals. Canonical links are materialized into the DB only when an admin clicks
-  "Import canonical links" (until then the static fallback serves).
+  modals. Canonical links are now auto-created by the Prisma seed
+  (`seedCanonicalNavigation`, idempotent & non-overwriting); the admin "restore
+  canonical links" action and the static fallback both remain available.
 - **Rodeo purse/schedule fields are free-text and unverified by design** — the UI
   warns against entering unconfirmed figures; nothing is auto-populated.
-- **Production `npm run build` not run in the dev environment** (active dev server
-  holds `.next`/the Prisma engine on Windows); run it in a clean checkout as the
-  final pre-deploy gate. Typecheck + dev-route rendering + HTTP smoke all pass.
+- **Production build verified at Batch 04 sign-off** (`next build` passes; prod
+  route + admin smoke green). The publish/unpublish cache harness runs against
+  the dev server by design — in production, ISR invalidation on publish/unpublish
+  is carried by the Server Actions' `revalidatePath()` (code-verified); see
+  BATCH04_TEST_REPORT §3.
