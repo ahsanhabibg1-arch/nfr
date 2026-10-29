@@ -28,7 +28,14 @@ export type Permission =
   | 'taxonomy.manage'
   | 'author.manage'
   | 'source.manage'
-  | 'navigation.manage';
+  | 'navigation.manage'
+  // Batch 05 media permissions (owner-approved; see RBAC_PERMISSION_MATRIX.md)
+  | 'media.view'
+  | 'media.upload'
+  | 'media.edit.own'
+  | 'media.edit.any'
+  | 'media.delete'
+  | 'media.assign';
 
 export const ALL_ROLES: RoleKey[] = ['super_admin', 'administrator', 'editor', 'author', 'seo_manager'];
 
@@ -45,20 +52,28 @@ const EDITOR_PERMS: Permission[] = [
   'article.submit', 'article.review', 'article.approve', 'article.publish', 'article.schedule',
   // Editorial content management (Batch 04)
   'rodeo.manage', 'taxonomy.manage', 'author.manage', 'source.manage',
+  // Media (Batch 05) — full except delete (Admin+)
+  'media.view', 'media.upload', 'media.edit.own', 'media.edit.any', 'media.assign',
 ];
 
 const ADMIN_PERMS: Permission[] = [
   ...EDITOR_PERMS, 'article.delete', 'seo.config', 'user.manage', 'role.assign',
   // Site structure (Batch 04) — Admin/Super Admin only
   'navigation.manage',
+  // Media deletion — Admin/Super Admin only (Batch 05)
+  'media.delete',
 ];
 
 export const ROLE_PERMISSIONS: Record<RoleKey, Permission[]> = {
   super_admin: [...ADMIN_PERMS, 'system.config'],
   administrator: ADMIN_PERMS,
   editor: EDITOR_PERMS,
-  author: ['cms.access', 'article.create', 'article.edit.own', 'article.submit'],
-  seo_manager: ['cms.access', 'seo.config'],
+  author: ['cms.access', 'article.create', 'article.edit.own', 'article.submit',
+    // Media: browse, add to the library, manage own, attach to own articles
+    'media.view', 'media.upload', 'media.edit.own', 'media.assign'],
+  seo_manager: ['cms.access', 'seo.config',
+    // Media: browse + edit image SEO/alt metadata on any asset (no upload/delete)
+    'media.view', 'media.edit.any'],
 };
 
 export function roleHasPermission(roles: RoleKey[], perm: Permission): boolean {

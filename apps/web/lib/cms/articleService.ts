@@ -29,7 +29,10 @@ export type ServiceErrorCode =
   | 'not_found'
   | 'conflict'
   | 'validation'
-  | 'invalid_transition';
+  | 'invalid_transition'
+  // Batch 05 media codes
+  | 'processing'
+  | 'storage';
 
 export class ServiceError extends Error {
   code: ServiceErrorCode;
@@ -339,6 +342,15 @@ export async function transitionWorkflow(
         blockers: report.blockers.map((b) => b.message),
         compliance: report.compliance.map((c) => c.message),
       });
+    }
+    // Batch 05 §11: a DAM-managed featured image must have confirmed usage rights
+    // before it can appear on a published page. Legacy assets are grandfathered.
+    const hero = await prisma.articleMedia.findUnique({
+      where: { articleId_usageKey: { articleId: id, usageKey: 'hero' } },
+      select: { media: { select: { rightsConfirmed: true, storageProvider: true } } },
+    });
+    if (hero?.media && hero.media.storageProvider !== 'legacy-local' && !hero.media.rightsConfirmed) {
+      throw new ServiceError('validation', 'The featured image has unconfirmed usage rights. Confirm its license in the Media Library before publishing.', { media: 'rights_unconfirmed' });
     }
   }
 

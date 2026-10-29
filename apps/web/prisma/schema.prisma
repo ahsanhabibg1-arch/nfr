@@ -37,6 +37,31 @@ enum ImageRightsStatus {
   UNRESOLVED
 }
 
+// Media licensing/usage category (Batch 05 §11). UNCONFIRMED until an editor
+// explicitly records lawful usage rights.
+enum MediaLicenseType {
+  OWNED
+  LICENSED
+  PERMISSION_GRANTED
+  PUBLIC_DOMAIN
+  OTHER
+  UNCONFIRMED
+}
+
+// Media lifecycle (Batch 05 §13).
+enum MediaProcessingStatus {
+  UPLOADING
+  PROCESSING
+  READY
+  FAILED
+}
+
+enum MediaVisibility {
+  DRAFT
+  PUBLIC
+  ARCHIVED
+}
+
 enum SourceClassification {
   OFFICIAL
   INDEPENDENT_REFERENCE
@@ -289,21 +314,116 @@ model ArticleSource {
   @@id([articleId, sourceId])
 }
 
+/// Digital asset (Batch 05). Binaries live in object storage (`storageProvider` +
+/// `storageKey`); Postgres holds only metadata/relationships/lifecycle. Legacy
+/// seeded rows use provider `legacy-local` and keep their `/assets/...` url.
 model MediaAsset {
-  id           String            @id @default(uuid())
-  storageKey   String            @unique
-  url          String
-  filename     String
-  mimeType     String?
-  dimensions   String?
-  bytes        Int?
-  format       String?
-  seoTitle     String?
-  altText      String?
-  credit       String?
-  rightsStatus ImageRightsStatus @default(UNRESOLVED)
-  uploadedAt   DateTime          @default(now())
-  articles     ArticleMedia[]
+  id              String                @id @default(uuid())
+  storageProvider String                @default("legacy-local") // local | r2 | s3 | legacy-local
+  storageKey      String                @unique
+  url             String                // public URL (route handler or CDN)
+  filename        String                // original filename (as uploaded)
+  safeFilename    String?               // sanitized basename
+  extension       String?
+  mimeType        String?
+  bytes           Int?
+  width           Int?
+  height          Int?
+  dimensions      String?               // legacy display string e.g. "1920 × 1080"
+  checksum        String?               // sha256 hex of the original bytes
+  format          String?
+  // Reusable, asset-level metadata (§8A)
+  title           String?
+  seoTitle        String?
+  altText         String?
+  caption         String?
+  credit          String?               // photographer / credit line
+  copyrightHolder String?
+  licenseType     MediaLicenseType      @default(UNCONFIRMED)
+  licenseSourceUrl String?
+  usageRestrictions String?
+  sourceAttribution String?
+  rightsStatus    ImageRightsStatus     @default(UNRESOLVED) // kept for legacy compatibility
+  rightsConfirmed Boolean               @default(false)
+  rightsConfirmedById String?
+  rightsConfirmedAt DateTime?
+  // Lifecycle (§13)
+  processingStatus MediaProcessingStatus @default(READY)
+  visibility      MediaVisibility       @default(PUBLIC)
+  derivatives     Json?                 // { thumb:{key,w,h}, md:{...}, lg:{...} }
+  // Ownership / audit
+  uploadedById    String?
+  uploadedBy      User?                 @relation("MediaUploader", fields: [uploadedById], references: [id], onDelete: SetNull)
+  uploadedAt      DateTime              @default(now())
+  updatedAt       DateTime              @default(now()) @updatedAt
+  // Relationships (reusable across entities — no binary duplication, §10)
+  articles        ArticleMedia[]
+  hubs            RodeoHubMedia[]
+  events          RodeoEventMedia[]
+  editions        RodeoEventEditionMedia[]
+  disciplines     DisciplineMedia[]
+  venues          VenueMedia[]
+
+  @@index([visibility, processingStatus])
+  @@index([uploadedById])
+  @@index([checksum])
+}
+
+// Rodeo entity ↔ media junctions. `role` keeps the recurring-event vs. edition
+// distinction (events and editions are separate tables), 'hero' | 'gallery'.
+model RodeoHubMedia {
+  hubId     String
+  mediaId   String
+  hub       RodeoHub   @relation(fields: [hubId], references: [id], onDelete: Cascade)
+  media     MediaAsset @relation(fields: [mediaId], references: [id], onDelete: Cascade)
+  role      String     @default("gallery")
+  sortOrder Int        @default(0)
+  @@id([hubId, mediaId])
+  @@index([mediaId])
+}
+
+model RodeoEventMedia {
+  eventId   String
+  mediaId   String
+  event     RodeoEvent @relation(fields: [eventId], references: [id], onDelete: Cascade)
+  media     MediaAsset @relation(fields: [mediaId], references: [id], onDelete: Cascade)
+  role      String     @default("gallery")
+  sortOrder Int        @default(0)
+  @@id([eventId, mediaId])
+  @@index([mediaId])
+}
+
+model RodeoEventEditionMedia {
+  editionId String
+  mediaId   String
+  edition   RodeoEventEdition @relation(fields: [editionId], references: [id], onDelete: Cascade)
+  media     MediaAsset        @relation(fields: [mediaId], references: [id], onDelete: Cascade)
+  role      String            @default("gallery")
+  sortOrder Int               @default(0)
+  @@id([editionId, mediaId])
+  @@index([mediaId])
+}
+
+model DisciplineMedia {
+  disciplineId String
+  mediaId      String
+  discipline   Discipline @relation(fields: [disciplineId], references: [id], onDelete: Cascade)
+  media        MediaAsset @relation(fields: [mediaId], references: [id], onDelete: Cascade)
+  role         String     @default("gallery")
+  sortOrder    Int        @default(0)
+  @@id([disciplineId, mediaId])
+  @@index([mediaId])
+}
+
+model VenueMedia {
+  venueId   String
+  mediaId   String
+  venue     Venue      @relation(fields: [venueId], references: [id], onDelete: Cascade)
+  media     MediaAsset @relation(fields: [mediaId], references: [id], onDelete: Cascade)
+  role      String     @default("gallery")
+  sortOrder Int        @default(0)
+  @@id([venueId, mediaId])
+  @@index([mediaId])
 }
 
 model ArticleMedia {
@@ -340,6 +460,7 @@ model Discipline {
   sortOrder   Int                 @default(0)
   articles    ArticleDiscipline[]
   events      EventDiscipline[]
+  media       DisciplineMedia[]
 }
 
 model RodeoHub {
@@ -352,6 +473,7 @@ model RodeoHub {
   annualEventsCount Int    @default(0)
   sortOrder   Int          @default(0)
   articles    ArticleHub[]
+  media       RodeoHubMedia[]
 }
 
 /// Stable recurring event identity, independent of any hub (Master Reqs §2.1).
@@ -368,6 +490,7 @@ model RodeoEvent {
   isFlagship   Boolean              @default(false)
   editions     RodeoEventEdition[]
   articles     ArticleEvent[]
+  media        RodeoEventMedia[]
 }
 
 /// Specific occurrence/year. Unique per (eventId, editionSlug) — Master Reqs §7.2.
@@ -385,6 +508,7 @@ model RodeoEventEdition {
   venueId     String?
   venue       Venue?           @relation(fields: [venueId], references: [id])
   articles    ArticleEdition[]
+  media       RodeoEventEditionMedia[]
 
   @@unique([eventId, editionSlug])
 }
@@ -397,6 +521,7 @@ model Venue {
   state    String?
   country  String?
   editions RodeoEventEdition[]
+  media    VenueMedia[]
 }
 
 model EventDiscipline {
@@ -517,6 +642,7 @@ model User {
   createdArticles Article[]        @relation("ArticleCreatedBy")
   revisions      ArticleRevision[]
   workflowEvents EditorialWorkflowHistory[]
+  uploadedMedia  MediaAsset[]      @relation("MediaUploader")
 }
 
 /// Server-side session (opaque token stored as a SHA-256 hash; validated and
