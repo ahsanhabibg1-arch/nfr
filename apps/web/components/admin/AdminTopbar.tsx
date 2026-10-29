@@ -132,7 +132,9 @@ export const AdminTopbar: React.FC<AdminTopbarProps> = ({
                 View Public Site &rarr;
               </Link>
               <div className="border-t border-stone-100 mt-1 pt-1">
-                <form action={logoutAction}>
+                {/* stopPropagation: the parent closes the menu on any click, which
+                    would unmount this form before its logout action dispatches. */}
+                <form action={logoutAction} onClick={(e) => e.stopPropagation()}>
                   <button
                     type="submit"
                     className="w-full text-left px-4 py-2 text-rose-600 hover:bg-rose-50 font-medium"
