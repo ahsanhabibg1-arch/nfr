@@ -64,3 +64,18 @@ Requirements §5.1/§6/§10 and the approved `PERMISSION_MATRIX` (Team module).
 Any transition not in this table is rejected (`invalid_transition`). Going to Published
 additionally runs the Category A/B publication gate (`validateArticle`); failures return
 `validation` and the article stays unpublished.
+# Batch 05 media permissions (provisional; owner confirmation pending)
+
+| Permission | Super Admin | Administrator | Editor | Author | SEO Manager |
+|---|:---:|:---:|:---:|:---:|:---:|
+| `media.view` | Yes | Yes | Yes | Yes | Yes |
+| `media.upload` | Yes | Yes | Yes | Yes | No |
+| `media.edit.own` | Yes | Yes | Yes | Yes | No |
+| `media.edit.any` | Yes | Yes | Yes | No | Yes |
+| `media.delete` | Yes | Yes | No | No | No |
+| `media.assign` | Yes | Yes | Yes | Yes | No |
+
+All checks run server-side. `media.assign` does not replace the target domain's
+permission: rodeo assignment also requires `rodeo.manage`, and article ownership/
+workflow rules continue to apply. This mapping is implemented for local testing
+but must be confirmed or changed before production deployment.

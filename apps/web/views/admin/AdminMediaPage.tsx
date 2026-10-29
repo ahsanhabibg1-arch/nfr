@@ -8,7 +8,7 @@ import {
   updateMediaMetadataAction, confirmRightsAction, setVisibilityAction, deleteMediaAction,
 } from '../../app/admin/media-actions';
 
-interface Filters { q?: string; type?: string; visibility?: string; usage?: 'used' | 'unused'; page?: number }
+interface Filters { q?: string; type?: string; visibility?: string; usage?: 'used' | 'unused'; uploadedWithin?: '7d' | '30d' | '365d'; page?: number }
 interface Props { result: MediaListResult; filters: Filters; viewerId: string; canUpload: boolean; canDelete: boolean; canEditAny: boolean }
 
 const LICENSE = ['UNCONFIRMED', 'OWNED', 'LICENSED', 'PERMISSION_GRANTED', 'PUBLIC_DOMAIN', 'OTHER'] as const;
@@ -16,7 +16,7 @@ const inp = 'w-full p-2 bg-stone-50 border border-stone-200 rounded-xs text-xs';
 const lbl = 'block text-[10px] font-mono uppercase text-stone-500 mb-1';
 const fmtBytes = (b: number | null) => (b == null ? '—' : b < 1024 * 1024 ? `${Math.round(b / 1024)} KB` : `${(b / 1048576).toFixed(1)} MB`);
 
-export const AdminMediaPage: React.FC<Props> = ({ result, filters, canUpload, canDelete, canEditAny }) => {
+export const AdminMediaPage: React.FC<Props> = ({ result, filters, viewerId, canUpload, canDelete, canEditAny }) => {
   const router = useRouter();
   const [pending, startTransition] = useTransition();
   const [view, setView] = useState<'grid' | 'list'>('grid');
@@ -32,6 +32,7 @@ export const AdminMediaPage: React.FC<Props> = ({ result, filters, canUpload, ca
     if (merged.type) p.set('type', merged.type);
     if (merged.visibility) p.set('visibility', merged.visibility);
     if (merged.usage) p.set('usage', merged.usage);
+    if (merged.uploadedWithin) p.set('uploadedWithin', merged.uploadedWithin);
     if (merged.page && merged.page > 1) p.set('page', String(merged.page));
     router.push(`/admin/media/?${p.toString()}`);
   };
@@ -42,7 +43,7 @@ export const AdminMediaPage: React.FC<Props> = ({ result, filters, canUpload, ca
   function uploadOne(file: File, idx: number): Promise<void> {
     return new Promise((resolve) => {
       const xhr = new XMLHttpRequest();
-      xhr.open('POST', '/api/admin/media/upload');
+      xhr.open('POST', '/api/admin/media/upload/');
       xhr.upload.onprogress = (e) => { if (e.lengthComputable) setUploads((u) => u.map((x, i) => (i === idx ? { ...x, pct: Math.round((e.loaded / e.total) * 100) } : x))); };
       xhr.onload = () => {
         let r: { ok?: boolean; error?: string } = {};
@@ -77,7 +78,7 @@ export const AdminMediaPage: React.FC<Props> = ({ result, filters, canUpload, ca
     });
     setLicense(selected.licenseType);
   }
-  const canEditSel = canEditAny; // owner-edit also allowed server-side; UI shows controls, server re-checks
+  const canEditSel = canEditAny || selected?.uploadedById === viewerId;
   const run = (p: Promise<{ ok: boolean; error?: string }>, ok: string) =>
     startTransition(async () => { const r = await p; flash(r.ok ? ok : r.error || 'Error'); if (r.ok) router.refresh(); });
 
@@ -126,6 +127,9 @@ export const AdminMediaPage: React.FC<Props> = ({ result, filters, canUpload, ca
         </select>
         <select value={filters.usage ?? ''} onChange={(e) => navigate({ usage: (e.target.value || undefined) as Filters['usage'], page: 1 })} className="text-xs p-2 bg-white border border-stone-200 rounded-xs">
           <option value="">Any usage</option><option value="used">In use</option><option value="unused">Unused</option>
+        </select>
+        <select value={filters.uploadedWithin ?? ''} onChange={(e) => navigate({ uploadedWithin: (e.target.value || undefined) as Filters['uploadedWithin'], page: 1 })} className="text-xs p-2 bg-white border border-stone-200 rounded-xs">
+          <option value="">Any upload date</option><option value="7d">Last 7 days</option><option value="30d">Last 30 days</option><option value="365d">Last year</option>
         </select>
         <span className="text-[11px] text-stone-500 ml-auto">{result.total} asset(s)</span>
       </form>

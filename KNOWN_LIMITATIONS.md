@@ -184,3 +184,18 @@ addressed in `apps/web`:
   the dev server by design — in production, ISR invalidation on publish/unpublish
   is carried by the Server Actions' `revalidatePath()` (code-verified); see
   BATCH04_TEST_REPORT §3.
+## Phase 1 / Batch 05 — media limitations
+
+- The local filesystem adapter is verified for development/test only. It is not
+  multi-instance production storage. Cloudflare R2 is recommended but no cloud
+  resource, CDN, credential or production delivery path has been configured.
+- The optional S3-compatible adapter requires `@aws-sdk/client-s3` when activated;
+  local development does not install or require it.
+- JPEG, PNG and WebP are accepted. SVG is intentionally rejected until an owner-
+  approved sanitization policy exists.
+- Responsive derivatives are generated, but the current public renderer uses the
+  stable original URL rather than selecting `md/lg` through `srcset`.
+- Rodeo media assignment is implemented in authorized services/actions and tested;
+  a dedicated entity-side gallery picker is not part of the preserved Batch 04 UI.
+- Media RBAC is a tested provisional mapping pending owner confirmation before
+  production. No production deployment has been performed.

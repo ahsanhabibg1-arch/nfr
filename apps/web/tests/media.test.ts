@@ -134,6 +134,9 @@ suite('Batch 05 — media / DAM integration', () => {
   it('validation: declared MIME that contradicts the real signature is rejected', async () => {
     await expect(media.uploadMedia(actors.editor, { buffer: await png(), originalName: 'liar.png', declaredMime: 'image/jpeg' })).rejects.toMatchObject({ code: 'validation' });
   });
+  it('validation: executable/mismatched filename extensions are rejected', async () => {
+    await expect(media.uploadMedia(actors.editor, { buffer: await jpg(), originalName: '../payload.exe', declaredMime: 'image/jpeg' })).rejects.toMatchObject({ code: 'validation' });
+  });
 
   // ---- Duplicate handling ----
   it('dedup: identical bytes reuse the existing asset instead of re-storing', async () => {
@@ -165,6 +168,12 @@ suite('Batch 05 — media / DAM integration', () => {
     expect(row.licenseType).toBe('OWNED');
     expect(row.rightsConfirmedById).toBe(actors.editor.id);
   });
+  it('rights: an unconfirmed managed asset cannot be made PUBLIC', async () => {
+    const r = track(await media.uploadMedia(actors.editor, { buffer: await png(), originalName: 'private.png' }));
+    await expect(media.setVisibility(actors.editor, r.id, 'PUBLIC')).rejects.toMatchObject({ code: 'validation' });
+    await media.confirmRights(actors.editor, r.id, 'OWNED', true);
+    await expect(media.setVisibility(actors.editor, r.id, 'PUBLIC')).resolves.toBeUndefined();
+  });
 
   // ---- Search / pagination ----
   it('list: search + type filter + pagination shape', async () => {
@@ -189,6 +198,23 @@ suite('Batch 05 — media / DAM integration', () => {
     expect((await media.featuredImageRightsOk(art.id)).ok).toBe(true);
     const r3 = await article.transitionWorkflow(actors.admin as ArticleSvc.ActorContext, art.id, 'PUBLISHED', r2.version);
     expect(r3.becamePublic).toBe(true);
+  });
+
+  it('inline media: save tracks the DAM relationship and the publish gate covers it', async () => {
+    const img = track(await media.uploadMedia(actors.admin, { buffer: await jpg(), originalName: 'inline.jpg' }));
+    const row = await prisma.mediaAsset.findUniqueOrThrow({ where: { id: img.id } });
+    const input = articleInput({ blocks: [
+      { type: 'paragraph', text: 'Opening paragraph with enough words to pass the publication gate checks here.' },
+      { type: 'heading', level: 2, text: 'Section' },
+      { type: 'image', src: row.url, alt: 'Inline arena action', caption: 'Arena action.' },
+    ] });
+    const art = await article.saveArticle(actors.admin as ArticleSvc.ActorContext, input);
+    expect(await prisma.articleMedia.count({ where: { articleId: art.id, mediaId: img.id, usageKey: { startsWith: 'inline-' } } })).toBe(1);
+    const r1 = await article.transitionWorkflow(actors.admin as ArticleSvc.ActorContext, art.id, 'IN_REVIEW', art.version);
+    const r2 = await article.transitionWorkflow(actors.admin as ArticleSvc.ActorContext, art.id, 'APPROVED', r1.version);
+    await expect(article.transitionWorkflow(actors.admin as ArticleSvc.ActorContext, art.id, 'PUBLISHED', r2.version)).rejects.toMatchObject({ code: 'validation' });
+    await media.confirmRights(actors.admin, img.id, 'OWNED', true);
+    await expect(article.transitionWorkflow(actors.admin as ArticleSvc.ActorContext, art.id, 'PUBLISHED', r2.version)).resolves.toMatchObject({ becamePublic: true });
   });
 
   // ---- Reference-safe deletion ----

@@ -1,8 +1,9 @@
 'use client';
 
-import React, { useState } from 'react';
-import { MEDIA_ASSETS } from '../../../data/mockAdminData';
+import React, { useEffect, useRef, useState } from 'react';
 import { AdminModal } from '../AdminModal';
+import { listMediaForPickerAction } from '../../../app/admin/media-actions';
+import type { MediaRow } from '../../../lib/cms/mediaService';
 
 export interface SelectedMediaData {
   url: string;
@@ -19,178 +20,125 @@ interface MediaPickerModalProps {
   onSelect: (media: SelectedMediaData) => void;
 }
 
-export const MediaPickerModal: React.FC<MediaPickerModalProps> = ({
-  isOpen,
-  onClose,
-  onSelect,
-}) => {
-  const [selectedAssetId, setSelectedAssetId] = useState<string>(MEDIA_ASSETS[0].id);
-  const [customUrl, setCustomUrl] = useState('');
+// Map the asset's confirmed license to the article's image-rights field. An asset
+// with UNCONFIRMED rights maps to 'Unresolved' so the existing publication gate
+// (and the Batch 05 media rights gate) both correctly block publishing.
+function toRights(row: MediaRow): SelectedMediaData['rightsStatus'] {
+  if (!row.rightsConfirmed && row.storageProvider !== 'legacy-local') return 'Unresolved';
+  switch (row.licenseType) {
+    case 'OWNED': return 'Staff Photo';
+    case 'LICENSED': return 'Licensed Creative';
+    case 'PERMISSION_GRANTED': return 'Editorial Pool';
+    default: return 'Licensed Creative';
+  }
+}
+
+export const MediaPickerModal: React.FC<MediaPickerModalProps> = ({ isOpen, onClose, onSelect }) => {
+  const [assets, setAssets] = useState<MediaRow[]>([]);
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [search, setSearch] = useState('');
+  const [selectedId, setSelectedId] = useState<string | null>(null);
   const [useCustom, setUseCustom] = useState(false);
+  const [customUrl, setCustomUrl] = useState('');
+  const [uploading, setUploading] = useState(false);
+  const fileRef = useRef<HTMLInputElement>(null);
+
+  const load = async (q: string) => {
+    setLoading(true); setError(null);
+    const r = await listMediaForPickerAction(q);
+    if (r.ok) { setAssets(r.rows); setSelectedId((currentId) => r.rows.some((row) => row.id === currentId) ? currentId : (r.rows[0]?.id ?? null)); }
+    else setError(r.error);
+    setLoading(false);
+  };
+  useEffect(() => { if (isOpen) load(''); /* eslint-disable-next-line react-hooks/exhaustive-deps */ }, [isOpen]);
 
   if (!isOpen) return null;
+  const current = assets.find((a) => a.id === selectedId) || null;
 
-  const currentAsset = MEDIA_ASSETS.find((m) => m.id === selectedAssetId) || MEDIA_ASSETS[0];
+  const onUpload = async (files: FileList) => {
+    setUploading(true); setError(null);
+    for (const f of Array.from(files)) {
+      const fd = new FormData(); fd.append('file', f);
+      const res = await fetch('/api/admin/media/upload/', { method: 'POST', body: fd });
+      const j = await res.json().catch(() => ({ ok: false, error: 'Upload failed' }));
+      if (!j.ok) { setError(j.error || 'Upload failed'); break; }
+    }
+    setUploading(false);
+    await load(search);
+  };
 
-  const handleApply = () => {
+  const apply = () => {
     if (useCustom && customUrl.trim()) {
+      onSelect({ url: customUrl.trim(), seoTitle: 'Editorial Image', altText: '', caption: '', credit: '', rightsStatus: 'Unresolved' });
+    } else if (current) {
       onSelect({
-        url: customUrl.trim(),
-        seoTitle: 'Editorial Rodeo Photography',
-        altText: 'Editorial action photograph illustrating championship rodeo competition',
-        caption: 'Action capture during live arena competition.',
-        credit: 'Editorial Media Pool / NFRGuide',
-        rightsStatus: 'Licensed Creative',
-      });
-    } else {
-      onSelect({
-        url: currentAsset.url,
-        seoTitle: currentAsset.seoTitle,
-        altText: currentAsset.altText,
-        caption: currentAsset.altText,
-        credit: currentAsset.credit,
-        rightsStatus: currentAsset.rightsStatus,
+        url: current.url, seoTitle: current.seoTitle || current.title || '', altText: current.altText || '',
+        caption: current.caption || '', credit: current.credit || '', rightsStatus: toRights(current),
       });
     }
     onClose();
   };
 
   return (
-    <AdminModal
-      isOpen={isOpen}
-      title="Select Featured Editorial Media & Verify Rights"
-      onClose={onClose}
-      className="max-w-4xl"
-    >
+    <AdminModal isOpen title="Select Featured Editorial Media & Verify Rights" onClose={onClose} className="max-w-4xl"
+      footerActions={<div className="flex gap-2"><button onClick={onClose} className="px-3 py-1.5 border border-stone-300 rounded-xs text-xs">Cancel</button><button onClick={apply} disabled={!useCustom && !current} className="px-3.5 py-1.5 bg-[#0F1115] text-[#D4A757] text-xs font-semibold rounded-xs disabled:opacity-50">Use this image</button></div>}>
       <div className="space-y-4 font-sans text-xs">
         <div className="p-3 bg-stone-50 border border-stone-200 rounded-xs text-stone-600">
-          Select an asset from the verified newsroom media library. Only assets with confirmed usage rights (Staff Photo, Editorial Pool, PRCA Archive, Licensed Creative) satisfy publication safety gates.
+          Pick an asset from the database-backed library. Assets with <strong>unconfirmed usage rights</strong> cannot be published — confirm their license in the Media Library first. Article-specific ALT text remains editable on the article and is not overwritten globally.
+        </div>
+        {error && <div className="p-2 bg-rose-50 border border-rose-200 text-rose-700 rounded-xs">{error}</div>}
+
+        <div className="flex items-center gap-2">
+          <input value={search} onChange={(e) => setSearch(e.target.value)} onKeyDown={(e) => { if (e.key === 'Enter') load(search); }} placeholder="Search library…" className="flex-1 px-3 py-2 text-xs border border-stone-300 rounded-xs" />
+          <button onClick={() => load(search)} className="px-3 py-2 border border-stone-300 rounded-xs">Search</button>
+          <button onClick={() => fileRef.current?.click()} disabled={uploading} className="px-3 py-2 bg-[#0F1115] text-[#D4A757] rounded-xs font-semibold disabled:opacity-50">{uploading ? 'Uploading…' : '+ Upload'}</button>
+          <input ref={fileRef} type="file" accept="image/jpeg,image/png,image/webp" multiple hidden onChange={(e) => e.target.files && onUpload(e.target.files)} />
         </div>
 
-        {/* Custom URL Toggle */}
-        <div className="flex items-center gap-3 pb-2 border-b border-stone-200">
-          <label className="flex items-center gap-2 cursor-pointer text-stone-800 font-medium">
-            <input
-              type="checkbox"
-              checked={useCustom}
-              onChange={(e) => setUseCustom(e.target.checked)}
-              className="rounded-xs text-[#D4A757]"
-            />
-            <span>Provide Custom Image URL</span>
-          </label>
-        </div>
+        <label className="flex items-center gap-2 cursor-pointer text-stone-800 font-medium pb-2 border-b border-stone-200">
+          <input type="checkbox" checked={useCustom} onChange={(e) => setUseCustom(e.target.checked)} /> Provide a custom image URL instead
+        </label>
 
         {useCustom ? (
           <div className="space-y-2 p-4 bg-stone-50 border border-stone-200 rounded-xs">
-            <label className="block text-xs font-mono uppercase text-stone-500 font-medium">
-              Image Web URL
-            </label>
-            <input
-              type="text"
-              placeholder="https://... / image URL"
-              value={customUrl}
-              onChange={(e) => setCustomUrl(e.target.value)}
-              className="w-full px-3 py-2 text-xs border border-stone-300 rounded-xs bg-white text-stone-900 focus:outline-none focus:border-[#D4A757]"
-            />
-            {customUrl && (
-              <img
-                src={customUrl}
-                alt="Custom preview"
-                className="w-full max-h-48 object-cover rounded-xs border border-stone-300 mt-2"
-              />
-            )}
+            <label className="block text-xs font-mono uppercase text-stone-500">Image URL</label>
+            <input type="text" placeholder="https://…" value={customUrl} onChange={(e) => setCustomUrl(e.target.value)} className="w-full px-3 py-2 text-xs border border-stone-300 rounded-xs" />
+            {/* eslint-disable-next-line @next/next/no-img-element */}
+            {customUrl && <img src={customUrl} alt="preview" className="w-full max-h-48 object-cover rounded-xs border border-stone-300 mt-2" />}
           </div>
         ) : (
           <div className="grid grid-cols-1 md:grid-cols-12 gap-4">
-            {/* Asset Grid */}
             <div className="md:col-span-7 grid grid-cols-2 gap-3 max-h-80 overflow-y-auto p-1">
-              {MEDIA_ASSETS.map((asset) => {
-                const isSelected = asset.id === selectedAssetId;
-                return (
-                  <div
-                    key={asset.id}
-                    onClick={() => setSelectedAssetId(asset.id)}
-                    className={`cursor-pointer border-2 rounded-xs overflow-hidden transition-all relative ${
-                      isSelected ? 'border-[#D4A757] shadow-md ring-2 ring-[#D4A757]/30' : 'border-stone-200 hover:border-stone-400'
-                    }`}
-                  >
-                    <div className="aspect-16/10 bg-stone-900 overflow-hidden relative">
-                      <img
-                        src={asset.url}
-                        alt={asset.altText}
-                        className="w-full h-full object-cover"
-                      />
-                      <span className="absolute bottom-1 right-1 text-[9px] font-mono px-1 py-0.2 bg-black/70 text-white rounded-xs">
-                        {asset.dimensions}
-                      </span>
-                    </div>
-                    <div className="p-2 bg-white">
-                      <span className="font-semibold text-stone-900 block truncate text-[11px]">
-                        {asset.seoTitle}
-                      </span>
-                      <span className="text-[10px] text-stone-400 font-mono block">
-                        {asset.rightsStatus}
-                      </span>
-                    </div>
+              {loading && <div className="col-span-2 text-center text-stone-400 py-8">Loading…</div>}
+              {!loading && assets.length === 0 && <div className="col-span-2 text-center text-stone-400 py-8">No assets. Upload one above.</div>}
+              {assets.map((a) => (
+                <div key={a.id} onClick={() => setSelectedId(a.id)} className={`cursor-pointer border-2 rounded-xs overflow-hidden relative ${selectedId === a.id ? 'border-[#D4A757] ring-2 ring-[#D4A757]/30' : 'border-stone-200 hover:border-stone-400'}`}>
+                  <div className="aspect-[16/10] bg-stone-900 overflow-hidden relative">
+                    {/* eslint-disable-next-line @next/next/no-img-element */}
+                    <img src={a.thumbUrl} alt={a.altText ?? a.filename} className="w-full h-full object-cover" loading="lazy" />
+                    {!a.rightsConfirmed && a.storageProvider !== 'legacy-local' && <span className="absolute top-1 left-1 text-[9px] font-mono px-1 bg-rose-600 text-white rounded">RIGHTS?</span>}
                   </div>
-                );
-              })}
+                  <div className="p-2 bg-white"><span className="font-semibold text-stone-900 block truncate text-[11px]">{a.title || a.filename}</span></div>
+                </div>
+              ))}
             </div>
-
-            {/* Inspector for selected asset */}
-            <div className="md:col-span-5 p-3 bg-stone-50 border border-stone-200 rounded-xs space-y-3">
-              <span className="text-xs font-mono uppercase text-stone-500 font-semibold block border-b border-stone-200 pb-1">
-                Asset Metadata Inspector
-              </span>
-
-              <img
-                src={currentAsset.url}
-                alt={currentAsset.altText}
-                className="w-full aspect-16/10 object-cover rounded-xs border border-stone-300"
-              />
-
-              <div className="space-y-1.5 text-xs">
-                <div>
-                  <span className="text-[10px] font-mono uppercase text-stone-400 block">SEO Title:</span>
-                  <span className="font-semibold text-stone-800">{currentAsset.seoTitle}</span>
+            <div className="md:col-span-5">
+              {current ? (
+                <div className="space-y-2">
+                  {/* eslint-disable-next-line @next/next/no-img-element */}
+                  <img src={current.thumbUrl} alt={current.altText ?? current.filename} className="w-full rounded-xs border border-stone-200" />
+                  <p className="text-[11px] text-stone-600"><strong>{current.title || current.filename}</strong></p>
+                  <p className="text-[11px] text-stone-500">{current.width}×{current.height} · {current.licenseType.replace('_', ' ')} · {current.rightsConfirmed ? 'rights confirmed' : 'rights unconfirmed'}</p>
+                  {current.credit && <p className="text-[11px] text-stone-500">Credit: {current.credit}</p>}
                 </div>
-                <div>
-                  <span className="text-[10px] font-mono uppercase text-stone-400 block">ALT Context:</span>
-                  <span className="text-stone-600 line-clamp-2">{currentAsset.altText}</span>
-                </div>
-                <div>
-                  <span className="text-[10px] font-mono uppercase text-stone-400 block">Photographer Credit:</span>
-                  <span className="text-stone-800 font-mono text-[11px]">{currentAsset.credit}</span>
-                </div>
-                <div className="pt-1">
-                  <span className="text-[10px] font-mono uppercase text-stone-400 block">Usage Rights:</span>
-                  <span className="inline-block px-2 py-0.5 bg-emerald-100 text-emerald-800 font-mono text-[10px] font-bold rounded-xs">
-                    {currentAsset.rightsStatus}
-                  </span>
-                </div>
-              </div>
+              ) : <div className="text-stone-400 text-center py-8">Select an asset</div>}
             </div>
           </div>
         )}
-
-        {/* Modal Actions */}
-        <div className="flex justify-end gap-2 pt-4 border-t border-stone-200">
-          <button
-            type="button"
-            onClick={onClose}
-            className="px-4 py-2 text-xs font-medium text-stone-600 hover:text-stone-900"
-          >
-            Cancel
-          </button>
-          <button
-            type="button"
-            onClick={handleApply}
-            className="px-4 py-2 text-xs font-semibold text-white bg-[#0F1115] hover:bg-stone-800 rounded-xs transition-colors"
-          >
-            Select &amp; Apply Featured Image
-          </button>
-        </div>
       </div>
     </AdminModal>
   );
 };
+
+export default MediaPickerModal;

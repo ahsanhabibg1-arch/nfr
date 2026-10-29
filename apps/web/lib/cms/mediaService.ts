@@ -34,7 +34,7 @@ export interface MediaRow {
   width: number | null; height: number | null; bytes: number | null;
   mimeType: string | null; visibility: MediaVisibility; processingStatus: string;
   licenseType: MediaLicenseType; rightsConfirmed: boolean; credit: string | null;
-  storageProvider: string; uploadedAt: string; usageCount: number;
+  storageProvider: string; uploadedAt: string; uploadedById: string | null; usageCount: number;
 }
 
 function thumbUrl(provider: string, url: string, derivatives: unknown): string {
@@ -93,26 +93,37 @@ export async function uploadMedia(actor: Actor, input: UploadInput): Promise<Upl
     throw new ServiceError('storage', 'Upload failed while saving the file.');
   }
 
-  const row = await prisma.mediaAsset.create({
-    data: {
-      id, storageProvider: storage.provider, storageKey: originalKey, url: storage.publicUrl(originalKey),
-      filename: input.originalName.slice(0, 255), safeFilename: `${v.safeStem}.${v.type.ext}`, extension: v.type.ext,
-      mimeType: v.type.mime, bytes: v.bytes, width: processed.width, height: processed.height,
-      dimensions: `${processed.width} × ${processed.height}`, checksum, format: v.type.format,
-      licenseType: 'UNCONFIRMED', rightsStatus: 'UNRESOLVED', rightsConfirmed: false,
-      processingStatus: 'READY', visibility: 'DRAFT', derivatives: derivatives as Prisma.InputJsonValue,
-      uploadedById: actor.id,
-    },
-    select: { id: true },
-  });
-  await audit(actor.id, 'media.upload', 'media', row.id, `${input.originalName} (${processed.width}x${processed.height})`);
-  return { id: row.id, duplicate: false };
+  try {
+    const row = await prisma.$transaction(async (tx) => {
+      const created = await tx.mediaAsset.create({
+        data: {
+          id, storageProvider: storage.provider, storageKey: originalKey, url: storage.publicUrl(originalKey),
+          filename: input.originalName.slice(0, 255), safeFilename: `${v.safeStem}.${v.type.ext}`, extension: v.type.ext,
+          mimeType: v.type.mime, bytes: v.bytes, width: processed.width, height: processed.height,
+          dimensions: `${processed.width} × ${processed.height}`, checksum, format: v.type.format,
+          licenseType: 'UNCONFIRMED', rightsStatus: 'UNRESOLVED', rightsConfirmed: false,
+          processingStatus: 'READY', visibility: 'DRAFT', derivatives: derivatives as Prisma.InputJsonValue,
+          uploadedById: actor.id,
+        },
+        select: { id: true },
+      });
+      await tx.auditLog.create({
+        data: { actorId: actor.id, action: 'media.upload', entityType: 'media', entityId: created.id, detail: `${input.originalName} (${processed.width}x${processed.height})` },
+      });
+      return created;
+    });
+    return { id: row.id, duplicate: false };
+  } catch {
+    // A database or audit failure must not leave untracked objects behind.
+    await Promise.all(stored.map((k) => storage.delete(k).catch(() => {})));
+    throw new ServiceError('storage', 'Upload could not be recorded; stored files were cleaned up.');
+  }
 }
 
 // ---------------------------------------------------------------- Read
 export interface MediaListParams {
   q?: string; type?: string; visibility?: string; usage?: 'used' | 'unused';
-  uploadedById?: string; page?: number; pageSize?: number;
+  uploadedById?: string; uploadedWithin?: '7d' | '30d' | '365d'; page?: number; pageSize?: number;
 }
 export interface MediaListResult { rows: MediaRow[]; total: number; page: number; pageSize: number; totalPages: number; }
 
@@ -130,7 +141,14 @@ export async function listMedia(actor: Actor, params: MediaListParams = {}): Pro
   if (params.type && ['jpg', 'png', 'webp'].includes(params.type)) where.extension = params.type;
   if (params.visibility && ['DRAFT', 'PUBLIC', 'ARCHIVED'].includes(params.visibility)) where.visibility = params.visibility as MediaVisibility;
   if (params.uploadedById) where.uploadedById = params.uploadedById;
-  if (params.usage === 'used') where.articles = { some: {} };
+  if (params.uploadedWithin) {
+    const days = params.uploadedWithin === '7d' ? 7 : params.uploadedWithin === '30d' ? 30 : 365;
+    where.uploadedAt = { gte: new Date(Date.now() - days * 86_400_000) };
+  }
+  if (params.usage === 'used') where.AND = [{ OR: [
+    { articles: { some: {} } }, { hubs: { some: {} } }, { events: { some: {} } },
+    { editions: { some: {} } }, { disciplines: { some: {} } }, { venues: { some: {} } },
+  ] }];
   if (params.usage === 'unused') where.AND = [{ articles: { none: {} } }, { hubs: { none: {} } }, { events: { none: {} } }, { editions: { none: {} } }, { disciplines: { none: {} } }, { venues: { none: {} } }];
 
   const [rows, total] = await Promise.all([
@@ -147,7 +165,7 @@ export async function listMedia(actor: Actor, params: MediaListParams = {}): Pro
       width: r.width, height: r.height, bytes: r.bytes, mimeType: r.mimeType,
       visibility: r.visibility, processingStatus: r.processingStatus, licenseType: r.licenseType,
       rightsConfirmed: r.rightsConfirmed, credit: r.credit, storageProvider: r.storageProvider,
-      uploadedAt: r.uploadedAt.toISOString(),
+      uploadedAt: r.uploadedAt.toISOString(), uploadedById: r.uploadedById,
       usageCount: r._count.articles + r._count.hubs + r._count.events + r._count.editions + r._count.disciplines + r._count.venues,
     })),
     total, page, pageSize, totalPages: Math.max(1, Math.ceil(total / pageSize)),
@@ -214,6 +232,13 @@ export async function confirmRights(actor: Actor, id: string, licenseType: Media
 
 export async function setVisibility(actor: Actor, id: string, visibility: MediaVisibility): Promise<void> {
   await requireEdit(actor, id);
+  if (visibility === 'PUBLIC') {
+    const asset = await prisma.mediaAsset.findUniqueOrThrow({ where: { id }, select: { rightsConfirmed: true, storageProvider: true, processingStatus: true } });
+    if (asset.processingStatus !== 'READY') throw new ServiceError('validation', 'Only fully processed media can be public.');
+    if (asset.storageProvider !== 'legacy-local' && !asset.rightsConfirmed) {
+      throw new ServiceError('validation', 'Confirm lawful usage rights before making this asset public.');
+    }
+  }
   await prisma.mediaAsset.update({ where: { id }, data: { visibility } });
   await audit(actor.id, 'media.visibility', 'media', id, visibility);
 }

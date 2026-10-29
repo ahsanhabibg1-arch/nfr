@@ -14,6 +14,12 @@ const nextConfig = {
   // (Deployment-level noindex is still required on non-production — see docs.)
   reactStrictMode: true,
 
+  // The media storage adapter loads the AWS SDK lazily only when a cloud
+  // provider (R2/S3) is selected. Treat it as an optional external package so
+  // the bundler does not try to resolve it at build time when it is not
+  // installed (the local foundation needs no cloud SDK). See STORAGE_PROVIDER_DECISION.md.
+  serverExternalPackages: ['@aws-sdk/client-s3'],
+
   async redirects() {
     // Server-level HTTP 308 permanent redirects replacing the Phase 0
     // client-side <Navigate> compatibility routes (ROUTES.md §1).

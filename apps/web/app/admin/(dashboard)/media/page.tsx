@@ -13,6 +13,7 @@ export default async function Page({ searchParams }: { searchParams: Promise<Rec
     type: str(sp.type),
     visibility: str(sp.visibility),
     usage: (str(sp.usage) as 'used' | 'unused' | undefined) ?? undefined,
+    uploadedWithin: (str(sp.uploadedWithin) as '7d' | '30d' | '365d' | undefined) ?? undefined,
     page: Number(str(sp.page)) || 1,
   };
   const result = await listMedia({ id: user.id, roles: user.roles }, filters);

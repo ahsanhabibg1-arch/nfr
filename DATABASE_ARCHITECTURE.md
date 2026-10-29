@@ -103,3 +103,12 @@ Master Requirements v2.0 §7, Batch 02 §4, and the Phase 0 TypeScript contracts
   `RolePermission` tables via `roleSync`.
 - All Batch 04 mutations write `AuditLog` rows via the shared `lib/cms/guard.ts`.
 - No existing tables altered; no data reset.
+# Batch 05 media schema addendum (2026-10-29)
+
+Migration `20261029200000_batch05_media` additively extends `MediaAsset` with
+storage identity, validated file facts, checksums, reusable editorial/licensing
+metadata, ownership, processing/visibility state and derivative JSON. It adds
+`RodeoHubMedia`, `RodeoEventMedia`, `RodeoEventEditionMedia`, `DisciplineMedia`
+and `VenueMedia`. Existing `ArticleMedia` stores featured/inline placements and
+contextual ALT/caption. PostgreSQL never stores binary image bodies. Legacy seed
+rows retain their IDs and URLs with `storageProvider=legacy-local`.

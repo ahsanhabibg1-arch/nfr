@@ -3,6 +3,7 @@ import { getActor } from '@/lib/cms/guard';
 import { roleHasPermission } from '@/lib/auth/rbac';
 import { uploadMedia } from '@/lib/cms/mediaService';
 import { ServiceError } from '@/lib/cms/articleService';
+import { DEFAULT_MAX_BYTES } from '@/lib/media/validation';
 
 // sharp + fs require the Node.js runtime (not edge).
 export const runtime = 'nodejs';
@@ -18,6 +19,14 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
   if (!actor) return NextResponse.json({ ok: false, error: 'You must be signed in.' }, { status: 401 });
   if (!roleHasPermission(actor.roles, 'media.upload')) {
     return NextResponse.json({ ok: false, error: 'You do not have permission to upload media.' }, { status: 403 });
+  }
+
+  const declaredLength = Number(req.headers.get('content-length') || 0);
+  // Multipart framing adds a small amount beyond the file itself. Reject grossly
+  // oversized requests before parsing them into memory; uploadMedia enforces the
+  // exact file limit after signature validation.
+  if (declaredLength > DEFAULT_MAX_BYTES + 1024 * 1024) {
+    return NextResponse.json({ ok: false, error: 'Upload exceeds the configured size limit.' }, { status: 413 });
   }
 
   let form: FormData;

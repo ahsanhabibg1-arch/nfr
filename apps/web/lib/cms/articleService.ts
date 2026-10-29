@@ -130,6 +130,50 @@ async function resolveAuthorId(tx: Prisma.TransactionClient, name: string, role:
   return id;
 }
 
+/**
+ * Batch 05: keep the ArticleMedia 'hero' link in sync with a DAM-managed hero
+ * image (matched by url). Non-DAM / legacy urls create no link. This makes the
+ * featured image a tracked relationship so the publish rights-gate and
+ * reference-safe deletion work, without changing the editor's save flow.
+ */
+async function reconcileHeroMedia(tx: Prisma.TransactionClient, articleId: string, heroUrl: string | null): Promise<void> {
+  const asset = heroUrl ? await tx.mediaAsset.findFirst({ where: { url: heroUrl }, select: { id: true } }) : null;
+  if (asset) {
+    await tx.articleMedia.upsert({
+      where: { articleId_usageKey: { articleId, usageKey: 'hero' } },
+      update: { mediaId: asset.id },
+      create: { articleId, usageKey: 'hero', mediaId: asset.id, sortOrder: 0 },
+    });
+  } else {
+    await tx.articleMedia.deleteMany({ where: { articleId, usageKey: 'hero' } });
+  }
+}
+
+/** Track DAM-backed inline image blocks without putting base64/blob data in JSON.
+ * The block keeps the delivery URL for the existing renderer; ArticleMedia is
+ * the authoritative reuse/lifecycle relationship and stores placement metadata. */
+async function reconcileInlineMedia(tx: Prisma.TransactionClient, articleId: string, blocks: unknown[]): Promise<void> {
+  type ImageBlock = { type?: unknown; src?: unknown; alt?: unknown; caption?: unknown };
+  const images = blocks
+    .map((block, index) => ({ block: block as ImageBlock, index }))
+    .filter(({ block }) => block.type === 'image' && typeof block.src === 'string' && block.src.length > 0);
+  const urls = images.map(({ block }) => String(block.src));
+  const assets = urls.length
+    ? await tx.mediaAsset.findMany({ where: { url: { in: urls } }, select: { id: true, url: true } })
+    : [];
+  const idByUrl = new Map(assets.map((asset) => [asset.url, asset.id]));
+  await tx.articleMedia.deleteMany({ where: { articleId, usageKey: { startsWith: 'inline-' } } });
+  const rows = images.flatMap(({ block, index }) => {
+    const mediaId = idByUrl.get(String(block.src));
+    return mediaId ? [{
+      articleId, mediaId, usageKey: `inline-${index}`, sortOrder: index,
+      altText: typeof block.alt === 'string' ? block.alt : null,
+      caption: typeof block.caption === 'string' ? block.caption : null,
+    }] : [];
+  });
+  if (rows.length) await tx.articleMedia.createMany({ data: rows });
+}
+
 async function writeChildren(
   tx: Prisma.TransactionClient,
   articleId: string,
@@ -271,6 +315,8 @@ export async function saveArticle(actor: ActorContext, rawInput: ArticleInput): 
     }
 
     await writeChildren(tx, articleId, v);
+    await reconcileHeroMedia(tx, articleId, v.heroImage || null);
+    await reconcileInlineMedia(tx, articleId, v.blocks);
     await addRevision(tx, articleId, actor, v.authorName, 'DRAFT', isCreate ? 'Created article' : 'Edited article content', { title: v.title, excerpt: v.excerpt, slug: v.slug });
     await tx.auditLog.create({
       data: { actorId: actor.id, action: isCreate ? 'article.create' : 'article.update', entityType: 'article', entityId: articleId, detail: v.slug },
@@ -343,14 +389,13 @@ export async function transitionWorkflow(
         compliance: report.compliance.map((c) => c.message),
       });
     }
-    // Batch 05 §11: a DAM-managed featured image must have confirmed usage rights
-    // before it can appear on a published page. Legacy assets are grandfathered.
-    const hero = await prisma.articleMedia.findUnique({
-      where: { articleId_usageKey: { articleId: id, usageKey: 'hero' } },
-      select: { media: { select: { rightsConfirmed: true, storageProvider: true } } },
+    // Every managed placement (featured and inline) needs confirmed rights before
+    // it can become publicly reachable. Legacy seeded assets are grandfathered.
+    const unconfirmed = await prisma.articleMedia.count({
+      where: { articleId: id, media: { storageProvider: { not: 'legacy-local' }, rightsConfirmed: false } },
     });
-    if (hero?.media && hero.media.storageProvider !== 'legacy-local' && !hero.media.rightsConfirmed) {
-      throw new ServiceError('validation', 'The featured image has unconfirmed usage rights. Confirm its license in the Media Library before publishing.', { media: 'rights_unconfirmed' });
+    if (unconfirmed > 0) {
+      throw new ServiceError('validation', 'One or more attached images have unconfirmed usage rights. Confirm their licenses in the Media Library before publishing.', { media: 'rights_unconfirmed' });
     }
   }
 
@@ -389,6 +434,16 @@ export async function transitionWorkflow(
     const after = await tx.article.findUniqueOrThrow({ where: { id }, select: { version: true } });
     return after.version;
   });
+
+  // Batch 05 §14: when an article goes live, make its attached DAM media
+  // publicly servable (rights were confirmed by the publish gate above). One-way
+  // — unpublishing does not retract media that other published articles may use.
+  if (willBePublic && !wasPublic) {
+    await prisma.mediaAsset.updateMany({
+      where: { visibility: { not: 'PUBLIC' }, storageProvider: { not: 'legacy-local' }, articles: { some: { articleId: id } } },
+      data: { visibility: 'PUBLIC' },
+    });
+  }
 
   return { id, slug: existing.slug, status: target, version: result, becamePublic: willBePublic && !wasPublic, becamePrivate: wasPublic && !willBePublic };
 }

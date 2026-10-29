@@ -14,7 +14,9 @@ export class LocalStorageAdapter implements StorageAdapter {
   private root: string;
 
   constructor(root?: string) {
-    this.root = path.resolve(root || process.env.MEDIA_LOCAL_ROOT || path.join(process.cwd(), 'var', 'media'));
+    // The root is intentionally runtime-configurable for isolated tests and
+    // self-hosting; do not make Turbopack trace the entire project from it.
+    this.root = path.resolve(/* turbopackIgnore: true */ root || process.env.MEDIA_LOCAL_ROOT || path.join(process.cwd(), 'var', 'media'));
   }
 
   private full(key: string): string {

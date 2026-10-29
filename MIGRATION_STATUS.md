@@ -176,3 +176,14 @@ re-run.
 pages) · `test:routes` **24/24** (prod) ✅ · admin-auth smoke **6/6** (prod) ✅ ·
 `test:cache` **10/10** (dev) ✅. No data deleted, no migrations reset. See
 [BATCH04_TEST_REPORT.md](BATCH04_TEST_REPORT.md).
+## Batch 05 — media/DAM migration
+
+| Migration | Development | Test |
+|---|:---:|:---:|
+| `20261029200000_batch05_media` | Applied | Applied |
+
+The migration is additive: it extends `MediaAsset` and adds five rodeo-media
+junctions. Existing asset IDs, `/assets/images/...` URLs and relationships are
+preserved; no remote file was downloaded and no database was reset. Verification:
+Prisma valid, 95/95 tests (18 media), production build, 24/24 routes, 6/6 admin,
+and 7/7 media HTTP checks.

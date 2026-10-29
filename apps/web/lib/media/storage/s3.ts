@@ -11,7 +11,9 @@ import { StorageAdapter, StoragePutResult, assertSafeKey } from './adapter';
  * This adapter is never exercised until a cloud provider is configured; it does
  * not claim production storage is operational on its own (see STORAGE_PROVIDER_DECISION.md).
  */
-const SDK_SPECIFIER = '@aws-sdk/client-s3';
+// Assembled at runtime so the bundler cannot statically resolve it — the AWS SDK
+// is an optional dependency, installed only when a cloud provider is activated.
+const SDK_SPECIFIER = ['@aws-sdk', 'client-s3'].join('/');
 
 interface S3Config {
   bucket: string;

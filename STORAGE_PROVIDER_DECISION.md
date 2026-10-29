@@ -19,7 +19,7 @@ relationships, lifecycle state and audit references only. Binaries live behind a
 
 | Provider | Egress cost | S3-compatible | CDN | Hosting-independent | Dev friction | Notes |
 |---|---|---|---|---|---|---|
-| **Cloudflare R2** | **$0** (no egress fees) | ✅ (S3 API) | ✅ built-in | ✅ | low | Cheap storage ($0.015/GB·mo); generous free tier; best fit for an image-heavy editorial site that serves lots of public bytes |
+| **Cloudflare R2** | no direct internet egress charge (verify current terms before purchase) | ✅ (S3 API) | ✅ | ✅ | low | Strong fit for an image-heavy editorial site; pricing and allowances must be re-checked at procurement time |
 | AWS S3 | $$ (egress adds up) | ✅ (native) | via CloudFront ($) | ✅ | low | Mature/ubiquitous, but public-image egress is the recurring cost; needs CloudFront for a CDN |
 | S3-compatible self-host (MinIO) | your bandwidth | ✅ | you build it | ✅ | medium | Full control, but ops + bandwidth burden |
 | Local filesystem | n/a | n/a | n/a | n/a (single node) | none | **Dev/test only** — not for multi-instance production |
@@ -80,8 +80,9 @@ interface StorageAdapter {
    "local only for now, decide later." We will **not** create cloud resources or
    require real credentials until approved; the S3-compatible adapter can be
    written and unit-tested against the interface regardless.
-2. **SVG uploads** — recommend **reject SVG** initially (active-content/XSS
-   risk); allow JPEG/PNG/WebP. Optionally allow sanitized SVG later.
+2. **SVG uploads** — the safe local foundation currently **rejects SVG**
+   (active-content/XSS risk) and permits JPEG/PNG/WebP. A sanitized SVG pipeline
+   can be separately approved later.
 3. **Media RBAC mapping** — see PHASE1_BATCH05_REPORT / the approval request.
 4. **Copyright publish-eligibility policy** — recommend requiring an explicit
    editorial "usage rights confirmed" flag before a newly uploaded asset is

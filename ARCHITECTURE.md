@@ -228,3 +228,12 @@ NOT shared, NOT server state, does not drive public SSR). See KNOWN_LIMITATIONS.
   URL-scheme validation on source/navigation URLs; five new RBAC permissions.
 - **HTTP cache test:** `npm run test:cache` verifies publish/unpublish visibility
   over HTTP (8 points). See BATCH04_TEST_REPORT.md and PHASE1_BATCH04_REPORT.md.
+# Phase 1 / Batch 05 — Media/DAM addendum (2026-10-29)
+
+The Next.js target now has a database-backed media domain. PostgreSQL contains
+asset metadata and reusable relationships; binaries are accessed through
+`StorageAdapter` (`local`, future `r2`/`s3`). Upload and delivery are Node route
+handlers, with signature validation and Sharp processing in server-only modules.
+The admin library and article picker call RBAC-protected services/actions. Public
+delivery authorizes by lifecycle/visibility before reading storage. See
+`MEDIA_LIBRARY_ARCHITECTURE.md` and `STORAGE_PROVIDER_DECISION.md`.

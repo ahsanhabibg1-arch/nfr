@@ -74,6 +74,12 @@ export function validateUpload(
   if (!type) {
     throw new MediaValidationError('unsupported_type', 'Unsupported file type. Allowed: JPEG, PNG, WebP. (SVG and other types are not permitted.)');
   }
+  const basename = (originalName || '').split(/[\\/]/).pop() || '';
+  const suppliedExt = basename.includes('.') ? basename.split('.').pop()!.toLowerCase() : '';
+  const allowedExts = type.ext === 'jpg' ? ['jpg', 'jpeg'] : [type.ext];
+  if (suppliedExt && !allowedExts.includes(suppliedExt)) {
+    throw new MediaValidationError('unsafe_extension', `Filename extension (.${suppliedExt}) does not match the detected ${type.format} image type.`);
+  }
   // If the browser declared a MIME, it must not contradict the real signature.
   if (declaredMime && declaredMime.startsWith('image/') && declaredMime !== type.mime) {
     // tolerate image/jpg vs image/jpeg

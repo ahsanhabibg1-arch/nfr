@@ -355,3 +355,11 @@ Existing seeded data preserved (no reset).
 - Referential rule: `RodeoEventEdition` is unique per `(eventId, editionSlug)` —
   the recurring-event vs. annual-edition split. Deletes are restrict-on-delete for
   entities referenced by articles/editions (service-enforced).
+# Phase 1 / Batch 05 media model addendum
+
+The implemented model is documented in `MEDIA_DATA_MODEL.md`. `MediaAsset` is
+the single asset record; `ArticleMedia` and five rodeo junctions reuse it without
+binary duplication. Asset metadata is global, while `ArticleMedia.altText` and
+`caption` are placement-specific. New uploads begin `DRAFT`, `READY`, and
+rights-unconfirmed. `checksum` is SHA-256 of original bytes; `derivatives` stores
+provider keys and dimensions, not blobs.

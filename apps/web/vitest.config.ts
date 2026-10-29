@@ -1,5 +1,11 @@
 import { defineConfig } from 'vitest/config';
 import { fileURLToPath } from 'node:url';
+import nextEnv from '@next/env';
+
+// Match Next's local env loading, then force integration tests onto the
+// disposable database. A test run must never mutate the development database.
+nextEnv.loadEnvConfig(process.cwd());
+if (process.env.TEST_DATABASE_URL) process.env.DATABASE_URL = process.env.TEST_DATABASE_URL;
 
 export default defineConfig({
   resolve: {
