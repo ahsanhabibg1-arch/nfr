@@ -38,14 +38,17 @@ Seed script: [apps/web/prisma/seed.ts](apps/web/prisma/seed.ts) (run via `npm ru
   discipline/hub only when the referenced entity exists in the seeded set, preserving
   referential integrity.
 
-## Execution status
+## Execution status — ✅ COMPLETE (verified 2026-10-29)
 
-> **PENDING LIVE DATABASE.** The seed compiles and type-checks, and the initial
-> migration SQL is generated and committed. Applying the migration and running the
-> seed require a `DATABASE_URL` that the agent was not permitted to guess. Run
-> `npm run db:setup` once credentials are provided (see DATABASE_SETUP.md). The seed
-> prints a per-table count summary on success.
+Applied to `nfrguide_dev` and `nfrguide_test` on local PostgreSQL 17 via
+`prisma migrate deploy` + `prisma db seed`. The seed ran twice on the test database
+with **identical counts**, confirming idempotency:
 
-Expected seed volume (from the Phase 0 catalog): 5 categories, 7 disciplines, 11
-published articles (+ their blocks/SEO/tags/sources), 3 rodeo hubs, 3 recurring
-events + editions, media assets, 12 SEO rules, 5 roles, 5 redirects.
+```
+Seed complete: { articles: 11, published: 11, disciplines: 7, categories: 5,
+                 authors: 4, blocks: 48, sources: 6, media: 4, redirects: 5 }
+```
+
+Plus (not in the printed summary): 12 SEO rules, 5 roles, sample permissions, and
+tags/relationships created defensively. The 11 DB integration tests pass against the
+seeded test database.

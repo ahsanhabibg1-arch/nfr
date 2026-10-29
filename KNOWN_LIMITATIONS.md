@@ -126,12 +126,11 @@ addressed in `apps/web`:
 
 > Added 2026-10-28.
 
-- **Live-DB verification pending credentials.** Schema, committed migration, seed,
-  repository, public integration, tests and docs are complete and pass all non-DB
-  checks (validate, generate, typecheck, 16 non-DB unit tests). `migrate deploy`,
-  `db seed`, `next build` (pre-renders DB content), the DB integration suite and
-  route smoke require a `DATABASE_URL` that was not provided (password guessing was
-  blocked by policy). Provide it and run `npm run db:setup` (see DATABASE_SETUP.md).
+- **Verified on local PostgreSQL 17 (2026-10-29).** Dedicated least-privilege roles
+  and `nfrguide_dev`/`nfrguide_test` databases were created; migrations applied, seed
+  idempotent, 27/27 vitest (incl. 11 DB integration), `next build` (28 routes) and
+  20/20 route smoke all pass. Credentials live only in git-ignored `apps/web/.env`.
+  Production connection pooling/deployment remain open (not needed locally).
 - **Admin CMS is still a client-only prototype.** It writes to browser
   `sessionStorage` only; **no database writes are activated** and there are no
   public create/update/delete endpoints. Database-backed public content and the

@@ -86,18 +86,18 @@ same function signatures.
 
 | # | Criterion | Status |
 |---|---|---|
-| 1 | PostgreSQL configured & reachable | ⏸ server running on :5432; `DATABASE_URL` not yet provided |
+| 1 | PostgreSQL configured & reachable | ✅ PostgreSQL 17.10; `nfrguide_dev`/`nfrguide_test` + least-privilege roles created |
 | 2 | Prisma schema valid | ✅ `prisma validate` |
-| 3 | Initial migrations apply | ⏸ migration SQL generated + committed; `migrate deploy` pending DB |
-| 4 | Seed idempotent | ✅ written (upsert + child reset); ⏸ execution pending DB |
-| 5 | Repositories work | ✅ compile/typecheck; ⏸ runtime pending DB |
-| 6 | All public article surfaces read DB | ✅ wired (home, sections, article, category, discipline, search, sitemap) |
-| 7 | Eligibility enforced server-side | ✅ `PUBLISHED` filter in-query |
+| 3 | Initial migrations apply | ✅ `migrate deploy` applied to dev + test |
+| 4 | Seed idempotent | ✅ two runs → identical counts (11/11/7/…) |
+| 5 | Repositories work | ✅ typecheck + runtime (27/27 vitest) |
+| 6 | All public article surfaces read DB | ✅ home, sections, article, category, discipline, search, sitemap |
+| 7 | Eligibility enforced server-side | ✅ `PUBLISHED` filter in-query (draft/scheduled/archived excluded, tested) |
 | 8 | Sitemap reflects published DB content | ✅ `app/sitemap.ts` async DB-backed |
-| 9 | Existing public UI functional | ✅ typecheck; ⏸ runtime build pending DB |
+| 9 | Existing public UI functional | ✅ `next build` 28 routes; route smoke 20/20 |
 | 10 | Admin prototype intact & separate | ✅ unchanged client `sessionStorage` prototype |
-| 11 | DB integration tests pass | ⏸ written; skip without DB; run when seeded DB configured |
-| 12 | TypeScript + production build pass | TS ✅; build ⏸ pending DB |
+| 11 | DB integration tests pass | ✅ 11/11 against `nfrguide_test` |
+| 12 | TypeScript + production build pass | ✅ both |
 | 13 | Documentation complete | ✅ |
 
 ## Commands

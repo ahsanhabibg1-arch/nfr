@@ -3,14 +3,14 @@
 
 **Date:** 2026-10-28 · **Branch:** `batch-01-nextjs-migration` · **App:** `apps/web`
 
-> **STATUS: PARTIALLY COMPLETE (code-complete; live-DB verification pending).**
-> All schema, migration, seed, repository, public integration, tests and docs are
-> written and pass every check that does not need a running database (schema
-> validate, client generate, TypeScript, non-DB unit tests). The steps that
-> require a live database — `migrate deploy`, `db seed`, `next build` (which
-> pre-renders DB content), the DB integration suite, and route smoke — are
-> **blocked on a `DATABASE_URL` the agent is not permitted to guess** (§M).
-> Per Batch 02 §17, these are reported as pending rather than verified.
+> **STATUS: COMPLETE — verified against a live PostgreSQL 17 database (2026-10-29).**
+> Dedicated least-privilege roles and the `nfrguide_dev` / `nfrguide_test`
+> databases were created (owner credentials provided by the user, stored only in
+> the git-ignored `apps/web/.env`). All Batch 02 completion criteria (§17) pass:
+> migrations applied, seed idempotent (11/11/7 on two runs), **27/27 vitest tests
+> pass (incl. 11 DB integration tests against the test DB)**, `next build` succeeds
+> (28 routes, 11 articles + 7 disciplines + 5 sections pre-rendered from Postgres),
+> and **20/20 route smoke checks pass** against the running DB-backed server.
 
 ---
 
@@ -19,9 +19,10 @@
 | Check | Result |
 |---|---|
 | Node.js / npm | v22.16.0 / 10.9.2 ✅ |
-| PostgreSQL server | **Running** (`postgres` PID listening on 127.0.0.1:5432) ✅ |
-| `psql` CLI / Docker daemon | not present / not running (neither required) |
-| Credentials | **not provided** — password guessing was correctly blocked by policy |
+| PostgreSQL server | **PostgreSQL 17.10** running (service `postgresql-x64-17`) on 127.0.0.1:5432 ✅ |
+| `psql` CLI | `C:\Program Files\PostgreSQL\17\bin\psql.exe` ✅ (Docker daemon not running, not required) |
+| Credentials | superuser password provided by the user; two least-privilege roles (`nfrguide_dev_user`, `nfrguide_test_user`) created with generated passwords stored only in git-ignored `apps/web/.env` ✅ |
+| Databases | `nfrguide_dev` + `nfrguide_test` created, each owned by its dedicated role; `public` schema granted to the owner ✅ |
 | Prisma | 6.19.3 CLI + client (pinned stable; `npm latest` had resolved a mismatched 8-rc / 7 pair, corrected) |
 | Git working tree | clean before this batch; on `batch-01-nextjs-migration` |
 
@@ -43,15 +44,17 @@ foundation (users, roles, permissions, audit log) with **no auth logic**.
 - Schema: [apps/web/prisma/schema.prisma](apps/web/prisma/schema.prisma) — `prisma validate` ✅, `prisma generate` ✅.
 - Initial migration: [apps/web/prisma/migrations/20261028000000_init/migration.sql](apps/web/prisma/migrations/20261028000000_init/migration.sql)
   — generated **offline** via `prisma migrate diff` (no DB needed), version-controlled,
-  639 lines. `migration_lock.toml` set to `postgresql`. Applied with `prisma migrate
-  deploy` (not `db push`). **Apply is pending a live DB.**
+  639 lines. `migration_lock.toml` set to `postgresql`. **Applied with `prisma migrate
+  deploy`** (not `db push`) to both `nfrguide_dev` and `nfrguide_test` ✅.
 
 ## D. Seed Data Results
 
 Idempotent seed ([apps/web/prisma/seed.ts](apps/web/prisma/seed.ts)) mapping the Phase 0
 demo data → relational rows; upsert-by-stable-key + child-row reset. Full mapping and
-integrity notes in [DATA_MIGRATION_REPORT.md](DATA_MIGRATION_REPORT.md). Compiles &
-type-checks. **Execution (`db seed`) pending a live DB.**
+integrity notes in [DATA_MIGRATION_REPORT.md](DATA_MIGRATION_REPORT.md). **Seeded both
+databases; idempotent** — two consecutive runs produced identical counts: 11 articles
+(11 published), 7 disciplines, 5 categories, 4 authors, 48 blocks, 6 sources, 4 media,
+5 redirects ✅.
 
 ## E. Repository Layer
 
@@ -107,11 +110,12 @@ disciplines 300s, articles 60s). No SEO scanning (out of scope).
 | Suite | Command | Result |
 |---|---|---|
 | TypeScript | `npm run typecheck` | ✅ exit 0 (full async integration + seed + mappers) |
-| Non-DB unit (6 suites) | `npx vitest run` | ✅ 16/16 passed |
-| DB integration (`tests/content.test.ts`, 11 tests) | `npx vitest run` | ⏸ **skipped** (no `DATABASE_URL`); self-runs when a seeded DB is configured |
 | Prisma schema | `prisma validate` / `generate` | ✅ |
-| `next build` | `npm run build` | ⏸ **pending DB** (SSG pre-renders DB content) |
-| Route smoke | `npm run test:routes` | ⏸ **pending DB** (needs running server + DB) |
+| Migrations | `prisma migrate deploy` (dev + test) | ✅ applied |
+| Seed idempotency | `prisma db seed` ×2 | ✅ identical counts both runs |
+| Vitest (7 suites) | `npx vitest run` (DATABASE_URL=test) | ✅ **27/27 passed** (16 non-DB + 11 DB integration) |
+| `next build` | `npm run build` | ✅ 28 routes; 11 articles + 7 disciplines + 5 sections pre-rendered from Postgres |
+| Route smoke | `npm run test:routes` | ✅ **20/20 passed** against the running DB-backed server |
 
 The DB integration suite covers §13 items 1,3–15 (schema relationships, published-only
 reads, draft/scheduled/archived exclusion, slug uniqueness, category/discipline/event
@@ -133,7 +137,8 @@ docs: this report, `DATABASE_ARCHITECTURE.md`, `DATABASE_SETUP.md`, `DATA_MIGRAT
 
 ## K. Remaining Limitations
 
-- Live-DB steps pending credentials (migrate/seed/build/integration/route-smoke).
+- Verified on local PostgreSQL 17 only; production connection pooling and deployment
+  remain open (not needed locally).
 - Admin CMS still writes only to `sessionStorage` (prototype); no DB writes activated.
 - No auth/RBAC; identity tables are foundation only.
 - Decorative non-article modules remain static (documented boundary).
@@ -146,17 +151,14 @@ server RBAC + activated CMS writes) can build on the identity tables and the typ
 read repository; mutation interfaces should be added behind authentication and must
 not be exposed publicly.
 
-## M. Decisions Requiring Approval
+## M. Decisions — resolved / open
 
-1. **Provide `DATABASE_URL`** (and `TEST_DATABASE_URL`) for the local Postgres on
-   :5432, or authorize creating a dedicated `nfrguide`/`nfrguide_dev` role+DB. This
-   unblocks `npm run db:setup`, `next build`, the DB integration suite and route
-   smoke. (The agent did not guess credentials by policy.)
-2. **Prisma 6 vs 7:** stable 6.19.3 was chosen (Prisma 7 drops `url` from the schema
-   datasource and requires `prisma.config.ts` + a driver adapter). Confirm 6 is
-   acceptable, or request the 7 migration.
+1. ✅ **Database access** — resolved. User provided the superuser password; two
+   least-privilege roles + `nfrguide_dev`/`nfrguide_test` databases were created and
+   verified. Credentials live only in git-ignored `apps/web/.env`.
+2. ✅ **Prisma 6** (6.19.3) — approved and in use.
 3. **Documented static boundary** for non-article decorative modules — confirm this
-   is acceptable for now, or request them modeled in a later batch.
+   is acceptable for now, or request them modeled in a later batch (open).
 4. **Deployment/connection pooling** (e.g., PgBouncer/Accelerate) for production
    remains open (not needed locally).
 
