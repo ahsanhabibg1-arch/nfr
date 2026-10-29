@@ -327,3 +327,16 @@ Key refinements over the Phase 0 blueprint:
   **User/Role/Permission/UserRole/RolePermission/AuditLog** (no auth logic yet).
 
 See `DATABASE_ARCHITECTURE.md` for the full entity/relationship walkthrough.
+
+---
+
+# Phase 1 / Batch 03 — Auth/Identity schema additions (addendum)
+
+> Added 2026-10-29. Migration `20261029000000_batch03_auth_rbac` (additive).
+
+- `User.passwordHash` (bcrypt), `User.lastLoginAt`.
+- New `Session` (opaque token → SHA-256 `tokenHash`, `expiresAt`, server-side revocable).
+- `Article.version` (optimistic-concurrency counter), `Article.createdById` → `User` (ownership).
+- `ArticleRevision.actorId` → `User`, `EditorialWorkflowHistory.actorId` → `User`.
+- Role / Permission / RolePermission are populated from the code RBAC matrix via `roleSync`.
+Existing seeded data preserved (no reset).

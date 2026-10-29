@@ -1,156 +1,97 @@
 'use client';
 
-import React, { useState, useEffect, useMemo } from 'react';
+import React, { useState, useMemo, useTransition } from 'react';
 import Link from 'next/link';
-import { useSearchParams } from 'next/navigation';
+import { useRouter } from 'next/navigation';
 import { AdminPageHeader } from '../../components/admin/AdminPageHeader';
-import { AdminFilterBar } from '../../components/admin/AdminFilterBar';
-import { AdminStatusBadge } from '../../components/admin/AdminStatusBadge';
 import { AdminTabs } from '../../components/admin/AdminTabs';
-import { articleStore } from '../../data/articleStore';
-import { Article, ArticleWorkflowStatus } from '../../types';
 import { ROUTES } from '../../config/routes';
-import { validateArticle } from '../../utils/seoValidator';
+import type { ArticleWorkflowStatus } from '../../types';
+import type { AdminArticleRow } from '../../lib/cms/adminQueries';
+import { transitionArticleAction, deleteArticleAction } from '../../app/admin/article-actions';
 
-export const AdminArticlesPage: React.FC = () => {
-  const searchParams = useSearchParams();
-  const initialQuery = searchParams?.get('q') || '';
+interface Props {
+  rows: AdminArticleRow[];
+  canPublish: boolean;
+  canDelete: boolean;
+}
 
-  const [articles, setArticles] = useState<Article[]>(articleStore.getAllArticles());
-  const [searchQuery, setSearchQuery] = useState(initialQuery);
-  const [activeTab, setActiveTab] = useState<'all' | 'published' | 'in_review' | 'approved' | 'scheduled' | 'draft'>('all');
-  const [categoryFilter, setCategoryFilter] = useState('all');
-  const [typeFilter, setTypeFilter] = useState('all');
+const STATUS_STYLES: Record<string, string> = {
+  published: 'bg-emerald-100 text-emerald-800',
+  in_review: 'bg-amber-100 text-amber-800',
+  approved: 'bg-blue-100 text-blue-800',
+  scheduled: 'bg-purple-100 text-purple-800',
+  draft: 'bg-stone-100 text-stone-700',
+  archived: 'bg-stone-200 text-stone-600',
+};
+
+export const AdminArticlesPage: React.FC<Props> = ({ rows, canPublish, canDelete }) => {
+  const router = useRouter();
+  const [isPending, startTransition] = useTransition();
+  const [searchQuery, setSearchQuery] = useState('');
+  const [activeTab, setActiveTab] = useState<'all' | ArticleWorkflowStatus>('all');
   const [selectedIds, setSelectedIds] = useState<string[]>([]);
-  const [bulkActionNotice, setBulkActionNotice] = useState<string | null>(null);
+  const [notice, setNotice] = useState<string | null>(null);
 
-  // Subscribe to changes in articleStore
-  useEffect(() => {
-    const unsubscribe = articleStore.subscribe(() => {
-      setArticles(articleStore.getAllArticles());
-    });
-    return unsubscribe;
-  }, []);
+  const counts = useMemo(() => ({
+    all: rows.length,
+    published: rows.filter((r) => r.workflowStatus === 'published').length,
+    in_review: rows.filter((r) => r.workflowStatus === 'in_review').length,
+    approved: rows.filter((r) => r.workflowStatus === 'approved').length,
+    scheduled: rows.filter((r) => r.workflowStatus === 'scheduled').length,
+    draft: rows.filter((r) => r.workflowStatus === 'draft').length,
+  }), [rows]);
 
+  const filtered = useMemo(() => rows.filter((r) => {
+    if (activeTab !== 'all' && r.workflowStatus !== activeTab) return false;
+    const q = searchQuery.toLowerCase();
+    return !q || r.title.toLowerCase().includes(q) || r.authorName.toLowerCase().includes(q);
+  }), [rows, activeTab, searchQuery]);
 
-  // Tab counts
-  const counts = useMemo(() => {
-    return {
-      all: articles.length,
-      published: articles.filter((a) => (a.workflowStatus || a.status) === 'published').length,
-      in_review: articles.filter((a) => (a.workflowStatus || a.status) === 'in_review').length,
-      approved: articles.filter((a) => (a.workflowStatus || a.status) === 'approved').length,
-      scheduled: articles.filter((a) => (a.workflowStatus || a.status) === 'scheduled').length,
-      draft: articles.filter((a) => (a.workflowStatus || a.status) === 'draft').length,
-    };
-  }, [articles]);
+  const flash = (msg: string) => { setNotice(msg); setTimeout(() => setNotice(null), 5000); };
 
-  const filteredArticles = useMemo(() => {
-    return articles.filter((art) => {
-      const artStatus = art.workflowStatus || art.status || 'draft';
-
-      // Tab filter
-      if (activeTab !== 'all' && artStatus !== activeTab) {
-        return false;
-      }
-
-      // Search
-      const matchesSearch =
-        !searchQuery ||
-        art.title.toLowerCase().includes(searchQuery.toLowerCase()) ||
-        art.author.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
-        art.deck.toLowerCase().includes(searchQuery.toLowerCase());
-
-      // Category
-      const matchesCategory = categoryFilter === 'all' || art.category === categoryFilter;
-
-      // Type
-      const matchesType = typeFilter === 'all' || art.articleType === typeFilter;
-
-      return matchesSearch && matchesCategory && matchesType;
-    });
-  }, [articles, activeTab, searchQuery, categoryFilter, typeFilter]);
-
-  const handleSelectAll = (e: React.ChangeEvent<HTMLInputElement>) => {
-    if (e.target.checked) {
-      setSelectedIds(filteredArticles.map((a) => a.id));
-    } else {
+  const runBulk = (fn: () => Promise<string>) => {
+    startTransition(async () => {
+      const msg = await fn();
       setSelectedIds([]);
-    }
-  };
-
-  const handleToggleRow = (id: string) => {
-    setSelectedIds((prev) =>
-      prev.includes(id) ? prev.filter((i) => i !== id) : [...prev, id]
-    );
-  };
-
-  const handleBulkStatusChange = (status: ArticleWorkflowStatus) => {
-    let successCount = 0;
-    let blockedCount = 0;
-
-    selectedIds.forEach((id) => {
-      const art = articleStore.getArticleById(id);
-      if (art) {
-        if (status === 'published') {
-          const val = validateArticle(art);
-          if (!val.canPublish) {
-            blockedCount++;
-            return;
-          }
-        }
-        articleStore.saveArticle(
-          { ...art, workflowStatus: status, status },
-          'Bulk Manager (DEMO)',
-          'Managing Editor (DEMO)',
-          `Bulk updated status to ${status}`
-        );
-        successCount++;
-      }
+      flash(msg);
+      router.refresh();
     });
+  };
 
-    if (status === 'published' && blockedCount > 0) {
-      setBulkActionNotice(
-        `Published ${successCount} article(s). Skipped ${blockedCount} article(s) blocked by Category A (editorial) or Category B (rights/compliance) checks.`
-      );
-    } else {
-      setBulkActionNotice(
-        `Updated ${successCount} article(s) to "${status.toUpperCase()}".`
-      );
+  const bulkPublish = () => runBulk(async () => {
+    let ok = 0, failed = 0;
+    for (const id of selectedIds) {
+      const res = await transitionArticleAction(id, 'PUBLISHED');
+      if (res.ok) ok++; else failed++;
     }
-    setTimeout(() => setBulkActionNotice(null), 5000);
-    setSelectedIds([]);
-  };
+    return `Published ${ok} article(s).${failed ? ` ${failed} could not be published (must be Approved/Scheduled and pass publication checks).` : ''}`;
+  });
 
-  const handleBulkDelete = () => {
-    selectedIds.forEach((id) => {
-      articleStore.deleteArticle(id);
-    });
-    setBulkActionNotice(`Deleted ${selectedIds.length} article(s) from demo catalog.`);
-    setTimeout(() => setBulkActionNotice(null), 4000);
-    setSelectedIds([]);
-  };
+  const bulkDelete = () => runBulk(async () => {
+    let ok = 0, failed = 0;
+    for (const id of selectedIds) {
+      const res = await deleteArticleAction(id);
+      if (res.ok) ok++; else failed++;
+    }
+    return `Deleted ${ok} article(s).${failed ? ` ${failed} failed.` : ''}`;
+  });
 
   return (
     <div className="space-y-6">
-      {/* Page Header */}
       <AdminPageHeader
         title="Article Directory &amp; Publishing Queue"
-        description="Search, filter, edit, and organize all published, scheduled, and review-staged editorial dispatches."
+        description="Database-backed article library. Actions are authenticated and permission-checked server-side."
         actions={
           <Link
             href={ROUTES.ADMIN_ARTICLE_NEW}
-            className="px-4 py-2 bg-[#0F1115] text-[#D4A757] hover:bg-stone-800 text-xs font-semibold uppercase tracking-wider rounded-xs transition-colors shadow-xs flex items-center gap-1.5"
+            className="px-4 py-2 bg-[#0F1115] text-[#D4A757] hover:bg-stone-800 text-xs font-semibold uppercase tracking-wider rounded-xs transition-colors shadow-xs inline-flex items-center gap-1.5"
           >
-            <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
-            </svg>
-            Create New Article
+            + Create New Article
           </Link>
         }
       />
 
-      {/* Workflow Tabs */}
       <AdminTabs
         tabs={[
           { id: 'all', label: 'All Articles', count: counts.all },
@@ -161,82 +102,41 @@ export const AdminArticlesPage: React.FC = () => {
           { id: 'draft', label: 'Drafts', count: counts.draft },
         ]}
         activeTab={activeTab}
-        onChange={(tabId) => setActiveTab(tabId as any)}
+        onChange={(t) => setActiveTab(t as typeof activeTab)}
       />
 
-      {/* Filter Bar */}
-      <AdminFilterBar
-        searchQuery={searchQuery}
-        onSearchChange={setSearchQuery}
-        searchPlaceholder="Search by title, author, or keyword..."
-        dropdowns={[
-          {
-            id: 'category-filter',
-            label: 'Category',
-            value: categoryFilter,
-            onChange: setCategoryFilter,
-            options: [
-              { label: 'All Categories', value: 'all' },
-              { label: 'NFR Competition', value: 'NFR Competition' },
-              { label: 'NFR Entertainment', value: 'NFR Entertainment' },
-              { label: 'NFR Events & Shopping', value: 'NFR Events & Shopping' },
-              { label: 'NFR Plan & Watch', value: 'NFR Plan & Watch' },
-              { label: 'More Rodeo', value: 'More Rodeo' },
-            ],
-          },
-          {
-            id: 'type-filter',
-            label: 'Article Type',
-            value: typeFilter,
-            onChange: setTypeFilter,
-            options: [
-              { label: 'All Types', value: 'all' },
-              { label: 'Feature', value: 'feature' },
-              { label: 'Analysis', value: 'analysis' },
-              { label: 'Guide', value: 'guide' },
-              { label: 'Event Guide', value: 'Event Guide' },
-              { label: 'News', value: 'news' },
-            ],
-          },
-        ]}
-        selectedCount={selectedIds.length}
-        bulkActions={
+      <div className="flex flex-wrap items-center justify-between gap-3 bg-white border border-stone-200 rounded-xs p-3">
+        <input
+          type="text"
+          value={searchQuery}
+          onChange={(e) => setSearchQuery(e.target.value)}
+          placeholder="Search by title or author…"
+          className="flex-1 min-w-[220px] text-xs font-sans p-2 bg-stone-50 border border-stone-200 rounded-xs focus:bg-white focus:outline-none"
+        />
+        {selectedIds.length > 0 && (
           <div className="flex items-center gap-1.5">
-            <button
-              onClick={() => handleBulkStatusChange('in_review')}
-              className="px-2.5 py-1 text-xs font-sans text-stone-700 bg-stone-100 hover:bg-stone-200 rounded-xs border border-stone-300"
-            >
-              Move to Review
-            </button>
-            <button
-              onClick={() => handleBulkStatusChange('published')}
-              className="px-2.5 py-1 text-xs font-sans text-emerald-800 bg-emerald-50 hover:bg-emerald-100 rounded-xs border border-emerald-300"
-            >
-              Publish Selected
-            </button>
-            <button
-              onClick={handleBulkDelete}
-              className="px-2.5 py-1 text-xs font-sans text-rose-700 bg-rose-50 hover:bg-rose-100 rounded-xs border border-rose-300"
-            >
-              Delete Selected
-            </button>
+            <span className="text-xs text-stone-500 font-sans">{selectedIds.length} selected</span>
+            {canPublish && (
+              <button onClick={bulkPublish} disabled={isPending} className="px-2.5 py-1 text-xs text-emerald-800 bg-emerald-50 hover:bg-emerald-100 rounded-xs border border-emerald-300 disabled:opacity-50">
+                Publish Selected
+              </button>
+            )}
+            {canDelete && (
+              <button onClick={bulkDelete} disabled={isPending} className="px-2.5 py-1 text-xs text-rose-700 bg-rose-50 hover:bg-rose-100 rounded-xs border border-rose-300 disabled:opacity-50">
+                Delete Selected
+              </button>
+            )}
           </div>
-        }
-        onReset={() => {
-          setSearchQuery('');
-          setCategoryFilter('all');
-          setTypeFilter('all');
-        }}
-      />
+        )}
+      </div>
 
-      {bulkActionNotice && (
+      {notice && (
         <div className="p-3 bg-emerald-50 border border-emerald-200 text-emerald-800 text-xs font-sans rounded-xs flex items-center justify-between">
-          <span>{bulkActionNotice}</span>
-          <button onClick={() => setBulkActionNotice(null)} className="font-bold">&times;</button>
+          <span>{notice}</span>
+          <button onClick={() => setNotice(null)} className="font-bold">&times;</button>
         </div>
       )}
 
-      {/* Main Table */}
       <div className="bg-white border border-stone-200 rounded-sm shadow-2xs overflow-hidden">
         <div className="overflow-x-auto">
           <table className="w-full text-left text-xs font-sans border-collapse">
@@ -245,8 +145,8 @@ export const AdminArticlesPage: React.FC = () => {
                 <th className="py-3 px-4 w-10">
                   <input
                     type="checkbox"
-                    onChange={handleSelectAll}
-                    checked={selectedIds.length > 0 && selectedIds.length === filteredArticles.length}
+                    onChange={(e) => setSelectedIds(e.target.checked ? filtered.map((r) => r.id) : [])}
+                    checked={selectedIds.length > 0 && selectedIds.length === filtered.length}
                     className="rounded border-stone-300 text-[#D4A757] focus:ring-[#D4A757]"
                   />
                 </th>
@@ -259,88 +159,46 @@ export const AdminArticlesPage: React.FC = () => {
               </tr>
             </thead>
             <tbody className="divide-y divide-stone-100">
-              {filteredArticles.length === 0 ? (
-                <tr>
-                  <td colSpan={7} className="py-8 text-center text-stone-400 font-mono text-xs">
-                    No articles match the selected tab and filter criteria.
-                  </td>
-                </tr>
-              ) : (
-                filteredArticles.map((art) => {
-                  const isSelected = selectedIds.includes(art.id);
-                  const status = (art.workflowStatus || art.status || 'draft') as ArticleWorkflowStatus;
-                  return (
-                    <tr
-                      key={art.id}
-                      className={`hover:bg-stone-50/80 transition-colors ${
-                        isSelected ? 'bg-amber-50/30' : ''
-                      }`}
-                    >
-                      <td className="py-3 px-4">
-                        <input
-                          type="checkbox"
-                          checked={isSelected}
-                          onChange={() => handleToggleRow(art.id)}
-                          className="rounded border-stone-300 text-[#D4A757] focus:ring-[#D4A757]"
-                        />
-                      </td>
-                      <td className="py-3 px-4 max-w-md">
-                        <Link
-                          href={ROUTES.ADMIN_ARTICLE_EDIT(art.id)}
-                          className="font-serif font-bold text-stone-900 hover:text-[#8B5E3C] line-clamp-1 text-sm"
-                        >
-                          {art.title}
-                        </Link>
-                        <span className="font-mono text-[10px] text-stone-400 block mt-0.5 truncate">
-                          /articles/{art.slug}/
-                        </span>
-                      </td>
-                      <td className="py-3 px-4 whitespace-nowrap">
-                        <span className="font-semibold text-stone-700">{art.category}</span>
-                        {art.subcategory && (
-                          <span className="text-stone-400 block text-[10px]">{art.subcategory}</span>
-                        )}
-                      </td>
-                      <td className="py-3 px-4 whitespace-nowrap text-stone-600">
-                        {art.author.name}
-                      </td>
-                      <td className="py-3 px-4 whitespace-nowrap">
-                        <span className={`text-[10px] font-mono px-2 py-0.5 rounded-xs font-semibold ${
-                          status === 'published'
-                            ? 'bg-emerald-100 text-emerald-800'
-                            : status === 'in_review'
-                            ? 'bg-amber-100 text-amber-800'
-                            : status === 'approved'
-                            ? 'bg-blue-100 text-blue-800'
-                            : status === 'scheduled'
-                            ? 'bg-purple-100 text-purple-800'
-                            : 'bg-stone-100 text-stone-700'
-                        }`}>
-                          {status.toUpperCase()}
-                        </span>
-                      </td>
-                      <td className="py-3 px-4 whitespace-nowrap text-stone-500 font-mono text-[11px]">
-                        {art.publishedAt}
-                      </td>
-                      <td className="py-3 px-4 text-right whitespace-nowrap space-x-2">
-                        <Link
-                          href={ROUTES.ARTICLE(art.slug)}
-                          target="_blank"
-                          className="text-stone-500 hover:text-stone-900 font-medium"
-                        >
-                          Live View
-                        </Link>
-                        <Link
-                          href={ROUTES.ADMIN_ARTICLE_EDIT(art.id)}
-                          className="text-[#8B5E3C] hover:text-stone-900 font-bold"
-                        >
-                          Edit
-                        </Link>
-                      </td>
-                    </tr>
-                  );
-                })
-              )}
+              {filtered.length === 0 ? (
+                <tr><td colSpan={7} className="py-8 text-center text-stone-400 font-mono text-xs">No articles match the selected tab and filter.</td></tr>
+              ) : filtered.map((art) => {
+                const selected = selectedIds.includes(art.id);
+                return (
+                  <tr key={art.id} className={`hover:bg-stone-50/80 transition-colors ${selected ? 'bg-amber-50/30' : ''}`}>
+                    <td className="py-3 px-4">
+                      <input
+                        type="checkbox"
+                        checked={selected}
+                        onChange={() => setSelectedIds((p) => p.includes(art.id) ? p.filter((i) => i !== art.id) : [...p, art.id])}
+                        className="rounded border-stone-300 text-[#D4A757] focus:ring-[#D4A757]"
+                      />
+                    </td>
+                    <td className="py-3 px-4 max-w-md">
+                      <Link href={ROUTES.ADMIN_ARTICLE_EDIT(art.id)} className="font-serif font-bold text-stone-900 hover:text-[#8B5E3C] line-clamp-1 text-sm">
+                        {art.title}
+                      </Link>
+                      <span className="font-mono text-[10px] text-stone-400 block mt-0.5 truncate">/articles/{art.slug}/</span>
+                    </td>
+                    <td className="py-3 px-4 whitespace-nowrap">
+                      <span className="font-semibold text-stone-700">{art.category}</span>
+                      {art.subcategory && <span className="text-stone-400 block text-[10px]">{art.subcategory}</span>}
+                    </td>
+                    <td className="py-3 px-4 whitespace-nowrap text-stone-600">{art.authorName}</td>
+                    <td className="py-3 px-4 whitespace-nowrap">
+                      <span className={`text-[10px] font-mono px-2 py-0.5 rounded-xs font-semibold ${STATUS_STYLES[art.workflowStatus] ?? 'bg-stone-100 text-stone-700'}`}>
+                        {art.workflowStatus.toUpperCase()}
+                      </span>
+                    </td>
+                    <td className="py-3 px-4 whitespace-nowrap text-stone-500 font-mono text-[11px]">{art.publishedAt ?? '—'}</td>
+                    <td className="py-3 px-4 text-right whitespace-nowrap space-x-2">
+                      {art.workflowStatus === 'published' && (
+                        <Link href={ROUTES.ARTICLE(art.slug)} target="_blank" className="text-stone-500 hover:text-stone-900 font-medium">Live View</Link>
+                      )}
+                      <Link href={ROUTES.ADMIN_ARTICLE_EDIT(art.id)} className="text-[#8B5E3C] hover:text-stone-900 font-bold">Edit</Link>
+                    </td>
+                  </tr>
+                );
+              })}
             </tbody>
           </table>
         </div>
@@ -348,3 +206,5 @@ export const AdminArticlesPage: React.FC = () => {
     </div>
   );
 };
+
+export default AdminArticlesPage;

@@ -77,3 +77,17 @@ Master Requirements v2.0 §7, Batch 02 §4, and the Phase 0 TypeScript contracts
   `workflowStatus = PUBLISHED`. `lib/db.ts` (`server-only`) owns the single Prisma
   client. UI never imports Prisma; it receives mapped domain objects
   ([apps/web/lib/mappers.ts](apps/web/lib/mappers.ts)).
+
+---
+
+# Phase 1 / Batch 03 — Identity & concurrency (addendum)
+
+> Added 2026-10-29. Additive migration `20261029000000_batch03_auth_rbac`.
+
+- **Session** table (server-side sessions): `tokenHash` unique (SHA-256 of an opaque
+  token), `expiresAt` (indexed), `userId` (cascade), optional ip/user-agent.
+- **User**: `passwordHash`, `lastLoginAt`.
+- **Article**: `version` (optimistic lock), `createdById` → User (ownership; SetNull).
+- **ArticleRevision.actorId**, **EditorialWorkflowHistory.actorId** → User (SetNull).
+- Identity tables (User/Role/Permission/UserRole/RolePermission/AuditLog) are now active:
+  roles/permissions seeded from the code matrix; audit logging writes real entries.

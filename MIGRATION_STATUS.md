@@ -113,3 +113,29 @@ npm run test:routes             # HTTP route smoke (server running)
 ## Batch 03 prerequisites
 Owner-provided `DATABASE_URL`; then auth + server RBAC + activated CMS writes build
 on the identity tables and the typed read repository.
+
+---
+
+# Phase 1 / Batch 03 — Auth / RBAC / CMS Persistence (addendum)
+
+**Updated:** 2026-10-29.
+
+| # | Batch 03 §18 criterion | Status |
+|---|---|---|
+| 1 | Real login/logout | ✅ (browser round-trip + session tests) |
+| 2 | Sessions validated server-side | ✅ |
+| 3 | Admin routes protected | ✅ (gate + route smoke) |
+| 4 | Five-role RBAC enforced | ✅ (service + rbac tests) |
+| 5 | Unauthorized mutations rejected | ✅ |
+| 6 | Article CRUD persists to PostgreSQL | ✅ |
+| 7 | Revision history persists | ✅ |
+| 8 | Workflow transitions enforced | ✅ |
+| 9 | Public publishing reflects DB | ✅ |
+| 10 | Unpublishing does not leak stale content | ✅ (revalidate + tests) |
+| 11 | Audit logs written | ✅ |
+| 12 | Security tests pass | ✅ (50/50) |
+| 13 | Existing public functionality preserved | ✅ (route smoke 24/24, build) |
+| 14 | Production build passes | ✅ |
+| 15 | Documentation complete | ✅ |
+
+First login: `cd apps/web; npm run bootstrap:admin` (see AUTHENTICATION_ARCHITECTURE.md).

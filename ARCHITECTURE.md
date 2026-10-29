@@ -190,3 +190,25 @@ NOT shared, NOT server state, does not drive public SSR). See KNOWN_LIMITATIONS.
   cards, rodeo hub/event cards, learning, quick-access) remain Phase 0 static content;
   the admin editor remains a client-only `sessionStorage` prototype (no DB writes).
 - **Status:** code complete; live-DB apply/seed/build pending a provided `DATABASE_URL`.
+
+---
+
+# Phase 1 / Batch 03 — Authentication, RBAC & CMS Persistence (addendum)
+
+> Added 2026-10-29.
+
+- **Auth:** database-session pattern (bcryptjs, CSPRNG opaque tokens stored as SHA-256
+  hashes, HttpOnly/SameSite cookies, Server Actions). See AUTHENTICATION_ARCHITECTURE.md.
+  `/admin/login/` is public; everything under `app/admin/(dashboard)/` is gated by
+  `requireUser()` in its layout; every mutation re-checks server-side.
+- **RBAC:** code-defined default-deny matrix (`lib/auth/rbac.ts`) mirrored to DB; enforced
+  in `lib/cms/articleService.ts`. See RBAC_PERMISSION_MATRIX.md. The role simulator is gone.
+- **CMS persistence:** authenticated, transactional, optimistic-concurrency article CRUD +
+  workflow + revisions + audit via `articleService` + `app/admin/article-actions.ts`
+  (`sessionStorage` store removed). See CMS_PERSISTENCE_REPORT.md.
+- **Publishing:** publish/unpublish revalidate the public cache (`revalidatePath('/','layout')`
+  + article path + sitemap) so editorial privacy is immediate.
+- **Admin route group:** `app/admin/(dashboard)/*` (gated shell) vs `app/admin/login/`
+  (no shell). URLs unchanged.
+- **Boundary:** only Articles + Editor + workflow are DB-backed; admin modules 3–12 +
+  Overview remain UI/mock (documented).

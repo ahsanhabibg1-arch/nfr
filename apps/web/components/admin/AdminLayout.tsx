@@ -7,7 +7,13 @@ import { AdminTopbar } from './AdminTopbar';
 import { AdminNotificationPanel } from './AdminNotificationPanel';
 import { AdminBreadcrumbItem } from './AdminBreadcrumbs';
 
-export const AdminLayout: React.FC<{ children: React.ReactNode }> = ({ children }) => {
+export interface AdminUserInfo {
+  name: string;
+  email: string;
+  roleLabel: string;
+}
+
+export const AdminLayout: React.FC<{ children: React.ReactNode; user: AdminUserInfo }> = ({ children, user }) => {
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
   const [mobileSidebarOpen, setMobileSidebarOpen] = useState(false);
   const [notificationsOpen, setNotificationsOpen] = useState(false);
@@ -45,6 +51,7 @@ export const AdminLayout: React.FC<{ children: React.ReactNode }> = ({ children 
         mobileOpen={mobileSidebarOpen}
         onCloseMobile={() => setMobileSidebarOpen(false)}
       />
+      {/* user available for sidebar/topbar identity */}
 
       {/* Main Column */}
       <div className="flex-1 flex flex-col min-w-0">
@@ -53,6 +60,7 @@ export const AdminLayout: React.FC<{ children: React.ReactNode }> = ({ children 
           onOpenMobileSidebar={() => setMobileSidebarOpen(true)}
           onOpenNotifications={() => setNotificationsOpen(true)}
           breadcrumbs={getBreadcrumbs()}
+          user={user}
         />
 
         {/* Workspace Canvas */}
@@ -62,8 +70,10 @@ export const AdminLayout: React.FC<{ children: React.ReactNode }> = ({ children 
 
         {/* Admin Footer */}
         <footer className="h-12 border-t border-stone-200 bg-white px-6 flex items-center justify-between text-xs text-stone-500 font-sans">
-          <span>NFRGuide Custom Editorial CMS &middot; Phase 0 Foundation</span>
-          <span className="font-mono text-[11px] text-stone-400">Environment: Local Sandbox (Non-Production Auth)</span>
+          <span>NFRGuide Custom Editorial CMS</span>
+          <span className="font-mono text-[11px] text-stone-400">
+            Signed in as {user.email} &middot; {user.roleLabel}
+          </span>
         </footer>
       </div>
 

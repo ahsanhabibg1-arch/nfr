@@ -4,6 +4,7 @@ import React, { useState } from 'react';
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
 import { ROUTES } from '../../config/routes';
+import { logoutAction } from '../../app/admin/auth-actions';
 
 interface NavModuleItem {
   id: string;
@@ -178,7 +179,6 @@ export const AdminSidebar: React.FC<AdminSidebarProps> = ({
   onCloseMobile,
 }) => {
   const pathname = usePathname() ?? '';
-  const [logoutNotice, setLogoutNotice] = useState(false);
 
   const sidebarContent = (
     <div className="h-full flex flex-col justify-between bg-[#0F1115] text-stone-300 border-r border-white/10 select-none">
@@ -273,28 +273,18 @@ export const AdminSidebar: React.FC<AdminSidebarProps> = ({
           {!collapsed && <span>View Public Site</span>}
         </Link>
 
-        <button
-          onClick={() => setLogoutNotice(true)}
-          className="w-full flex items-center gap-2 px-3 py-1.5 text-xs font-sans text-stone-400 hover:text-rose-400 rounded-xs hover:bg-white/5 transition-colors text-left"
-          title="Sign out placeholder"
-        >
-          <svg className="w-4 h-4 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.8} d="M17 16l4-4m0 0l-4-4m4 4H7m6 4v1a3 3 0 01-3 3H6a3 3 0 01-3-3V7a3 3 0 013-3h4a3 3 0 013 3v1" />
-          </svg>
-          {!collapsed && <span>Sign Out (Demo)</span>}
-        </button>
-
-        {logoutNotice && !collapsed && (
-          <div className="p-2 bg-amber-950/40 border border-amber-800/40 rounded-xs text-[10px] text-amber-200">
-            Sign-out is non-operational until real authentication is implemented.
-            <button
-              onClick={() => setLogoutNotice(false)}
-              className="block mt-1 underline text-amber-100"
-            >
-              Dismiss
-            </button>
-          </div>
-        )}
+        <form action={logoutAction}>
+          <button
+            type="submit"
+            className="w-full flex items-center gap-2 px-3 py-1.5 text-xs font-sans text-stone-400 hover:text-rose-400 rounded-xs hover:bg-white/5 transition-colors text-left"
+            title="Sign out"
+          >
+            <svg className="w-4 h-4 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.8} d="M17 16l4-4m0 0l-4-4m4 4H7m6 4v1a3 3 0 01-3 3H6a3 3 0 01-3-3V7a3 3 0 013-3h4a3 3 0 013 3v1" />
+            </svg>
+            {!collapsed && <span>Sign Out</span>}
+          </button>
+        </form>
       </div>
     </div>
   );

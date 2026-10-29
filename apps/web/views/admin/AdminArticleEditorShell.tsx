@@ -3,12 +3,12 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import Link from 'next/link';
 import { useParams, useRouter } from 'next/navigation';
-import { Article, ArticleWorkflowStatus, ArticleType, PrimarySection, ContentBlock, SourceReference, DisclosureType } from '../../types';
-import { AdminRole } from '../../types/admin';
-import { articleStore } from '../../data/articleStore';
+import { Article, ArticleWorkflowStatus, ArticleType, PrimarySection, ContentBlock, SourceReference, DisclosureType, ArticleRevision } from '../../types';
 import { AUTHORS } from '../../data/mockEditorialData';
 import { ROUTES } from '../../config/routes';
 import { validateArticle } from '../../utils/seoValidator';
+import { saveArticleAction, transitionArticleAction, restoreRevisionAction } from '../../app/admin/article-actions';
+import type { ArticleInput } from '../../lib/cms/articleService';
 import { RichBlockEditor } from '../../components/admin/editor/RichBlockEditor';
 import { SearchAppearancePreview } from '../../components/admin/editor/SearchAppearancePreview';
 import { RevisionHistoryModal } from '../../components/admin/editor/RevisionHistoryModal';
@@ -46,17 +46,40 @@ const PRIMARY_SECTIONS: PrimarySection[] = [
   'More Rodeo',
 ];
 
-export const AdminArticleEditorShell: React.FC = () => {
+export interface EditorPermissions {
+  canSubmit: boolean;
+  canReview: boolean;
+  canApprove: boolean;
+  canPublish: boolean;
+  canSchedule: boolean;
+  canDelete: boolean;
+  canEditAny: boolean;
+}
+
+interface AdminArticleEditorShellProps {
+  initialArticle?: Article;
+  initialVersion?: number;
+  initialRevisions?: ArticleRevision[];
+  permissions: EditorPermissions;
+  actorName: string;
+}
+
+export const AdminArticleEditorShell: React.FC<AdminArticleEditorShellProps> = ({
+  initialArticle,
+  initialVersion,
+  initialRevisions = [],
+  permissions,
+  actorName,
+}) => {
   const params = useParams<{ id: string }>();
   const id = params?.id;
   const router = useRouter();
   const isNew = !id;
 
-  // Retrieve initial article from store
-  const existingArticle = id ? articleStore.getArticleById(id) : undefined;
-
-  // Role simulator state (UI prototype)
-  const [actingRole, setActingRole] = useState<AdminRole>('Editor');
+  // Initial article is loaded server-side (DB) and passed in as a prop.
+  const existingArticle = initialArticle;
+  const [version, setVersion] = useState<number | undefined>(initialVersion);
+  const [saving, setSaving] = useState(false);
 
   // Exact 8 primary fields state
   const [title, setTitle] = useState(existingArticle?.title || '');
@@ -286,60 +309,97 @@ export const AdminArticleEditorShell: React.FC = () => {
     showNotification('Applied featured imagery & verified rights');
   };
 
-  // State Machine Transitions
-  const handleWorkflowTransition = (targetStatus: ArticleWorkflowStatus): boolean => {
-    // Check permission rules for simulated role
-    if (targetStatus === 'published' && actingRole === 'Author') {
-      showNotification('Authors cannot publish directly. Submit for review instead.');
-      return false;
+  const selectedAuthor = (AUTHORS as Record<string, { name: string; role: string }>)[authorKey] || AUTHORS.clayton;
+
+  const buildInput = (): ArticleInput => ({
+    id: id || undefined,
+    expectedVersion: version,
+    slug,
+    title,
+    deck,
+    excerpt,
+    blocks,
+    seoTitle,
+    metaDescription,
+    imageSeoTitle,
+    imageAltText,
+    subcategory,
+    articleType,
+    categoryName: category,
+    authorName: selectedAuthor.name,
+    authorRole: selectedAuthor.role,
+    reviewerName,
+    heroImage,
+    imageCredit,
+    imageCaption,
+    imageRightsStatus,
+    disclosure,
+    disclosureNote,
+    tags,
+    takeaways: existingArticle?.takeaways ?? [],
+    sources: sources.map((s) => ({ title: s.title, url: s.url || '', publisher: s.publisher, note: s.note })),
+    disciplineIds: relationships.disciplineIds,
+    hubIds: relationships.hubIds,
+    eventIds: relationships.eventIds,
+    editionIds: relationships.editionIds,
+  });
+
+  // Persist to the database via an authenticated Server Action.
+  const handleSaveDraft = async () => {
+    if (saving) return;
+    setSaving(true);
+    const res = await saveArticleAction(buildInput());
+    setSaving(false);
+    if (!res.ok) {
+      showNotification(res.error);
+      return;
     }
-
-    // Publication Gatekeeper: Check Blockers & Compliance
-    if (targetStatus === 'published') {
-      if (!validationReport.canPublish) {
-        setValidationGateOpen(true);
-        showNotification('Publication blocked by unresolved Category A or B findings.');
-        return false;
-      }
-    }
-
-    setWorkflowStatus(targetStatus);
-    markDirty();
-    showNotification(`Workflow state updated to "${targetStatus.toUpperCase()}"`);
-    return true;
-  };
-
-  // Save Draft to Store
-  const handleSaveDraft = (summary: string = 'Saved working draft in this demo session') => {
-    const targetId = id || articleStore.generateNextArticleId();
-    const articleToSave: Article = {
-      ...currentArticleSnapshot,
-      id: targetId,
-    };
-
-    articleStore.saveArticle(articleToSave, 'Current Editor', actingRole, summary);
+    setVersion(res.version);
     setIsDirty(false);
-    showNotification('Saved in this demo session.');
-
-    if (isNew) {
-      router.replace(`/admin/articles/${targetId}/edit/`);
-    }
+    showNotification('Saved to the database.');
+    if (isNew) router.replace(`/admin/articles/${res.id}/edit/`);
   };
 
-  // Handle Restore Revision
-  const handleRestoreRevision = (revisionId: string) => {
-    if (!id) return;
-    const restored = articleStore.restoreRevision(id, revisionId);
-    if (restored) {
-      setTitle(restored.title || '');
-      setDeck(restored.deck || '');
-      setExcerpt(restored.excerpt || '');
-      setBlocks(restored.structuredBody || []);
-      setWorkflowStatus((restored.workflowStatus || restored.status || 'draft') as ArticleWorkflowStatus);
-      setSeoTitle(restored.seo?.title || '');
-      setMetaDescription(restored.seo?.description || '');
-      showNotification('Restored revision into editor');
+  // Server-validated, RBAC-enforced workflow transition.
+  const handleWorkflowTransition = async (targetStatus: ArticleWorkflowStatus) => {
+    if (isNew || !id) {
+      showNotification('Save the article before changing its workflow state.');
+      return;
     }
+    if (isDirty) {
+      showNotification('Save your content changes before changing the workflow state.');
+      return;
+    }
+    setSaving(true);
+    const res = await transitionArticleAction(
+      id,
+      targetStatus.toUpperCase(),
+      version,
+      targetStatus === 'scheduled' ? scheduledAt : undefined,
+    );
+    setSaving(false);
+    if (!res.ok) {
+      if (res.code === 'validation') setValidationGateOpen(true);
+      showNotification(res.error);
+      return;
+    }
+    setWorkflowStatus(targetStatus);
+    setVersion(res.version);
+    showNotification(`Workflow state updated to "${targetStatus.toUpperCase()}"`);
+    router.refresh();
+  };
+
+  // Restore a prior revision (authenticated, RBAC-enforced).
+  const handleRestoreRevision = async (revisionId: string) => {
+    if (!id) return;
+    const res = await restoreRevisionAction(id, revisionId);
+    if (!res.ok) {
+      showNotification(res.error);
+      return;
+    }
+    setVersion(res.version);
+    showNotification('Revision restored. Reloading…');
+    router.refresh();
   };
 
   return (
@@ -380,21 +440,10 @@ export const AdminArticleEditorShell: React.FC = () => {
 
         {/* Right: Role Switcher & Primary Action Buttons */}
         <div className="flex flex-wrap items-center gap-2">
-          {/* Role Simulator Switcher */}
-          <div className="flex items-center gap-1.5 bg-stone-50 border border-stone-200 px-2 py-1 rounded-xs text-[11px] font-sans">
-            <span className="text-stone-500">Role:</span>
-            <select
-              value={actingRole}
-              onChange={(e) => setActingRole(e.target.value as AdminRole)}
-              className="bg-transparent font-semibold text-stone-900 focus:outline-none"
-              title="Simulate editorial permissions"
-            >
-              <option value="Super Admin">Super Admin</option>
-              <option value="Administrator">Administrator</option>
-              <option value="Editor">Editor</option>
-              <option value="Author">Author</option>
-              <option value="SEO Manager">SEO Manager</option>
-            </select>
+          {/* Authenticated acting user — real server-enforced permissions, not a simulator */}
+          <div className="flex items-center gap-1.5 bg-stone-50 border border-stone-200 px-2 py-1 rounded-xs text-[11px] font-sans text-stone-500">
+            <span>Editing as</span>
+            <span className="font-semibold text-stone-900">{actorName}</span>
           </div>
 
           {/* Revision History */}
@@ -426,17 +475,19 @@ export const AdminArticleEditorShell: React.FC = () => {
           <button
             type="button"
             onClick={() => handleSaveDraft()}
-            className="px-3.5 py-1.5 bg-stone-100 hover:bg-stone-200 border border-stone-300 text-stone-900 text-xs font-bold rounded-xs transition-colors"
+            disabled={saving}
+            className="px-3.5 py-1.5 bg-stone-100 hover:bg-stone-200 border border-stone-300 text-stone-900 text-xs font-bold rounded-xs transition-colors disabled:opacity-50"
           >
-            Save Draft
+            {saving ? 'Saving…' : isNew ? 'Create Draft' : 'Save Draft'}
           </button>
 
-          {/* Primary State-Driven Action */}
+          {/* Primary State-Driven Action (gated by real server-enforced permissions) */}
           {workflowStatus === 'draft' && (
             <button
               type="button"
               onClick={() => handleWorkflowTransition('in_review')}
-              className="px-4 py-1.5 bg-[#0F1115] text-[#D4A757] hover:bg-stone-800 text-xs font-bold uppercase tracking-wider rounded-xs transition-colors shadow-xs"
+              disabled={!permissions.canSubmit || saving || isNew}
+              className="px-4 py-1.5 bg-[#0F1115] text-[#D4A757] hover:bg-stone-800 text-xs font-bold uppercase tracking-wider rounded-xs transition-colors shadow-xs disabled:opacity-50"
             >
               Submit for Review
             </button>
@@ -447,14 +498,16 @@ export const AdminArticleEditorShell: React.FC = () => {
               <button
                 type="button"
                 onClick={() => handleWorkflowTransition('draft')}
-                className="px-3 py-1.5 bg-rose-50 border border-rose-300 text-rose-800 hover:bg-rose-100 text-xs font-bold rounded-xs"
+                disabled={!permissions.canReview || saving}
+                className="px-3 py-1.5 bg-rose-50 border border-rose-300 text-rose-800 hover:bg-rose-100 text-xs font-bold rounded-xs disabled:opacity-50"
               >
                 Request Changes
               </button>
               <button
                 type="button"
                 onClick={() => handleWorkflowTransition('approved')}
-                className="px-4 py-1.5 bg-emerald-800 text-white hover:bg-emerald-900 text-xs font-bold uppercase tracking-wider rounded-xs"
+                disabled={!permissions.canApprove || saving}
+                className="px-4 py-1.5 bg-emerald-800 text-white hover:bg-emerald-900 text-xs font-bold uppercase tracking-wider rounded-xs disabled:opacity-50"
               >
                 Approve Article
               </button>
@@ -466,19 +519,15 @@ export const AdminArticleEditorShell: React.FC = () => {
               <button
                 type="button"
                 onClick={() => handleWorkflowTransition('scheduled')}
-                className="px-3 py-1.5 bg-white border border-stone-300 text-stone-800 hover:bg-stone-50 text-xs font-bold rounded-xs"
+                disabled={!permissions.canSchedule || saving}
+                className="px-3 py-1.5 bg-white border border-stone-300 text-stone-800 hover:bg-stone-50 text-xs font-bold rounded-xs disabled:opacity-50"
               >
                 Schedule
               </button>
               <button
                 type="button"
-                onClick={() => {
-                  const success = handleWorkflowTransition('published');
-                  if (success) {
-                    handleSaveDraft('Published article to live publication catalog');
-                  }
-                }}
-                disabled={actingRole === 'Author'}
+                onClick={() => handleWorkflowTransition('published')}
+                disabled={!permissions.canPublish || saving}
                 className="px-4 py-1.5 bg-[#0F1115] text-[#D4A757] hover:bg-stone-800 text-xs font-bold uppercase tracking-wider rounded-xs shadow-xs disabled:opacity-50"
               >
                 Publish Now
@@ -491,19 +540,15 @@ export const AdminArticleEditorShell: React.FC = () => {
               <button
                 type="button"
                 onClick={() => handleWorkflowTransition('approved')}
-                className="px-3 py-1.5 bg-stone-100 border border-stone-300 text-stone-700 text-xs font-bold rounded-xs"
+                disabled={!permissions.canSchedule || saving}
+                className="px-3 py-1.5 bg-stone-100 border border-stone-300 text-stone-700 text-xs font-bold rounded-xs disabled:opacity-50"
               >
                 Unschedule
               </button>
               <button
                 type="button"
-                onClick={() => {
-                  const success = handleWorkflowTransition('published');
-                  if (success) {
-                    handleSaveDraft('Published scheduled article immediately');
-                  }
-                }}
-                disabled={actingRole === 'Author'}
+                onClick={() => handleWorkflowTransition('published')}
+                disabled={!permissions.canPublish || saving}
                 className="px-4 py-1.5 bg-[#0F1115] text-[#D4A757] text-xs font-bold uppercase tracking-wider rounded-xs disabled:opacity-50"
               >
                 Publish Immediately
@@ -516,14 +561,16 @@ export const AdminArticleEditorShell: React.FC = () => {
               <button
                 type="button"
                 onClick={() => handleWorkflowTransition('draft')}
-                className="px-3 py-1.5 bg-amber-50 border border-amber-300 text-amber-800 text-xs font-bold rounded-xs"
+                disabled={!permissions.canPublish || saving}
+                className="px-3 py-1.5 bg-amber-50 border border-amber-300 text-amber-800 text-xs font-bold rounded-xs disabled:opacity-50"
               >
                 Unpublish to Draft
               </button>
               <button
                 type="button"
                 onClick={() => handleWorkflowTransition('archived')}
-                className="px-3 py-1.5 bg-stone-100 text-stone-700 text-xs font-bold rounded-xs"
+                disabled={!permissions.canPublish || saving}
+                className="px-3 py-1.5 bg-stone-100 text-stone-700 text-xs font-bold rounded-xs disabled:opacity-50"
               >
                 Archive
               </button>
@@ -534,7 +581,8 @@ export const AdminArticleEditorShell: React.FC = () => {
             <button
               type="button"
               onClick={() => handleWorkflowTransition('draft')}
-              className="px-4 py-1.5 bg-white border border-stone-300 text-stone-900 text-xs font-bold rounded-xs"
+              disabled={!permissions.canEditAny || saving}
+              className="px-4 py-1.5 bg-white border border-stone-300 text-stone-900 text-xs font-bold rounded-xs disabled:opacity-50"
             >
               Restore to Draft
             </button>
@@ -1282,7 +1330,7 @@ export const AdminArticleEditorShell: React.FC = () => {
         <RevisionHistoryModal
           isOpen={true}
           onClose={() => setHistoryOpen(false)}
-          revisions={articleStore.getRevisions(id || 'new-article-id')}
+          revisions={initialRevisions}
           currentArticle={currentArticleSnapshot}
           onRestore={handleRestoreRevision}
         />

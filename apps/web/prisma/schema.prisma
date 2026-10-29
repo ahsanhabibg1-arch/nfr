@@ -126,6 +126,7 @@ model Article {
   subcategory       String?
   articleType       String
   workflowStatus    WorkflowStatus    @default(DRAFT)
+  version           Int               @default(1)
   readTime          String?
   wordCount         Int?
   isLeadHero        Boolean           @default(false)
@@ -152,6 +153,8 @@ model Article {
   author      Author   @relation(fields: [authorId], references: [id])
   categoryId  String
   category    Category @relation(fields: [categoryId], references: [id])
+  createdById String?
+  createdBy   User?    @relation("ArticleCreatedBy", fields: [createdById], references: [id], onDelete: SetNull)
 
   blocks      ArticleBlock[]
   seo         ArticleSeo?
@@ -220,6 +223,8 @@ model ArticleRevision {
   revisionNo Int
   actorName String
   actorRole String
+  actorId   String?
+  actor     User?          @relation(fields: [actorId], references: [id], onDelete: SetNull)
   status    WorkflowStatus
   summary   String
   snapshot  Json
@@ -237,6 +242,8 @@ model EditorialWorkflowHistory {
   fromStatus WorkflowStatus?
   toStatus   WorkflowStatus
   actorName  String
+  actorId    String?
+  actor      User?          @relation(fields: [actorId], references: [id], onDelete: SetNull)
   note       String?
   createdAt  DateTime       @default(now())
 
@@ -497,13 +504,35 @@ model SeoFinding {
 // ============================================================================
 
 model User {
-  id          String            @id @default(uuid())
-  email       String            @unique
-  name        String
-  status      UserAccountStatus @default(INVITED)
-  createdAt   DateTime          @default(now())
-  roles       UserRole[]
-  auditLogs   AuditLog[]
+  id             String            @id @default(uuid())
+  email          String            @unique
+  name           String
+  passwordHash   String?
+  status         UserAccountStatus @default(INVITED)
+  lastLoginAt    DateTime?
+  createdAt      DateTime          @default(now())
+  roles          UserRole[]
+  auditLogs      AuditLog[]
+  sessions       Session[]
+  createdArticles Article[]        @relation("ArticleCreatedBy")
+  revisions      ArticleRevision[]
+  workflowEvents EditorialWorkflowHistory[]
+}
+
+/// Server-side session (opaque token stored as a SHA-256 hash; validated and
+/// revocable server-side — Batch 03 §3).
+model Session {
+  id        String   @id @default(uuid())
+  userId    String
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  tokenHash String   @unique
+  expiresAt DateTime
+  createdAt DateTime @default(now())
+  ipAddress String?
+  userAgent String?
+
+  @@index([userId])
+  @@index([expiresAt])
 }
 
 model Role {

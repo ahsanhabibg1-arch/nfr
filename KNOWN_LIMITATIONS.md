@@ -145,3 +145,23 @@ addressed in `apps/web`:
   a `prisma.config.ts` + driver adapter; stable 6.19.3 was used deliberately.
 - **No media object storage / SEO scanner / scheduled-publish worker** (all out of
   Batch 02 scope).
+
+---
+
+# Phase 1 / Batch 03 — Updated Limitations (auth / RBAC / CMS)
+
+> Added 2026-10-29.
+
+- **Real authentication + RBAC now exist.** The `/admin` CMS requires login; the Phase 0
+  role simulator and `sessionStorage` article store are removed. Articles, the editor and
+  the workflow are database-backed with server-side authorization, ownership, optimistic
+  concurrency, revisions and audit logging.
+- **First login requires bootstrap:** `cd apps/web; npm run bootstrap:admin`. No admin
+  account ships; no hardcoded credentials; no public registration.
+- **Admin modules 3–12 + Overview remain UI-only / mock** this batch (Batch 03 §10
+  permits) — only Articles + Editor + workflow are DB-backed.
+- **No scheduled-publishing worker:** the `scheduled` state is retained but not
+  auto-executed; publishing is manual. Scheduled content is never publicly exposed.
+- **Login rate limiter is in-memory (per-instance);** a multi-instance deployment needs a
+  shared store. Password reset/recovery and MFA are future work.
+- No media object storage, no SEO scanning engine, no production deployment.

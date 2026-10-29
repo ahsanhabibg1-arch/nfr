@@ -106,10 +106,21 @@ async function main() {
     check('sitemap excludes /admin', !/\/admin/.test(body));
   }
 
-  // Admin shell renders (prototype, dynamic)
+  // Admin is gated server-side: unauthenticated access redirects to the login page.
   {
-    const { res } = await get('/admin/');
-    check('GET /admin/ returns 200', res.status === 200, `status ${res.status}`);
+    const res = await fetch(`${BASE}/admin/`, { redirect: 'manual' });
+    const loc = res.headers.get('location') || '';
+    check('GET /admin/ (unauthenticated) is redirected', res.status >= 300 && res.status < 400, `status ${res.status}`);
+    check('/admin/ redirect targets /admin/login', loc.includes('/admin/login'), `location ${loc}`);
+  }
+  {
+    const res = await fetch(`${BASE}/admin/articles/`, { redirect: 'manual' });
+    check('GET /admin/articles/ (unauthenticated) is gated', res.status >= 300 && res.status < 400, `status ${res.status}`);
+  }
+  {
+    const { res, body } = await get('/admin/login/');
+    check('GET /admin/login/ returns 200', res.status === 200, `status ${res.status}`);
+    check('login page renders a sign-in form', /Sign In/i.test(body), '');
   }
 
   console.log(`\nRoute smoke: ${passed} passed, ${failed} failed\n`);

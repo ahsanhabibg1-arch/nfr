@@ -5,21 +5,26 @@ import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { ROUTES } from '../../config/routes';
 import { AdminBreadcrumbs, AdminBreadcrumbItem } from './AdminBreadcrumbs';
+import type { AdminUserInfo } from './AdminLayout';
+import { logoutAction } from '../../app/admin/auth-actions';
 
 interface AdminTopbarProps {
   onOpenMobileSidebar: () => void;
   onOpenNotifications: () => void;
   breadcrumbs?: AdminBreadcrumbItem[];
+  user: AdminUserInfo;
 }
 
 export const AdminTopbar: React.FC<AdminTopbarProps> = ({
   onOpenMobileSidebar,
   onOpenNotifications,
   breadcrumbs = [],
+  user,
 }) => {
   const router = useRouter();
   const [searchQuery, setSearchQuery] = useState('');
   const [profileDropdownOpen, setProfileDropdownOpen] = useState(false);
+  const initials = user.name.split(' ').map((n) => n[0]).join('').slice(0, 2).toUpperCase();
 
   const handleAdminSearch = (e: React.FormEvent) => {
     e.preventDefault();
@@ -99,11 +104,11 @@ export const AdminTopbar: React.FC<AdminTopbarProps> = ({
             aria-expanded={profileDropdownOpen}
           >
             <div className="w-7 h-7 rounded-full bg-[#1E293B] text-[#D4A757] font-serif font-bold text-xs flex items-center justify-center">
-              C
+              {initials}
             </div>
             <div className="hidden xl:block text-left text-xs leading-tight">
-              <span className="font-semibold text-stone-900 block">Clayton Vance</span>
-              <span className="text-[10px] text-stone-500 font-mono">Editor</span>
+              <span className="font-semibold text-stone-900 block">{user.name}</span>
+              <span className="text-[10px] text-stone-500 font-mono">{user.roleLabel}</span>
             </div>
           </button>
 
@@ -113,26 +118,28 @@ export const AdminTopbar: React.FC<AdminTopbarProps> = ({
               onClick={() => setProfileDropdownOpen(false)}
             >
               <div className="px-4 py-2 border-b border-stone-100">
-                <p className="font-semibold text-stone-900">Clayton Vance</p>
-                <p className="text-[11px] text-stone-500 font-mono">c.vance@nfrguide.com</p>
-                <span className="inline-block mt-1 text-[10px] uppercase font-mono px-1.5 py-0.2 bg-stone-100 text-stone-600 rounded">
-                  Role: Editor
+                <p className="font-semibold text-stone-900">{user.name}</p>
+                <p className="text-[11px] text-stone-500 font-mono">{user.email}</p>
+                <span className="inline-block mt-1 text-[10px] uppercase font-mono px-1.5 py-0.5 bg-stone-100 text-stone-600 rounded">
+                  Role: {user.roleLabel}
                 </span>
               </div>
 
               <Link href={ROUTES.ADMIN_TEAM} className="block px-4 py-2 text-stone-700 hover:bg-stone-50">
                 Team &amp; Permissions
               </Link>
-              <Link href={ROUTES.ADMIN_SETTINGS} className="block px-4 py-2 text-stone-700 hover:bg-stone-50">
-                Editorial Settings
-              </Link>
               <Link href="/" className="block px-4 py-2 text-[#8B5E3C] hover:bg-stone-50 font-medium">
                 View Public Site &rarr;
               </Link>
               <div className="border-t border-stone-100 mt-1 pt-1">
-                <span className="block px-4 py-1.5 text-[11px] text-stone-400 italic">
-                  Auth is demonstration-only
-                </span>
+                <form action={logoutAction}>
+                  <button
+                    type="submit"
+                    className="w-full text-left px-4 py-2 text-rose-600 hover:bg-rose-50 font-medium"
+                  >
+                    Sign Out
+                  </button>
+                </form>
               </div>
             </div>
           )}
