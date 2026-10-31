@@ -262,3 +262,18 @@ connected" states. No analytics value is fabricated; all times UTC. See
 ANALYTICS_SEARCH_ARCHITECTURE.md, INTERNAL_SEARCH_ENGINE.md, SEARCH_INTELLIGENCE.md,
 FIRST_PARTY_ANALYTICS.md, ANALYTICS_PRIVACY_POLICY_TECHNICAL.md,
 EXTERNAL_ANALYTICS_INTEGRATION.md, ANALYTICS_RBAC_MATRIX.md.
+
+## Batch 08 — Monetization & Affiliate Management
+
+Database-backed monetization integrated with the CMS. `lib/monetization/` (URL validation,
+rel policy, config, clicks, public read helpers) + `lib/cms/monetizationService.ts`
+(RBAC-gated CRUD/reads/dashboard/compliance, audited) → `app/admin/monetization-actions.ts`
+→ `views/admin/AdminMonetizationPage.tsx`. Public: a first-party `/go/[id]/` redirect
+(DB-destination-only, open-redirect-safe, 302, safe fallback), `ArticleMonetization` (active
+offers + disclosure + sponsored label on published articles), and `AdPlacementSlot`
+(reserved, labeled, script-free). Commercial data is kept separate from editorial facts; no
+revenue/commission/price/AdSense-approval is fabricated; external ad serving + outbound click
+tracking are disabled by default (owner-gated). Advisory commercial-compliance checks are
+distinct from the unchanged 37 SEO rules. See MONETIZATION_ARCHITECTURE.md,
+AFFILIATE_PARTNER_MANAGEMENT.md, AFFILIATE_LINK_SYSTEM.md, AD_PLACEMENT_MANAGEMENT.md,
+MONETIZATION_DISCLOSURE_POLICY.md, MONETIZATION_RBAC_MATRIX.md, MONETIZATION_SECURITY_POLICY.md.

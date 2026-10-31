@@ -135,3 +135,17 @@ subcategory+articleType=C) with a GIN index — created in raw migration SQL and
 via parameterized `$queryRaw` (not a Prisma field). All timestamps UTC. Migration
 `20261031100000_batch07_analytics_search` (dev + test). No existing table altered
 destructively; no data reset.
+
+## Batch 08 (2026-10-31)
+Monetization & Affiliate Management. New models: `AffiliatePartner`, `AffiliateProgram`,
+`AffiliateLink`, `AffiliatePlacement` (→ Article), `AdPlacement`, `MonetizationDisclosure`,
+`SponsoredContentRelationship` (→ Article), `CommercialEntityAssociation` (rodeo/editorial
+entities, event-vs-edition preserved), `MonetizationConfiguration` (key→JSON, adsense/click
+OFF by default), `AffiliateClickAggregate` (per-link/day, no identifiers). New enums
+`AffiliateCategory`, `PartnerVerificationStatus`, `MonetizationStatus`,
+`AffiliateRelAttribute`, `AdPlacementSlot`, `CommercialEntityType`. Commercial data is kept
+separate from editorial facts; no credentials/secrets are stored (`lastError` category only).
+Reference-safe deletion is service-enforced (partner↔links Restrict; placement/sponsorship
+cascade with their Article). Migration `20261031200000_batch08_monetization` (dev + test);
+additive, no data reset. `Article.searchVector` is now declared `Unsupported("tsvector")` so
+`migrate diff` no longer tries to drop the FTS column (see MIGRATION_STATUS.md).

@@ -22,5 +22,9 @@ export default defineConfig({
     // DB integration tests may connect to a real database; give them room.
     testTimeout: 30000,
     hookTimeout: 30000,
+    // Some DB suites toggle shared singleton config rows (AnalyticsConfig,
+    // MonetizationConfiguration). Run test files serially so those globals are
+    // deterministic across suites (tests within a file already run in order).
+    fileParallelism: false,
   },
 });

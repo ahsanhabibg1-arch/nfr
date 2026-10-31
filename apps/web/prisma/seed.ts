@@ -22,6 +22,7 @@ import { MEDIA_ASSETS, ADMIN_SOURCES } from '../data/mockAdminData';
 import { PRIMARY_SECTIONS } from '../config/routes';
 import { seedCanonicalNavigation } from '../lib/cms/navCanonical';
 import { seedAnalyticsDefaults } from '../lib/cms/analyticsSeed';
+import { seedMonetizationDefaults } from '../lib/cms/monetizationSeed';
 import type { Article, ContentBlock } from '../types';
 
 const prisma = new PrismaClient();
@@ -201,6 +202,9 @@ async function main() {
 
   // --- Analytics provider rows (idempotent, create-missing-only) -----------
   await seedAnalyticsDefaults(prisma);
+
+  // --- Monetization disclosure policies (idempotent; policy text only) -----
+  await seedMonetizationDefaults(prisma);
 
   // --- Redirect registry (mirror of next.config legacy redirects) ----------
   const REDIRECTS: [string, string][] = [

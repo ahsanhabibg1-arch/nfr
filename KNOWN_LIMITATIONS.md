@@ -242,3 +242,29 @@ addressed in `apps/web`:
 - **`test:cache` is a dev-mode test.** It creates a brand-new article after build and
   expects it immediately reachable, which relies on Next dev's always-dynamic rendering;
   run it against `npm run dev` (prod `next start` negative-caches a not-yet-generated path).
+
+## Batch 08 — Monetization
+
+- **Disabled by default.** External ad serving (AdSense) and outbound click tracking are OFF
+  by default and owner-gated. No AdSense script is injected in this batch even when a
+  placement is enabled (space is only reserved + labeled). No publisher/ad-unit id is invented.
+- **No fabricated commercials.** No partner, revenue, commission, RPM, CPC, conversion,
+  availability, ticket price, streaming right or AdSense approval is stored or shown. The
+  dashboard shows "Not configured"/"Not tracked"/"Disabled" honestly.
+- **Rodeo entities have no public routes.** Commercial relationships for hubs/events/editions
+  are DB + CMS only (no broken public links). Public rodeo pages are a future batch.
+- **Event-vs-edition.** Edition-specific offers are never auto-copied to later years; each
+  edition is configured independently.
+- **In-memory click rate limiting.** Outbound-click dedup/rate limiting is per-process
+  (single-instance); true distributed limiting needs a shared backend. Click tracking also
+  requires analytics collection to be enabled (also off by default).
+- **No external link fetching.** Affiliate URLs are validated statically; the server never
+  fetches untrusted commercial URLs (no SSRF). Optional link-health checking is not
+  implemented in this batch.
+- **FTS column drift in `migrate diff`.** `Article.searchVector` is a DB-managed generated
+  tsvector declared `Unsupported("tsvector")`. `migrate diff` still emits index/`DROP DEFAULT`
+  noise for it; every offline migration must be hand-reviewed to strip any `searchVector`
+  DROP/ALTER before applying (see MIGRATION_STATUS.md). Declaring it Unsupported prevents a
+  silent data-losing `DROP COLUMN`.
+- **Legal/consent review.** Disclosure defaults are generic and do not assert legal compliance
+  in any jurisdiction; wording/prominence and consent requirements need owner/legal review.

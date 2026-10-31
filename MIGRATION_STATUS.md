@@ -220,3 +220,35 @@ npx prisma migrate diff --from-schema-datasource prisma/schema.prisma \
 npx prisma migrate deploy
 DATABASE_URL="$TEST_DATABASE_URL" npx prisma migrate deploy
 ```
+
+## Batch 08 — Monetization & Affiliate (2026-10-31)
+Additive migration `20261031200000_batch08_monetization` (dev + test). Adds 6 enums and 10
+monetization models + 2 `Article` back-relations (FK columns only). No existing table
+altered destructively; no data reset. Verification: Prisma validate + generate OK; typecheck
+clean; vitest **161/161** (deterministic ×2, now serial); `next build` PASS; route smoke
+28/28, admin 10/10 (incl /admin/monetization), media e2e 7/7, cache 10/10 (dev).
+
+**⚠ Offline-migration hazard (important).** `migrate diff` compares the live DB to the Prisma
+schema. The Batch 07 FTS column `Article."searchVector"` is a **DB-managed generated
+tsvector** intentionally not modeled in Prisma, so a raw `migrate diff` tries to **DROP** it
+(and its GIN index). In Batch 08 those DROP statements were generated and briefly applied,
+breaking full-text search; they were then stripped from the migration, the column was
+declared `Unsupported("tsvector")` in `schema.prisma`, and the column + index were restored
+on dev + test:
+
+```bash
+# idempotent restore (already applied):
+ALTER TABLE "Article" ADD COLUMN IF NOT EXISTS "searchVector" tsvector
+  GENERATED ALWAYS AS ( setweight(to_tsvector('english'::regconfig, coalesce("title",'')),'A')
+   || setweight(to_tsvector('english'::regconfig, coalesce("deck",'')),'B')
+   || setweight(to_tsvector('english'::regconfig, coalesce("excerpt",'')),'B')
+   || setweight(to_tsvector('english'::regconfig, coalesce("subcategory",'')),'C')
+   || setweight(to_tsvector('english'::regconfig, coalesce("articleType",'')),'C') ) STORED;
+CREATE INDEX IF NOT EXISTS "Article_searchVector_idx" ON "Article" USING GIN ("searchVector");
+```
+
+**Required process for every future offline migration:** after `migrate diff`, manually
+**remove any DROP of `searchVector` / `Article_searchVector_idx` and any `ALTER COLUMN
+"searchVector" …`** before saving/applying. The `Unsupported("tsvector")` declaration
+downgrades the diff from a data-losing `DROP COLUMN` to index/`DROP DEFAULT` noise that errors
+(rather than loses data) if applied, but the hand-strip step is still mandatory.

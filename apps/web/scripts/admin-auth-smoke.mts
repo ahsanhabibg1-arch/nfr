@@ -26,7 +26,7 @@ if (!process.env.DATABASE_URL && fs.existsSync(envPath)) {
 }
 
 const BASE = process.env.SMOKE_BASE_URL || 'http://localhost:3000';
-const ROUTES = ['/admin/', '/admin/articles/', '/admin/rodeo-coverage/', '/admin/editorial-organization/', '/admin/sources/', '/admin/website/', '/admin/media/', '/admin/seo/', '/admin/analytics/'];
+const ROUTES = ['/admin/', '/admin/articles/', '/admin/rodeo-coverage/', '/admin/editorial-organization/', '/admin/sources/', '/admin/website/', '/admin/media/', '/admin/seo/', '/admin/analytics/', '/admin/monetization/'];
 
 async function main() {
   const { prisma } = await import('../lib/db');

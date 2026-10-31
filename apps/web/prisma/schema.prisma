@@ -150,6 +150,67 @@ enum ProviderConnectionStatus {
   DISABLED
 }
 
+// ---- Batch 08 — Monetization & Affiliate Management -------------------------
+
+/// Commercial product category for partners/links (§6).
+enum AffiliateCategory {
+  STREAMING
+  TICKETS
+  TRAVEL
+  APPAREL
+  BOOTS
+  ACCESSORIES
+  EQUIPMENT
+  OTHER
+}
+
+/// Partner verification lifecycle. A partner is never treated as official/authorized
+/// without VERIFIED evidence (§6/§13/§14).
+enum PartnerVerificationStatus {
+  UNVERIFIED
+  PENDING
+  VERIFIED
+  REJECTED
+}
+
+/// Shared lifecycle for links / placements / sponsorships / associations.
+enum MonetizationStatus {
+  DRAFT
+  ACTIVE
+  INACTIVE
+  EXPIRED
+}
+
+/// Paid-link attribute policy (§7/§16). Default is sponsored+nofollow+noopener.
+enum AffiliateRelAttribute {
+  SPONSORED
+  NOFOLLOW
+  SPONSORED_NOFOLLOW
+  UGC
+}
+
+/// Logical ad placement slots (§9). External serving is DISABLED by default.
+enum AdPlacementSlot {
+  HOMEPAGE
+  ARTICLE_HEADER
+  ARTICLE_INCONTENT
+  ARTICLE_FOOTER
+  CATEGORY
+  RODEO_EVENT
+  SIDEBAR
+}
+
+/// Entity a commercial relationship/placement attaches to. Keeps the rodeo
+/// event-vs-edition separation (§12).
+enum CommercialEntityType {
+  ARTICLE
+  RODEO_HUB
+  RODEO_EVENT
+  RODEO_EDITION
+  DISCIPLINE
+  CATEGORY
+}
+
 // ============================================================================
 // EDITORIAL CORE
 // ============================================================================
@@ -218,6 +279,12 @@ model Article {
 
   takeaways         String[]          @default([])
 
+  // DB-managed full-text search vector (Batch 07): a generated STORED tsvector with a
+  // GIN index, created in raw migration SQL and queried via parameterized $queryRaw.
+  // Declared here as Unsupported so schema and DB agree and `migrate diff` never tries
+  // to drop it; it is excluded from the generated client (never read/written via Prisma).
+  searchVector      Unsupported("tsvector")?
+
   publishedAt       DateTime?
   scheduledAt       DateTime?
   reviewedAt        DateTime?
@@ -244,6 +311,9 @@ model Article {
   events      ArticleEvent[]
   editions    ArticleEdition[]
   seoFindings SeoFinding[]
+  // Batch 08 monetization (commercial, kept separate from editorial facts)
+  affiliatePlacements AffiliatePlacement[]
+  sponsorships        SponsoredContentRelationship[]
 
   // Self-relation for curated related articles.
   relatedTo   ArticleRelation[] @relation("ArticleRelationSource")
@@ -930,4 +1000,225 @@ model AnalyticsConfig {
   value       Json
   updatedById String?
   updatedAt   DateTime @default(now()) @updatedAt
+}
+
+// ============================================================================
+// MONETIZATION & AFFILIATE MANAGEMENT (Batch 08)
+// ============================================================================
+// Commercial relationships are kept STRICTLY separate from editorial facts and
+// source verification: an affiliate partner is NOT an official source, and a paid
+// placement is NOT an editorial endorsement. No partner, revenue, commission,
+// approval, availability or price is ever fabricated. External ad serving and
+// outbound click tracking are DISABLED by default (owner-gated). No API secrets or
+// private affiliate credentials are stored here. See MONETIZATION_ARCHITECTURE.md.
+
+/// A commercial partner. `verificationStatus` + evidence gate any "official" claim;
+/// `isActive` gates public rendering. Never pre-populated with invented partners.
+model AffiliatePartner {
+  id                 String                    @id @default(uuid())
+  name               String
+  slug               String                    @unique
+  website            String?
+  category           AffiliateCategory         @default(OTHER)
+  programType        String?
+  isActive           Boolean                   @default(false)
+  verificationStatus PartnerVerificationStatus @default(UNVERIFIED)
+  verifiedAt         DateTime?
+  lastVerifiedAt     DateTime?
+  complianceNotes    String?
+  createdById        String?
+  createdAt          DateTime                  @default(now())
+  updatedAt          DateTime                  @default(now()) @updatedAt
+
+  programs     AffiliateProgram[]
+  links        AffiliateLink[]
+  sponsorships SponsoredContentRelationship[]
+  associations CommercialEntityAssociation[]
+  disclosures  MonetizationDisclosure[]
+
+  @@index([isActive, verificationStatus])
+  @@index([category])
+}
+
+/// Optional grouping of links under a named partner program.
+model AffiliateProgram {
+  id          String                @id @default(uuid())
+  partnerId   String
+  partner     AffiliatePartner      @relation(fields: [partnerId], references: [id], onDelete: Cascade)
+  name        String
+  programType String?
+  category    AffiliateCategory     @default(OTHER)
+  defaultRel  AffiliateRelAttribute @default(SPONSORED_NOFOLLOW)
+  status      MonetizationStatus    @default(DRAFT)
+  notes       String?
+  createdAt   DateTime              @default(now())
+  updatedAt   DateTime              @default(now()) @updatedAt
+  links       AffiliateLink[]
+
+  @@index([partnerId])
+}
+
+/// Centralized affiliate link registry. `merchantUrl` is the original destination;
+/// `trackingUrl` the affiliate destination (resolved by the /go redirect). URLs are
+/// validated server-side (no javascript:/data:/private-network targets).
+model AffiliateLink {
+  id               String                   @id @default(uuid())
+  partnerId        String
+  partner          AffiliatePartner         @relation(fields: [partnerId], references: [id], onDelete: Restrict)
+  programId        String?
+  program          AffiliateProgram?        @relation(fields: [programId], references: [id], onDelete: SetNull)
+  label            String
+  merchantUrl      String
+  trackingUrl      String?
+  category         AffiliateCategory        @default(OTHER)
+  rel              AffiliateRelAttribute    @default(SPONSORED_NOFOLLOW)
+  status           MonetizationStatus       @default(DRAFT)
+  isActive         Boolean                  @default(false)
+  editorialContext String?
+  effectiveFrom    DateTime?
+  effectiveTo      DateTime?
+  lastVerifiedAt   DateTime?
+  verificationNotes String?
+  createdById      String?
+  createdAt        DateTime                 @default(now())
+  updatedAt        DateTime                 @default(now()) @updatedAt
+
+  placements AffiliatePlacement[]
+  clicks     AffiliateClickAggregate[]
+
+  @@index([partnerId])
+  @@index([isActive, status])
+  @@index([category])
+}
+
+/// Assignment of a link to a content entity (article/rodeo). Created/proposed via
+/// article-edit rights; activation gated by monetization permissions.
+model AffiliatePlacement {
+  id          String               @id @default(uuid())
+  linkId      String
+  link        AffiliateLink        @relation(fields: [linkId], references: [id], onDelete: Cascade)
+  entityType  CommercialEntityType @default(ARTICLE)
+  entityId    String
+  articleId   String?
+  article     Article?             @relation(fields: [articleId], references: [id], onDelete: Cascade)
+  position    String?
+  status      MonetizationStatus   @default(DRAFT)
+  isActive    Boolean              @default(false)
+  note        String?
+  proposedById String?
+  approvedById String?
+  createdAt   DateTime             @default(now())
+  updatedAt   DateTime             @default(now()) @updatedAt
+
+  @@index([entityType, entityId])
+  @@index([articleId])
+  @@index([linkId])
+}
+
+/// AdSense-ready logical placement. `enabled` + MonetizationConfiguration.adsenseEnabled
+/// both gate public display; defaults keep external serving OFF.
+model AdPlacement {
+  id              String          @id @default(uuid())
+  slot            AdPlacementSlot
+  name            String
+  pageScope       String          @default("global") // home|article|category|rodeo_event|global
+  enabled         Boolean         @default(false)
+  device          String          @default("all") // all|desktop|mobile
+  position        Int             @default(0)
+  priority        Int             @default(0)
+  responsive      Boolean         @default(true)
+  adUnitConfig    Json? // publisher/ad-unit id ONLY when authorized; null by default
+  complianceNotes String?
+  createdById     String?
+  createdAt       DateTime        @default(now())
+  updatedAt       DateTime        @default(now()) @updatedAt
+
+  @@index([pageScope, enabled])
+  @@index([slot])
+}
+
+/// Reusable disclosure policy text (§15). `partnerId` optional for partner-specific
+/// disclosure. Rendered close to the relevant commercial content, not only in footer.
+model MonetizationDisclosure {
+  id              String            @id @default(uuid())
+  key             String            @unique
+  scope           String // site|article|callout|sponsored|ad|partner
+  label           String
+  body            String
+  requiredProminent Boolean         @default(true)
+  enabled         Boolean           @default(true)
+  partnerId       String?
+  partner         AffiliatePartner? @relation(fields: [partnerId], references: [id], onDelete: SetNull)
+  updatedById     String?
+  updatedAt       DateTime          @default(now()) @updatedAt
+
+  @@index([scope])
+}
+
+/// Sponsored-content classification, separate from ordinary affiliate links (§16).
+model SponsoredContentRelationship {
+  id              String                @id @default(uuid())
+  articleId       String
+  article         Article               @relation(fields: [articleId], references: [id], onDelete: Cascade)
+  partnerId       String?
+  partner         AffiliatePartner?     @relation(fields: [partnerId], references: [id], onDelete: SetNull)
+  sponsorName     String
+  disclosureLabel String                @default("Sponsored")
+  rel             AffiliateRelAttribute @default(SPONSORED)
+  startAt         DateTime?
+  endAt           DateTime?
+  reviewNotes     String?
+  status          MonetizationStatus    @default(DRAFT)
+  isActive        Boolean               @default(false)
+  createdById     String?
+  createdAt       DateTime              @default(now())
+  updatedAt       DateTime              @default(now()) @updatedAt
+
+  @@index([articleId])
+  @@index([partnerId])
+}
+
+/// A commercial relationship between a partner and a rodeo/editorial entity (§12).
+/// Keeps event-vs-edition separation via entityType; never auto-copied across years.
+model CommercialEntityAssociation {
+  id               String               @id @default(uuid())
+  partnerId        String
+  partner          AffiliatePartner     @relation(fields: [partnerId], references: [id], onDelete: Cascade)
+  entityType       CommercialEntityType
+  entityId         String
+  relationshipType String // streaming|tickets|travel|apparel|other
+  note             String?
+  status           MonetizationStatus   @default(DRAFT)
+  isActive         Boolean              @default(false)
+  effectiveFrom    DateTime?
+  effectiveTo      DateTime?
+  createdById      String?
+  createdAt        DateTime             @default(now())
+  updatedAt        DateTime             @default(now()) @updatedAt
+
+  @@index([entityType, entityId])
+  @@index([partnerId])
+}
+
+/// Monetization configuration (key → JSON): adsenseEnabled, clickTrackingEnabled,
+/// publisherId, global disclosure toggles. External serving/tracking OFF by default.
+model MonetizationConfiguration {
+  key         String   @id
+  value       Json
+  updatedById String?
+  updatedAt   DateTime @default(now()) @updatedAt
+}
+
+/// Durable per-day outbound-click rollup (§18). Only written when click tracking is
+/// owner-enabled; no identifiers stored. Mirrors the analytics aggregate pattern.
+model AffiliateClickAggregate {
+  id        String        @id @default(uuid())
+  linkId    String
+  link      AffiliateLink @relation(fields: [linkId], references: [id], onDelete: Cascade)
+  day       DateTime      @db.Date
+  count     Int           @default(0)
+  updatedAt DateTime      @default(now()) @updatedAt
+
+  @@unique([linkId, day])
+  @@index([day])
 }

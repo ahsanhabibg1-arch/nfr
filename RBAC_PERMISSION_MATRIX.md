@@ -105,3 +105,22 @@ Six new permissions (see ANALYTICS_RBAC_MATRIX.md for the full grid):
 `analytics.config` (privacy-sensitive collection/retention controls) is Admin/Super
 Admin only. Enforced server-side in `lib/cms/analyticsService.ts`, audited, mirrored via
 `roleSync`. Public users have no dashboard access (search page only).
+
+## Batch 08 — Monetization permissions (owner-approved)
+
+Seven permissions (full grid in MONETIZATION_RBAC_MATRIX.md): `monetization.view`,
+`.partner.manage`, `.link.manage`, `.placement.manage`, `.disclosure.manage`, `.config`,
+`.report.view`.
+
+- **Super Admin / Administrator** — all seven.
+- **Editor** — `monetization.view` + `monetization.report.view` (assigns approved links/
+  disclosures to content via existing `article.edit.*`).
+- **Author** — `monetization.view` only; proposes placements on **own** articles via
+  `article.edit.own`. Cannot activate partners/links/placements or change settings.
+- **SEO Manager** — `monetization.view` + `monetization.report.view` (commercial compliance
+  diagnostics); no financial/provider/partner/link/config rights.
+
+`monetization.config` (AdSense/click-tracking/publisher) is Admin/Super Admin only. Enforced
+server-side in `lib/cms/monetizationService.ts`, audited, mirrored via `roleSync`. Placement
+**activation** always requires `monetization.placement.manage` even when a proposal was
+created with article-edit rights.

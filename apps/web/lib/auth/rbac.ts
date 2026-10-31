@@ -46,7 +46,15 @@ export type Permission =
   | 'analytics.export'
   | 'search.analytics.view'
   | 'search.config'
-  | 'analytics.provider.manage';
+  | 'analytics.provider.manage'
+  // Batch 08 Monetization permissions (owner-approved; see MONETIZATION_RBAC_MATRIX.md)
+  | 'monetization.view'
+  | 'monetization.partner.manage'
+  | 'monetization.link.manage'
+  | 'monetization.placement.manage'
+  | 'monetization.disclosure.manage'
+  | 'monetization.config'
+  | 'monetization.report.view';
 
 export const ALL_ROLES: RoleKey[] = ['super_admin', 'administrator', 'editor', 'author', 'seo_manager'];
 
@@ -69,6 +77,9 @@ const EDITOR_PERMS: Permission[] = [
   'seo.audit.run', 'seo.audit.view', 'seo.finding.manage',
   // Analytics (Batch 07) — Editors view editorial analytics + internal-search insights
   'analytics.view', 'search.analytics.view',
+  // Monetization (Batch 08) — Editors view partners/links + reports; they assign
+  // approved links/disclosures to content via their existing article-edit rights.
+  'monetization.view', 'monetization.report.view',
 ];
 
 const ADMIN_PERMS: Permission[] = [
@@ -80,6 +91,9 @@ const ADMIN_PERMS: Permission[] = [
   // Analytics config/export/provider + search config — Admin/Super Admin (Batch 07).
   // analytics.config gates privacy-sensitive collection + retention controls.
   'analytics.config', 'analytics.export', 'search.config', 'analytics.provider.manage',
+  // Monetization operational management — Admin/Super Admin (Batch 08).
+  'monetization.partner.manage', 'monetization.link.manage', 'monetization.placement.manage',
+  'monetization.disclosure.manage', 'monetization.config',
 ];
 
 export const ROLE_PERMISSIONS: Record<RoleKey, Permission[]> = {
@@ -92,7 +106,10 @@ export const ROLE_PERMISSIONS: Record<RoleKey, Permission[]> = {
     // SEO (Batch 06): view findings for OWN articles only (scoped in the service)
     'seo.audit.view',
     // Analytics (Batch 07): own-article performance only (scoped in the service)
-    'analytics.view'],
+    'analytics.view',
+    // Monetization (Batch 08): view approved commercial assets; propose placements
+    // on own articles via article-edit rights. No partner/link/config management.
+    'monetization.view'],
   seo_manager: ['cms.access', 'seo.config',
     // Media: browse + edit image SEO/alt metadata on any asset (no upload/delete)
     'media.view', 'media.edit.any',
@@ -100,7 +117,10 @@ export const ROLE_PERMISSIONS: Record<RoleKey, Permission[]> = {
     'seo.audit.run', 'seo.audit.view', 'seo.finding.manage',
     // Analytics (Batch 07): analytics + search intelligence, search config, provider
     // connection management, export — but no unrelated system administration.
-    'analytics.view', 'analytics.export', 'search.analytics.view', 'search.config', 'analytics.provider.manage'],
+    'analytics.view', 'analytics.export', 'search.analytics.view', 'search.config', 'analytics.provider.manage',
+    // Monetization (Batch 08): view + commercial SEO/compliance diagnostics only;
+    // no financial/provider/partner/link configuration.
+    'monetization.view', 'monetization.report.view'],
 };
 
 export function roleHasPermission(roles: RoleKey[], perm: Permission): boolean {

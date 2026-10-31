@@ -396,3 +396,27 @@ GOOGLE_SEARCH_CONSOLE/GOOGLE_ANALYTICS_4), `ProviderConnectionStatus`. A generat
 `tsvector` column `Article.searchVector` + GIN index back full-text search and are
 intentionally **not** modeled in Prisma (raw-SQL + `$queryRaw`). No personal identifiers
 are stored in any analytics table.
+
+## Batch 08 additions
+Migration `20261031200000_batch08_monetization` (additive). New models:
+- **AffiliatePartner** — `name`, `slug`(unique), `website?`, `category`, `isActive`,
+  `verificationStatus`, `verifiedAt?`, `complianceNotes?`.
+- **AffiliateProgram** — partner-scoped grouping; `defaultRel`, `status`.
+- **AffiliateLink** — `partnerId`, `programId?`, `label`, `merchantUrl`, `trackingUrl?`,
+  `category`, `rel`, `status`, `isActive`, `effectiveFrom?/To?`, verification fields.
+- **AffiliatePlacement** — `linkId`→link, `entityType`/`entityId`, `articleId?`→Article,
+  `isActive`, `proposedById?`/`approvedById?`.
+- **AdPlacement** — `slot`, `name`, `pageScope`, `enabled`(default false), `device`,
+  `position`, `priority`, `responsive`, `adUnitConfig?` (null by default).
+- **MonetizationDisclosure** — `key`(unique), `scope`, `label`, `body`, `enabled`, `partnerId?`.
+- **SponsoredContentRelationship** — `articleId`→Article, `partnerId?`, `sponsorName`,
+  `disclosureLabel`, `rel`, dates, `isActive`.
+- **CommercialEntityAssociation** — `partnerId`, `entityType`/`entityId`, `relationshipType`,
+  `isActive`, dates (keeps event-vs-edition separation).
+- **MonetizationConfiguration** — key→JSON (adsenseEnabled/clickTrackingEnabled/publisherId).
+- **AffiliateClickAggregate** — unique `(linkId, day)`, `count` (no identifiers).
+
+New enums `AffiliateCategory`, `PartnerVerificationStatus`, `MonetizationStatus`,
+`AffiliateRelAttribute`, `AdPlacementSlot`, `CommercialEntityType`. `Article` gains two
+back-relations (`affiliatePlacements`, `sponsorships`) and declares `searchVector
+Unsupported("tsvector")?`. No revenue/commission/price is ever stored; no secrets stored.

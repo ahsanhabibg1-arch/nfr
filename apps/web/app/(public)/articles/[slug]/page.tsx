@@ -5,6 +5,8 @@ import { ArticleView } from '@/views/ArticleView';
 import { buildMetadata, articleJsonLd, breadcrumbJsonLd, JsonLd } from '@/lib/seo';
 import { ROUTES } from '@/config/routes';
 import { ViewBeacon } from '@/components/analytics/ViewBeacon';
+import { ArticleMonetization } from '@/components/monetization/ArticleMonetization';
+import { AdPlacementSlot } from '@/components/monetization/AdPlacementSlot';
 
 type Params = { params: Promise<{ slug: string }> };
 
@@ -62,6 +64,8 @@ export default async function ArticlePage({ params }: Params) {
         ]}
       />
       <ArticleView article={article} />
+      <ArticleMonetization articleId={article.id} />
+      <AdPlacementSlot pageScope="article" />
       <ViewBeacon entityType="ARTICLE" entityId={article.id} path={ROUTES.ARTICLE(article.slug)} />
     </>
   );
