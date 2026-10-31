@@ -237,3 +237,12 @@ handlers, with signature validation and Sharp processing in server-only modules.
 The admin library and article picker call RBAC-protected services/actions. Public
 delivery authorizes by lifecycle/visibility before reading storage. See
 `MEDIA_LIBRARY_ARCHITECTURE.md` and `STORAGE_PROVIDER_DECISION.md`.
+
+## Batch 06 — SEO Intelligence
+Deterministic, database-backed SEO auditing: `lib/seo-intel/` (rule registry +
+pure analyzers + orchestrator) → `lib/cms/seoService.ts` (RBAC/dashboard/workflow/
+config) → `app/admin/seo-actions.ts` → `views/admin/AdminSEOPage.tsx`, plus an
+advisory `ArticleSeoPanel` on the editor. Findings persist in the extended
+`SeoRule`/`SeoAuditRun`/`SeoFinding` tables with stable fingerprints (dedup),
+reopen-on-recurrence and verified auto-resolve. Advisory only (no publish blocks).
+See SEO_INTELLIGENCE_ARCHITECTURE.md, SEO_RULE_REGISTRY.md, SEO_RBAC_MATRIX.md.

@@ -74,6 +74,15 @@ additionally runs the Category A/B publication gate (`validateArticle`); failure
 | `media.edit.any` | Yes | Yes | Yes | No | Yes |
 | `media.delete` | Yes | Yes | No | No | No |
 | `media.assign` | Yes | Yes | Yes | Yes | No |
+| `seo.audit.run` *(Batch 06)* | Yes | Yes | Yes | No | Yes |
+| `seo.audit.view` *(Batch 06)* | Yes | Yes | Yes | Own | Yes |
+| `seo.finding.manage` *(Batch 06)* | Yes | Yes | Yes | No | Yes |
+| `seo.config` *(reused, Batch 06)* | Yes | Yes | No | No | Yes |
+
+**Batch 06 SEO Intelligence** (owner-approved — see SEO_RBAC_MATRIX.md): content
+modules run/view/manage findings at Editor+ (SEO Manager included); Authors view
+findings for their **own articles only**; rule/threshold config stays
+Admin/SEO-Manager+. Findings are advisory — they never block publishing.
 
 All checks run server-side. `media.assign` does not replace the target domain's
 permission: rodeo assignment also requires `rodeo.manage`, and article ownership/

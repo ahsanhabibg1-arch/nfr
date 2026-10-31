@@ -199,3 +199,20 @@ addressed in `apps/web`:
   a dedicated entity-side gallery picker is not part of the preserved Batch 04 UI.
 - Media RBAC is a tested provisional mapping pending owner confirmation before
   production. No production deployment has been performed.
+
+## Batch 06 — SEO Intelligence limitations
+- **Static/DB analysis, not HTTP-verified crawling.** The SEO technical checks
+  analyze CMS data + deterministic rules; they are not per-URL live crawls. Key
+  routes' real HTTP behavior is verified by the route/admin/media/cache smoke
+  suites. The engine makes no network requests (no SSRF surface).
+- **Bounded single-pass audit.** The audit scans all content in one synchronous
+  pass (fine at current scale). No background worker or scheduler exists; none is
+  claimed. Batching is the documented growth path.
+- **No external integrations.** Google Search Console, Analytics, AdSense,
+  rankings, impressions, clicks, CTR, organic traffic and backlinks are out of
+  scope and shown as "not connected" — never fabricated.
+- **Advisory only.** SEO findings never block publishing; the existing
+  publication gate is unchanged. Editor integration is a read-only advisory panel
+  (no audit runs on page load).
+- **Schema.org validity ≠ rich results.** Structural validity is reported; Google
+  rich-result eligibility / rankings are never promised.

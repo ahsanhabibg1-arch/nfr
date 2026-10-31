@@ -1,172 +1,195 @@
 'use client';
 
-import React, { useState } from 'react';
+import React, { useState, useTransition } from 'react';
+import { useRouter } from 'next/navigation';
 import { AdminPageHeader } from '../../components/admin/AdminPageHeader';
 import { AdminTabs } from '../../components/admin/AdminTabs';
-import { AdminStatusBadge } from '../../components/admin/AdminStatusBadge';
-import { AdminModal } from '../../components/admin/AdminModal';
-import { SEO_ISSUES } from '../../data/mockAdminData';
-import { SEOGroup, SEOIssue } from '../../types/admin';
+import type { SeoDashboard, FindingListResult, FindingRow } from '../../lib/cms/seoService';
+import {
+  runSeoAuditAction, updateFindingAction, recheckFindingAction, setRuleEnabledAction, updateSeoThresholdsAction,
+} from '../../app/admin/seo-actions';
 
-const SEO_GROUPS: SEOGroup[] = [
-  'On-page',
-  'Search Appearance',
-  'Technical',
-  'Content & Topic',
-  'External Links',
-  'Internal Links',
-  'Image SEO',
-  'Structured Data',
-  'AI Search Readiness',
-  'Freshness',
-  'Event SEO',
-  'Redirects',
-];
+interface RuleRow { code: string; title: string | null; category: string; severity: string; enabled: boolean; description: string | null }
+interface Thresholds { seoTitleMin: number; seoTitleMax: number; metaDescMin: number; metaDescMax: number; minBodyWords: number }
+interface Filters { status?: string; severity?: string; category?: string; q?: string; page?: number }
+interface Props {
+  dashboard: SeoDashboard; findings: FindingListResult; filters: Filters; rules: RuleRow[]; thresholds: Thresholds;
+  canRun: boolean; canManage: boolean; canConfig: boolean;
+}
 
-export const AdminSEOPage: React.FC = () => {
-  const [activeTab, setActiveTab] = useState<'issues' | 'groups' | 'audit' | 'sitemap'>('issues');
-  const [selectedIssue, setSelectedIssue] = useState<SEOIssue | null>(null);
-  const [activeGroupFilter, setActiveGroupFilter] = useState<string>('all');
-  const [auditRunning, setAuditRunning] = useState(false);
-  const [auditNotice, setAuditNotice] = useState<string | null>(null);
+const SEV_COLOR: Record<string, string> = {
+  CRITICAL: 'bg-rose-100 border-rose-300 text-rose-800', HIGH: 'bg-orange-100 border-orange-300 text-orange-800',
+  MEDIUM: 'bg-amber-100 border-amber-300 text-amber-800', LOW: 'bg-stone-100 border-stone-300 text-stone-600',
+  INFO: 'bg-sky-100 border-sky-300 text-sky-800', WARNING: 'bg-amber-100 border-amber-300 text-amber-800', NOTICE: 'bg-stone-100 border-stone-300 text-stone-600',
+};
+const KIND_LABEL: Record<string, string> = { DEFECT: 'Defect', RECOMMENDATION: 'Recommendation', OPPORTUNITY: 'Opportunity', NOT_PERFORMED: 'Not performed' };
 
+const Tile: React.FC<{ label: string; value: React.ReactNode; accent?: string }> = ({ label, value, accent }) => (
+  <div className="bg-white border border-stone-200 rounded-sm p-3">
+    <div className="text-[10px] font-mono uppercase tracking-wider text-stone-500">{label}</div>
+    <div className={`text-2xl font-bold ${accent || 'text-stone-900'}`}>{value}</div>
+  </div>
+);
 
-  const filteredIssues = SEO_ISSUES.filter(
-    (i) => activeGroupFilter === 'all' || i.group === activeGroupFilter
-  );
+export const AdminSEOPage: React.FC<Props> = ({ dashboard, findings, filters, rules, thresholds, canRun, canManage, canConfig }) => {
+  const router = useRouter();
+  const [tab, setTab] = useState<'overview' | 'issues' | 'rules'>('overview');
+  const [pending, startTransition] = useTransition();
+  const [notice, setNotice] = useState<string | null>(null);
+  const flash = (m: string) => { setNotice(m); setTimeout(() => setNotice(null), 7000); };
+  const [selId, setSelId] = useState<string | null>(findings.rows[0]?.id ?? null);
+  const selected = findings.rows.find((f) => f.id === selId) ?? null;
 
-  const handleRunAudit = () => {
-    setAuditRunning(true);
-    setTimeout(() => {
-      setAuditRunning(false);
-      setAuditNotice('Automated 12-Group audit completed across 18 routes in demonstration mode.');
-      setTimeout(() => setAuditNotice(null), 4000);
-    }, 1500);
+  const run = (p: Promise<{ ok: boolean; error?: string }>, ok: string) =>
+    startTransition(async () => { const r = await p; flash(r.ok ? ok : r.error || 'Error'); if (r.ok) router.refresh(); });
+  const navigate = (patch: Partial<Filters>) => {
+    const p = new URLSearchParams(); const m = { ...filters, ...patch };
+    for (const k of ['status', 'severity', 'category', 'q'] as const) if (m[k]) p.set(k, String(m[k]));
+    if (m.page && m.page > 1) p.set('page', String(m.page));
+    router.push(`/admin/seo/?${p.toString()}`);
   };
+  const runAudit = () => startTransition(async () => {
+    const r = await runSeoAuditAction({ kind: 'full' });
+    flash(r.ok ? `Audit complete: ${r.total} findings (${r.created} new, ${r.reopened} reopened, ${r.resolved} resolved).` : r.error || 'Audit failed');
+    if (r.ok) router.refresh();
+  });
+
+  const [note, setNote] = useState('');
+  const [thr, setThr] = useState(thresholds);
 
   return (
     <div className="space-y-6">
-      <AdminPageHeader
-        title="SEO Intelligence &amp; 12-Group Rules Engine"
-        description="Unified editorial SEO audit console: evaluates on-page titles, Schema.org structured data, AI search readiness, image ALT tags, and commercial link compliance."
-        badge="Engine v1.0"
-        actions={
-          <button
-            onClick={handleRunAudit}
-            disabled={auditRunning}
-            className="px-4 py-2 bg-[#0F1115] text-[#D4A757] hover:bg-stone-800 text-xs font-semibold uppercase tracking-wider rounded-xs transition-colors flex items-center gap-2 disabled:opacity-60"
-          >
-            {auditRunning ? (
-              <>
-                <svg className="w-3.5 h-3.5 animate-spin" viewBox="0 0 24 24" fill="none">
-                  <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
-                  <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z" />
-                </svg>
-                Auditing 18 Routes...
-              </>
-            ) : (
-              'Run Full 12-Group Audit'
-            )}
-          </button>
-        }
+      <AdminPageHeader title="SEO Intelligence" description="Database-backed, deterministic SEO auditing of real CMS content. Findings are explainable diagnostics and recommendations — they do not block publishing."
+        actions={canRun ? <button onClick={runAudit} disabled={pending} className="px-3.5 py-1.5 bg-[#0F1115] text-[#D4A757] text-xs font-semibold uppercase tracking-wider rounded-xs disabled:opacity-50">{pending ? 'Running…' : 'Run full audit'}</button> : undefined}
       />
+      {notice && <div className="p-3 bg-emerald-50 border border-emerald-200 text-emerald-800 text-xs rounded-xs">{notice}</div>}
+      {dashboard.scopedToOwn && <div className="p-2 bg-sky-50 border border-sky-200 text-sky-800 text-xs rounded-xs">You are viewing SEO findings for your own articles only.</div>}
+      <AdminTabs tabs={[{ id: 'overview', label: 'Overview' }, { id: 'issues', label: 'Issues', count: dashboard.activeIssues }, { id: 'rules', label: 'Rules & Config', count: rules.length }]} activeTab={tab} onChange={(t) => setTab(t as typeof tab)} />
 
-      {auditNotice && (
-        <div className="p-3 bg-emerald-50 border border-emerald-200 text-emerald-800 text-xs font-sans rounded-xs flex items-center justify-between">
-          <span>{auditNotice}</span>
-          <button onClick={() => setAuditNotice(null)} className="font-bold">&times;</button>
+      {tab === 'overview' && (
+        <div className="space-y-5">
+          <div className="grid grid-cols-2 sm:grid-cols-4 lg:grid-cols-6 gap-3">
+            <Tile label="Active issues" value={dashboard.activeIssues} accent="text-stone-900" />
+            <Tile label="Critical" value={dashboard.bySeverity.CRITICAL ?? 0} accent="text-rose-700" />
+            <Tile label="High" value={dashboard.bySeverity.HIGH ?? 0} accent="text-orange-700" />
+            <Tile label="Medium" value={dashboard.bySeverity.MEDIUM ?? 0} accent="text-amber-700" />
+            <Tile label="Low" value={dashboard.bySeverity.LOW ?? 0} accent="text-stone-700" />
+            <Tile label="Resolved" value={dashboard.resolved} accent="text-emerald-700" />
+            <Tile label="Analyzed article URLs" value={dashboard.analyzedUrls} />
+            <Tile label="Total articles" value={dashboard.totalArticles} />
+            <Tile label="In progress" value={dashboard.inProgress} />
+            <Tile label="Latest audit" value={dashboard.latestRunAt ? new Date(dashboard.latestRunAt).toLocaleDateString() : <span className="text-sm text-stone-400">never</span>} />
+          </div>
+
+          <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+            <div className="bg-white border border-stone-200 rounded-sm p-4">
+              <h3 className="text-xs font-bold uppercase tracking-wider text-stone-700 mb-3">Active issues by category</h3>
+              {Object.keys(dashboard.byCategory).length === 0 ? <p className="text-xs text-stone-400">No active issues. {dashboard.latestRunAt ? '' : 'Run an audit to analyze content.'}</p> :
+                Object.entries(dashboard.byCategory).sort((a, b) => b[1] - a[1]).map(([cat, n]) => (
+                  <div key={cat} className="flex items-center gap-2 text-xs py-1"><span className="w-40 text-stone-600 capitalize">{cat.replace('_', ' ')}</span><div className="flex-1 h-2 bg-stone-100 rounded"><div className="h-2 bg-[#D4A757] rounded" style={{ width: `${Math.min(100, n * 8)}%` }} /></div><span className="font-mono text-stone-500">{n}</span></div>
+                ))}
+            </div>
+            <div className="bg-white border border-stone-200 rounded-sm p-4">
+              <h3 className="text-xs font-bold uppercase tracking-wider text-stone-700 mb-3">Recent audits</h3>
+              {dashboard.recentRuns.length === 0 ? <p className="text-xs text-stone-400">No audits yet.</p> :
+                dashboard.recentRuns.map((r) => (<div key={r.id} className="flex justify-between text-xs py-1 border-b border-stone-100 last:border-0"><span className="text-stone-600">{r.scope}</span><span className="text-stone-400">{new Date(r.startedAt).toLocaleString()}</span><span className="font-mono text-stone-500">{r.total} · {r.status}</span></div>))}
+            </div>
+          </div>
+          <div className="p-3 bg-stone-50 border border-stone-200 rounded-xs text-[11px] text-stone-500">
+            Not connected (require external integrations, out of scope): Google rankings, impressions, clicks, CTR, organic traffic, Search Console coverage, AdSense revenue, backlinks. All metrics above are computed from your own CMS database.
+          </div>
         </div>
       )}
 
-      {/* Primary Tabs */}
-      <AdminTabs
-        tabs={[
-          { id: 'issues', label: 'Actionable Issues & Findings', count: SEO_ISSUES.length },
-          { id: 'groups', label: '12 Standard SEO Groups', count: 12 },
-          { id: 'audit', label: 'Structured Data Validator', count: 7 },
-          { id: 'sitemap', label: 'Sitemap & Robots Directives' },
-        ]}
-        activeTab={activeTab}
-        onChange={(tabId) => setActiveTab(tabId as any)}
-      />
+      {tab === 'issues' && (
+        <div className="space-y-3">
+          <form onSubmit={(e) => { e.preventDefault(); const fd = new FormData(e.currentTarget); navigate({ q: String(fd.get('q') || ''), page: 1 }); }} className="flex flex-wrap items-center gap-2">
+            <input name="q" defaultValue={filters.q ?? ''} placeholder="Search evidence/URL/rule…" className="text-xs p-2 bg-white border border-stone-200 rounded-xs w-56" />
+            <select value={filters.status ?? ''} onChange={(e) => navigate({ status: e.target.value || undefined, page: 1 })} className="text-xs p-2 bg-white border border-stone-200 rounded-xs"><option value="">Active</option><option value="OPEN">Open</option><option value="IN_PROGRESS">In progress</option><option value="REOPENED">Reopened</option><option value="RESOLVED">Resolved</option><option value="IGNORED">Dismissed</option></select>
+            <select value={filters.severity ?? ''} onChange={(e) => navigate({ severity: e.target.value || undefined, page: 1 })} className="text-xs p-2 bg-white border border-stone-200 rounded-xs"><option value="">All severities</option>{['CRITICAL', 'HIGH', 'MEDIUM', 'LOW', 'INFO'].map((s) => <option key={s} value={s}>{s}</option>)}</select>
+            <select value={filters.category ?? ''} onChange={(e) => navigate({ category: e.target.value || undefined, page: 1 })} className="text-xs p-2 bg-white border border-stone-200 rounded-xs"><option value="">All categories</option>{['content', 'editorial', 'technical', 'structured_data', 'internal_link', 'rodeo_entity', 'image'].map((c) => <option key={c} value={c}>{c.replace('_', ' ')}</option>)}</select>
+            <span className="text-[11px] text-stone-500 ml-auto">{findings.total} finding(s)</span>
+          </form>
 
-      {/* Tab 1: Issues & Findings */}
-      {activeTab === 'issues' && (
-        <div className="space-y-4">
-          {/* Group Filter Chips */}
-          <div className="flex items-center gap-1.5 overflow-x-auto pb-2 scrollbar-none font-sans text-xs">
-            <span className="text-[11px] font-mono text-stone-500 uppercase tracking-wider mr-1">
-              Group Filter:
-            </span>
-            <button
-              onClick={() => setActiveGroupFilter('all')}
-              className={`px-2.5 py-1 rounded-xs uppercase tracking-wider text-[11px] font-semibold transition-colors ${
-                activeGroupFilter === 'all'
-                  ? 'bg-[#0F1115] text-[#D4A757]'
-                  : 'bg-white text-stone-600 hover:text-stone-900 border border-stone-200'
-              }`}
-            >
-              All ({SEO_ISSUES.length})
-            </button>
-            {SEO_GROUPS.map((grp) => {
-              const count = SEO_ISSUES.filter((i) => i.group === grp).length;
-              if (count === 0) return null;
-              return (
-                <button
-                  key={grp}
-                  onClick={() => setActiveGroupFilter(grp)}
-                  className={`px-2.5 py-1 rounded-xs uppercase tracking-wider text-[11px] font-semibold whitespace-nowrap transition-colors ${
-                    activeGroupFilter === grp
-                      ? 'bg-[#0F1115] text-[#D4A757]'
-                      : 'bg-white text-stone-600 hover:text-stone-900 border border-stone-200'
-                  }`}
-                >
-                  {grp} ({count})
-                </button>
-              );
-            })}
+          <div className="grid grid-cols-1 lg:grid-cols-12 gap-4 items-start">
+            <div className="lg:col-span-7 bg-white border border-stone-200 rounded-sm overflow-x-auto">
+              <table className="w-full text-left text-xs">
+                <thead><tr className="bg-stone-50 border-b border-stone-200 text-stone-600 uppercase text-[10px]"><th className="py-2 px-3">Sev</th><th className="py-2 px-3">Finding</th><th className="py-2 px-3">Category</th><th className="py-2 px-3">Status</th></tr></thead>
+                <tbody className="divide-y divide-stone-100">
+                  {findings.rows.length === 0 && <tr><td colSpan={4} className="py-6 text-center text-stone-400">No findings match. {dashboard.latestRunAt ? '' : 'Run an audit first.'}</td></tr>}
+                  {findings.rows.map((f) => (
+                    <tr key={f.id} onClick={() => { setSelId(f.id); setNote(''); }} className={`cursor-pointer hover:bg-stone-50 ${selId === f.id ? 'bg-amber-50/40' : ''}`}>
+                      <td className="py-2 px-3"><span className={`text-[9px] font-mono px-1 rounded border ${SEV_COLOR[f.severity] || ''}`}>{f.severity}</span></td>
+                      <td className="py-2 px-3"><div className="font-semibold text-stone-800">{f.title}</div><div className="text-stone-500 truncate max-w-[280px]">{f.evidence}</div></td>
+                      <td className="py-2 px-3 text-stone-500 capitalize">{f.category.replace('_', ' ')}</td>
+                      <td className="py-2 px-3 text-stone-500">{f.status}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+              {findings.totalPages > 1 && (
+                <div className="flex items-center justify-between text-xs p-2 border-t border-stone-100">
+                  <button disabled={findings.page <= 1} onClick={() => navigate({ page: findings.page - 1 })} className="px-2 py-1 border border-stone-300 rounded-xs disabled:opacity-40">← Prev</button>
+                  <span className="text-stone-500">Page {findings.page}/{findings.totalPages}</span>
+                  <button disabled={findings.page >= findings.totalPages} onClick={() => navigate({ page: findings.page + 1 })} className="px-2 py-1 border border-stone-300 rounded-xs disabled:opacity-40">Next →</button>
+                </div>
+              )}
+            </div>
+
+            <div className="lg:col-span-5">
+              {!selected ? <div className="bg-white border border-stone-200 rounded-sm p-6 text-center text-stone-400 text-xs">Select a finding to inspect its evidence and remediation.</div> : (
+                <div className="bg-white border border-stone-200 rounded-sm p-4 space-y-3 sticky top-20 text-xs">
+                  <div className="flex items-center gap-2"><span className={`text-[9px] font-mono px-1 rounded border ${SEV_COLOR[selected.severity] || ''}`}>{selected.severity}</span><span className="text-[10px] font-mono text-stone-400">{KIND_LABEL[selected.kind] || selected.kind}</span><span className="font-mono text-[10px] text-stone-400 ml-auto">{selected.ruleCode}</span></div>
+                  <h3 className="font-bold text-sm text-stone-900">{selected.title}</h3>
+                  <div><div className="text-[10px] font-mono uppercase text-stone-500">Evidence</div><p className="text-stone-700">{selected.evidence}</p></div>
+                  {selected.recommendation && <div><div className="text-[10px] font-mono uppercase text-stone-500">Recommended action</div><p className="text-stone-700">{selected.recommendation}</p></div>}
+                  {selected.affectedUrl && <div><div className="text-[10px] font-mono uppercase text-stone-500">Affected</div><a href={selected.affectedUrl} target="_blank" rel="noreferrer" className="text-[#8B5E3C] hover:underline font-mono break-all">{selected.affectedUrl}</a></div>}
+                  <div className="text-[10px] text-stone-400">First seen {new Date(selected.firstSeenAt).toLocaleDateString()} · last seen {new Date(selected.lastSeenAt).toLocaleDateString()}</div>
+                  {selected.resolutionNote && <div className="text-[11px] text-emerald-700 bg-emerald-50 border border-emerald-200 rounded-xs p-2">{selected.resolutionNote}</div>}
+
+                  {canManage ? (
+                    <div className="space-y-2 pt-2 border-t border-stone-100">
+                      <textarea value={note} onChange={(e) => setNote(e.target.value)} placeholder="Resolution / note (optional)…" rows={2} className="w-full p-2 bg-stone-50 border border-stone-200 rounded-xs" />
+                      <div className="flex flex-wrap gap-2">
+                        <button onClick={() => run(updateFindingAction(selected.id, { status: 'IN_PROGRESS', resolutionNote: note || undefined }), 'Marked in progress.')} className="px-2 py-1 border border-stone-300 rounded-xs">In progress</button>
+                        <button onClick={() => run(updateFindingAction(selected.id, { status: 'RESOLVED', resolutionNote: note || undefined }), 'Marked resolved (manual).')} className="px-2 py-1 bg-emerald-700 text-white rounded-xs">Mark resolved</button>
+                        <button onClick={() => run(updateFindingAction(selected.id, { status: 'IGNORED', resolutionNote: note || undefined }), 'Dismissed (accepted risk).')} className="px-2 py-1 border border-stone-300 rounded-xs">Dismiss</button>
+                        {canRun && <button onClick={() => run(recheckFindingAction(selected.id), 'Re-checked (verified).')} className="px-2 py-1 bg-[#0F1115] text-[#D4A757] rounded-xs ml-auto">Recheck</button>}
+                      </div>
+                      <p className="text-[10px] text-stone-400">Manual status is recorded separately from verified technical resolution. A re-audit (Recheck) reconciles the finding against current data.</p>
+                    </div>
+                  ) : <p className="text-[11px] text-stone-400 pt-2 border-t border-stone-100">You have read-only access to this finding.</p>}
+                </div>
+              )}
+            </div>
           </div>
+        </div>
+      )}
 
-          {/* Issues Table */}
-          <div className="bg-white border border-stone-200 rounded-sm shadow-2xs overflow-hidden">
-            <table className="w-full text-left text-xs font-sans border-collapse">
-              <thead>
-                <tr className="bg-stone-50 border-b border-stone-200 text-stone-600 font-semibold uppercase text-[10px] tracking-wider">
-                  <th className="py-3 px-4">Severity</th>
-                  <th className="py-3 px-4">Rule &amp; Group</th>
-                  <th className="py-3 px-4">Affected Route / Content</th>
-                  <th className="py-3 px-4">Evidence</th>
-                  <th className="py-3 px-4">Status</th>
-                  <th className="py-3 px-4 text-right">Inspect</th>
-                </tr>
-              </thead>
+      {tab === 'rules' && (
+        <div className="space-y-4">
+          {canConfig && (
+            <div className="bg-white border border-stone-200 rounded-sm p-4 space-y-3">
+              <h3 className="text-xs font-bold uppercase tracking-wider text-stone-700">Editorial thresholds (guidance)</h3>
+              <div className="grid grid-cols-2 sm:grid-cols-5 gap-2 text-xs">
+                {([['seoTitleMin', 'Title min'], ['seoTitleMax', 'Title max'], ['metaDescMin', 'Desc min'], ['metaDescMax', 'Desc max'], ['minBodyWords', 'Min body words']] as const).map(([k, label]) => (
+                  <div key={k}><label className="block text-[10px] font-mono uppercase text-stone-500 mb-1">{label}</label><input type="number" value={thr[k]} onChange={(e) => setThr({ ...thr, [k]: Number(e.target.value) })} className="w-full p-2 bg-stone-50 border border-stone-200 rounded-xs" /></div>
+                ))}
+              </div>
+              <button onClick={() => run(updateSeoThresholdsAction(thr), 'Thresholds saved.')} disabled={pending} className="px-3 py-1.5 bg-[#0F1115] text-[#D4A757] text-xs font-semibold rounded-xs disabled:opacity-50">Save thresholds</button>
+              <p className="text-[10px] text-stone-400">Length checks are internal editorial guidance, not Google indexing rules.</p>
+            </div>
+          )}
+          <div className="bg-white border border-stone-200 rounded-sm overflow-x-auto">
+            <table className="w-full text-left text-xs">
+              <thead><tr className="bg-stone-50 border-b border-stone-200 text-stone-600 uppercase text-[10px]"><th className="py-2 px-3">Rule</th><th className="py-2 px-3">Category</th><th className="py-2 px-3">Severity</th><th className="py-2 px-3 text-right">Enabled</th></tr></thead>
               <tbody className="divide-y divide-stone-100">
-                {filteredIssues.map((issue) => (
-                  <tr key={issue.id} className="hover:bg-stone-50 transition-colors">
-                    <td className="py-3 px-4 whitespace-nowrap">
-                      <AdminStatusBadge status={issue.severity.toUpperCase()} variant={issue.severity} />
-                    </td>
-                    <td className="py-3 px-4 max-w-xs">
-                      <span className="font-bold text-stone-900 block leading-snug">{issue.rule}</span>
-                      <span className="text-[10px] font-mono text-[#8B5E3C] mt-0.5 block">{issue.group}</span>
-                    </td>
-                    <td className="py-3 px-4 font-mono text-[11px] text-stone-600 max-w-xs truncate">
-                      {issue.affectedContent}
-                    </td>
-                    <td className="py-3 px-4 text-stone-600 max-w-xs text-xs truncate">
-                      {issue.evidence}
-                    </td>
-                    <td className="py-3 px-4 whitespace-nowrap">
-                      <span className="capitalize font-medium text-stone-700">{issue.status.replace('_', ' ')}</span>
-                    </td>
-                    <td className="py-3 px-4 text-right whitespace-nowrap">
-                      <button
-                        onClick={() => setSelectedIssue(issue)}
-                        className="text-[#8B5E3C] hover:underline font-bold"
-                      >
-                        Remediate &rarr;
-                      </button>
-                    </td>
+                {rules.map((r) => (
+                  <tr key={r.code} className="hover:bg-stone-50/60">
+                    <td className="py-2 px-3"><div className="font-semibold text-stone-800">{r.title || r.code}</div><div className="text-stone-500 font-mono text-[10px]">{r.code}</div></td>
+                    <td className="py-2 px-3 text-stone-500 capitalize">{r.category.replace('_', ' ')}</td>
+                    <td className="py-2 px-3"><span className={`text-[9px] font-mono px-1 rounded border ${SEV_COLOR[r.severity] || ''}`}>{r.severity}</span></td>
+                    <td className="py-2 px-3 text-right">{canConfig ? <input type="checkbox" checked={r.enabled} onChange={(e) => run(setRuleEnabledAction(r.code, e.target.checked), 'Rule updated.')} /> : <span className="text-stone-400">{r.enabled ? 'on' : 'off'}</span>}</td>
                   </tr>
                 ))}
               </tbody>
@@ -174,121 +197,8 @@ export const AdminSEOPage: React.FC = () => {
           </div>
         </div>
       )}
-
-      {/* Tab 2: 12 Standard Groups */}
-      {activeTab === 'groups' && (
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4 font-sans">
-          {SEO_GROUPS.map((grp, idx) => (
-            <div key={grp} className="p-4 bg-white border border-stone-200 rounded-sm shadow-2xs">
-              <div className="flex items-center justify-between mb-2">
-                <span className="text-[10px] font-mono font-bold text-stone-400">
-                  Group 0{idx + 1}
-                </span>
-                <span className="text-[11px] font-mono px-2 py-0.5 rounded-xs bg-emerald-50 text-emerald-800 border border-emerald-200 font-semibold">
-                  Rule Active
-                </span>
-              </div>
-              <h4 className="font-serif font-bold text-base text-stone-900 mb-1">{grp}</h4>
-              <p className="text-xs text-stone-500 leading-relaxed">
-                Automated continuous verification rule set validating SERP presentation, schema compliance, and link topology.
-              </p>
-            </div>
-          ))}
-        </div>
-      )}
-
-      {/* Tab 3: Structured Data Validator */}
-      {activeTab === 'audit' && (
-        <div className="bg-white border border-stone-200 rounded-sm p-6 shadow-2xs space-y-4 font-sans text-xs">
-          <h3 className="font-serif font-bold text-base text-stone-900">
-            Schema.org JSON-LD Verification
-          </h3>
-          <p className="text-stone-600 leading-relaxed">
-            NFRGuide dynamically generates compliant JSON-LD structured data for Articles, Disciplines, and BreadcrumbTrails via the client-side useSEO hook.
-          </p>
-
-          <div className="p-4 bg-[#0F1115] text-[#D4A757] font-mono text-[11px] rounded-xs overflow-x-auto">
-            <pre>
-{`{
-  "@context": "https://schema.org",
-  "@type": "Article",
-  "headline": "Inside the Chutes: Why the 8-Second Ride Remains Sport’s Purest Crucible",
-  "author": { "@type": "Person", "name": "Clayton Vance" },
-  "publisher": { "@type": "Organization", "name": "NFRGuide" },
-  "articleSection": "NFR Competition"
-}`}
-            </pre>
-          </div>
-        </div>
-      )}
-
-      {/* Tab 4: Sitemap & Robots */}
-      {activeTab === 'sitemap' && (
-        <div className="bg-white border border-stone-200 rounded-sm p-6 shadow-2xs space-y-4 font-sans text-xs">
-          <h3 className="font-serif font-bold text-base text-stone-900">
-            Sitemap Index &amp; Robots.txt Staging
-          </h3>
-          <p className="text-stone-600 leading-relaxed">
-            All 18 canonical editorial routes, section landings, and discipline guides are registered in the sitemap builder.
-          </p>
-          <div className="p-4 bg-stone-50 border border-stone-200 rounded-xs font-mono text-xs text-stone-700 space-y-1">
-            <p>User-agent: *</p>
-            <p>Allow: /</p>
-            <p>Disallow: /admin/</p>
-            <p>Sitemap: https://nfrguide.com/sitemap.xml</p>
-          </div>
-        </div>
-      )}
-
-      {/* Remediate Issue Modal */}
-      {selectedIssue && (
-        <AdminModal
-          isOpen={true}
-          onClose={() => setSelectedIssue(null)}
-          title={`Remediate Issue: ${selectedIssue.group}`}
-          subtitle={`Rule: ${selectedIssue.rule}`}
-          footerActions={
-            <div className="flex gap-2">
-              <button
-                onClick={() => setSelectedIssue(null)}
-                className="px-3 py-1.5 border border-stone-300 rounded-xs text-xs text-stone-600"
-              >
-                Close
-              </button>
-              <button
-                onClick={() => {
-                  alert('Remediation action recorded in demonstration audit trail.');
-                  setSelectedIssue(null);
-                }}
-                className="px-3.5 py-1.5 bg-[#0F1115] text-[#D4A757] text-xs font-semibold rounded-xs uppercase tracking-wider"
-              >
-                Mark Resolved
-              </button>
-            </div>
-          }
-        >
-          <div className="space-y-3 font-sans text-xs">
-            <div>
-              <strong className="block text-stone-900 mb-0.5">Affected URL Route:</strong>
-              <code className="p-1.5 bg-stone-100 rounded-xs block font-mono text-[11px] text-stone-800">
-                {selectedIssue.affectedContent}
-              </code>
-            </div>
-            <div>
-              <strong className="block text-stone-900 mb-0.5">Observed Evidence:</strong>
-              <p className="text-stone-700 p-2.5 bg-rose-50 border border-rose-200 rounded-xs text-rose-900">
-                {selectedIssue.evidence}
-              </p>
-            </div>
-            <div>
-              <strong className="block text-stone-900 mb-0.5">Suggested Technical Resolution:</strong>
-              <p className="text-stone-700 p-2.5 bg-stone-50 border border-stone-200 rounded-xs">
-                {selectedIssue.suggestedResolution}
-              </p>
-            </div>
-          </div>
-        </AdminModal>
-      )}
     </div>
   );
 };
+
+export default AdminSEOPage;

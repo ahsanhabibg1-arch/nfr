@@ -79,6 +79,20 @@ enum SeoSeverity {
   WARNING
   NOTICE
   PASSED
+  // Batch 06 priority levels (§13). WARNING/NOTICE kept for legacy seeded rules.
+  HIGH
+  MEDIUM
+  LOW
+  INFO
+}
+
+// Batch 06 §3: separate actual defects from recommendations / opportunities /
+// checks that could not be performed.
+enum SeoFindingKind {
+  DEFECT
+  RECOMMENDATION
+  OPPORTUNITY
+  NOT_PERFORMED
 }
 
 enum SeoFindingStatus {
@@ -86,6 +100,8 @@ enum SeoFindingStatus {
   IN_PROGRESS
   RESOLVED
   IGNORED
+  // Batch 06 (§14). IGNORED doubles as "dismissed / accepted risk".
+  REOPENED
 }
 
 enum RedirectStatus {
@@ -590,8 +606,14 @@ model SeoRule {
   id          String       @id @default(uuid())
   code        String       @unique
   group       String
+  category    String       @default("technical") // technical|content|editorial|structured_data|internal_link|rodeo_entity|image
+  title       String?
   severity    SeoSeverity
+  defaultKind SeoFindingKind @default(DEFECT)
   enabled     Boolean      @default(true)
+  ruleVersion String       @default("1")
+  config      Json?        // configurable thresholds (§15)
+  appliesTo   String?      // content-type eligibility hint
   description String?
   findings    SeoFinding[]
 }
@@ -602,26 +624,58 @@ model SeoAuditRun {
   engineVersion String
   startedAt     DateTime     @default(now())
   completedAt   DateTime?
-  status        String       @default("completed")
+  status        String       @default("completed") // running|completed|failed
+  triggeredById String?
+  totalFindings Int          @default(0)
+  summary       Json?        // counts by severity/category
   findings      SeoFinding[]
+
+  @@index([startedAt])
 }
 
 model SeoFinding {
   id           String           @id @default(uuid())
   ruleId       String
   rule         SeoRule          @relation(fields: [ruleId], references: [id])
+  ruleCode     String           @default("") // denormalized stable id
+  ruleVersion  String           @default("1")
   auditRunId   String?
-  auditRun     SeoAuditRun?     @relation(fields: [auditRunId], references: [id])
+  auditRun     SeoAuditRun?     @relation(fields: [auditRunId], references: [id], onDelete: SetNull)
+  // Affected entity — articleId keeps its FK; entityType/entityId are the generic
+  // pointer for rodeo/media/route/structured-data findings.
   articleId    String?
   article      Article?         @relation(fields: [articleId], references: [id], onDelete: SetNull)
+  entityType   String           @default("article")
+  entityId     String?
+  affectedUrl  String?
   fingerprint  String           @unique
+  kind         SeoFindingKind   @default(DEFECT)
+  category     String           @default("technical")
   severity     SeoSeverity
   status       SeoFindingStatus @default(OPEN)
   evidence     String?
+  recommendation String?
+  detail       Json?
+  // Remediation workflow (§14) — ids stored without FK to avoid User churn.
+  assignedToId String?
+  resolvedById String?
+  resolvedAt   DateTime?
+  resolutionNote String?
   firstSeenAt  DateTime         @default(now())
   lastSeenAt   DateTime         @default(now())
 
   @@index([status])
+  @@index([severity])
+  @@index([entityType, entityId])
+  @@index([category])
+}
+
+// Batch 06 §15: rule/threshold configuration (key → JSON value).
+model SeoConfig {
+  key         String   @id
+  value       Json
+  updatedById String?
+  updatedAt   DateTime @default(now()) @updatedAt
 }
 
 // ============================================================================

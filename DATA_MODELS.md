@@ -363,3 +363,13 @@ binary duplication. Asset metadata is global, while `ArticleMedia.altText` and
 `caption` are placement-specific. New uploads begin `DRAFT`, `READY`, and
 rights-unconfirmed. `checksum` is SHA-256 of original bytes; `derivatives` stores
 provider keys and dimensions, not blobs.
+
+## Batch 06 additions
+Migration `20261031000000_batch06_seo` (additive). Extended `SeoRule` (category,
+title, defaultKind, ruleVersion, config JSON, appliesTo), `SeoAuditRun`
+(triggeredById, totalFindings, summary JSON), and `SeoFinding` (ruleCode,
+ruleVersion, kind, category, entityType/entityId, affectedUrl, recommendation,
+detail JSON, assignedToId, resolvedById/At, resolutionNote). New enums
+`SeoFindingKind` (DEFECT/RECOMMENDATION/OPPORTUNITY/NOT_PERFORMED), `SeoSeverity`
++= HIGH/MEDIUM/LOW/INFO, `SeoFindingStatus` += REOPENED. New `SeoConfig`
+(key→JSON) for rule/threshold config. `fingerprint` stays unique (dedup).

@@ -187,3 +187,12 @@ junctions. Existing asset IDs, `/assets/images/...` URLs and relationships are
 preserved; no remote file was downloaded and no database was reset. Verification:
 Prisma valid, 95/95 tests (18 media), production build, 24/24 routes, 6/6 admin,
 and 7/7 media HTTP checks.
+
+## Batch 06 — SEO Intelligence (2026-10-31)
+Additive migration `20261031000000_batch06_seo`, generated offline and applied to
+dev + test. Extends `SeoRule`/`SeoAuditRun`/`SeoFinding`, adds enum values
+(`SeoSeverity`: HIGH/MEDIUM/LOW/INFO; `SeoFindingStatus`: REOPENED; new
+`SeoFindingKind`) and a new `SeoConfig` table. No existing tables dropped, no data
+reset; all content/SEO metadata preserved. Verification: Prisma validate + generate
+OK; typecheck clean; vitest 106/106 (deterministic ×2); `next build` PASS; route
+smoke 24/24, admin smoke 8/8 (incl /admin/seo), media e2e 7/7, cache 10/10.

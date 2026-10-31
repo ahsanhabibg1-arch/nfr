@@ -112,3 +112,11 @@ metadata, ownership, processing/visibility state and derivative JSON. It adds
 and `VenueMedia`. Existing `ArticleMedia` stores featured/inline placements and
 contextual ALT/caption. PostgreSQL never stores binary image bodies. Legacy seed
 rows retain their IDs and URLs with `storageProvider=legacy-local`.
+
+## Batch 06 (2026-10-31)
+SEO Intelligence persistence: extended `SeoRule`/`SeoAuditRun`/`SeoFinding` +
+new `SeoConfig`; additive enums. Findings keyed by a stable unique `fingerprint`
+(dedup across runs), with reopen + verified auto-resolve. New SEO RBAC perms
+(`seo.audit.run`/`.view`/`seo.finding.manage`) mirror into Role/Permission via
+roleSync; every SEO mutation writes an `AuditLog` row. No tables dropped; no data
+reset. Migration `20261031000000_batch06_seo` (dev + test).

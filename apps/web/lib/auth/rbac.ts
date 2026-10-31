@@ -35,7 +35,11 @@ export type Permission =
   | 'media.edit.own'
   | 'media.edit.any'
   | 'media.delete'
-  | 'media.assign';
+  | 'media.assign'
+  // Batch 06 SEO Intelligence permissions (owner-approved; see SEO_RBAC_MATRIX.md)
+  | 'seo.audit.run'
+  | 'seo.audit.view'
+  | 'seo.finding.manage';
 
 export const ALL_ROLES: RoleKey[] = ['super_admin', 'administrator', 'editor', 'author', 'seo_manager'];
 
@@ -54,6 +58,8 @@ const EDITOR_PERMS: Permission[] = [
   'rodeo.manage', 'taxonomy.manage', 'author.manage', 'source.manage',
   // Media (Batch 05) — full except delete (Admin+)
   'media.view', 'media.upload', 'media.edit.own', 'media.edit.any', 'media.assign',
+  // SEO Intelligence (Batch 06) — run content-level audits, view, manage findings
+  'seo.audit.run', 'seo.audit.view', 'seo.finding.manage',
 ];
 
 const ADMIN_PERMS: Permission[] = [
@@ -70,10 +76,14 @@ export const ROLE_PERMISSIONS: Record<RoleKey, Permission[]> = {
   editor: EDITOR_PERMS,
   author: ['cms.access', 'article.create', 'article.edit.own', 'article.submit',
     // Media: browse, add to the library, manage own, attach to own articles
-    'media.view', 'media.upload', 'media.edit.own', 'media.assign'],
+    'media.view', 'media.upload', 'media.edit.own', 'media.assign',
+    // SEO (Batch 06): view findings for OWN articles only (scoped in the service)
+    'seo.audit.view'],
   seo_manager: ['cms.access', 'seo.config',
     // Media: browse + edit image SEO/alt metadata on any asset (no upload/delete)
-    'media.view', 'media.edit.any'],
+    'media.view', 'media.edit.any',
+    // SEO (Batch 06): full SEO operations
+    'seo.audit.run', 'seo.audit.view', 'seo.finding.manage'],
 };
 
 export function roleHasPermission(roles: RoleKey[], perm: Permission): boolean {
