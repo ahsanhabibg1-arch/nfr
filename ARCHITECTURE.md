@@ -246,3 +246,19 @@ advisory `ArticleSeoPanel` on the editor. Findings persist in the extended
 `SeoRule`/`SeoAuditRun`/`SeoFinding` tables with stable fingerprints (dedup),
 reopen-on-recurrence and verified auto-resolve. Advisory only (no publish blocks).
 See SEO_INTELLIGENCE_ARCHITECTURE.md, SEO_RULE_REGISTRY.md, SEO_RBAC_MATRIX.md.
+
+## Batch 07 — Analytics & Search Intelligence
+
+Public full-text search (`lib/search/publicSearch.ts`, PostgreSQL `tsvector`+GIN+
+`ts_rank_cd`) at `/search/` (SSR, noindex). Privacy-conscious first-party analytics:
+client beacons (`ViewBeacon`/`SearchTelemetry`/`TrackedResultLink`) → same-origin,
+rate-limited `POST /api/analytics/event/` → `lib/analytics/events.ts` (validate + gate +
+dedup) → minimal raw events + `AnalyticsDailyAggregate`. Collection is **disabled by
+default** (owner-gated). Admin dashboard (`lib/cms/analyticsService.ts` →
+`app/admin/analytics-actions.ts` → `views/admin/AdminAnalyticsPage.tsx`) reports overview
+with previous-period comparison, internal-search intelligence, content performance,
+content-gap recommendations, a search-informed SEO link, and honest GSC/GA4 "not
+connected" states. No analytics value is fabricated; all times UTC. See
+ANALYTICS_SEARCH_ARCHITECTURE.md, INTERNAL_SEARCH_ENGINE.md, SEARCH_INTELLIGENCE.md,
+FIRST_PARTY_ANALYTICS.md, ANALYTICS_PRIVACY_POLICY_TECHNICAL.md,
+EXTERNAL_ANALYTICS_INTEGRATION.md, ANALYTICS_RBAC_MATRIX.md.

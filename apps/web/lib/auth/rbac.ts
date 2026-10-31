@@ -39,7 +39,14 @@ export type Permission =
   // Batch 06 SEO Intelligence permissions (owner-approved; see SEO_RBAC_MATRIX.md)
   | 'seo.audit.run'
   | 'seo.audit.view'
-  | 'seo.finding.manage';
+  | 'seo.finding.manage'
+  // Batch 07 Analytics & Search permissions (owner-approved; see ANALYTICS_RBAC_MATRIX.md)
+  | 'analytics.view'
+  | 'analytics.config'
+  | 'analytics.export'
+  | 'search.analytics.view'
+  | 'search.config'
+  | 'analytics.provider.manage';
 
 export const ALL_ROLES: RoleKey[] = ['super_admin', 'administrator', 'editor', 'author', 'seo_manager'];
 
@@ -60,6 +67,8 @@ const EDITOR_PERMS: Permission[] = [
   'media.view', 'media.upload', 'media.edit.own', 'media.edit.any', 'media.assign',
   // SEO Intelligence (Batch 06) — run content-level audits, view, manage findings
   'seo.audit.run', 'seo.audit.view', 'seo.finding.manage',
+  // Analytics (Batch 07) — Editors view editorial analytics + internal-search insights
+  'analytics.view', 'search.analytics.view',
 ];
 
 const ADMIN_PERMS: Permission[] = [
@@ -68,6 +77,9 @@ const ADMIN_PERMS: Permission[] = [
   'navigation.manage',
   // Media deletion — Admin/Super Admin only (Batch 05)
   'media.delete',
+  // Analytics config/export/provider + search config — Admin/Super Admin (Batch 07).
+  // analytics.config gates privacy-sensitive collection + retention controls.
+  'analytics.config', 'analytics.export', 'search.config', 'analytics.provider.manage',
 ];
 
 export const ROLE_PERMISSIONS: Record<RoleKey, Permission[]> = {
@@ -78,12 +90,17 @@ export const ROLE_PERMISSIONS: Record<RoleKey, Permission[]> = {
     // Media: browse, add to the library, manage own, attach to own articles
     'media.view', 'media.upload', 'media.edit.own', 'media.assign',
     // SEO (Batch 06): view findings for OWN articles only (scoped in the service)
-    'seo.audit.view'],
+    'seo.audit.view',
+    // Analytics (Batch 07): own-article performance only (scoped in the service)
+    'analytics.view'],
   seo_manager: ['cms.access', 'seo.config',
     // Media: browse + edit image SEO/alt metadata on any asset (no upload/delete)
     'media.view', 'media.edit.any',
     // SEO (Batch 06): full SEO operations
-    'seo.audit.run', 'seo.audit.view', 'seo.finding.manage'],
+    'seo.audit.run', 'seo.audit.view', 'seo.finding.manage',
+    // Analytics (Batch 07): analytics + search intelligence, search config, provider
+    // connection management, export — but no unrelated system administration.
+    'analytics.view', 'analytics.export', 'search.analytics.view', 'search.config', 'analytics.provider.manage'],
 };
 
 export function roleHasPermission(roles: RoleKey[], perm: Permission): boolean {

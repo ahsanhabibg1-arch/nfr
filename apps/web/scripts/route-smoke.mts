@@ -74,6 +74,18 @@ async function main() {
     check('GET /categories/nfr-competition/ returns 200', res.status === 200, `status ${res.status}`);
   }
 
+  // Public internal search (Batch 07): 200, noindex, SSR results.
+  {
+    const { res, body } = await get('/search/?q=rodeo');
+    check('GET /search/?q=rodeo returns 200', res.status === 200, `status ${res.status}`);
+    check('/search is noindex (not an indexable results page)', /noindex/i.test(body), 'missing noindex');
+    check('/search renders the search control', /Search NFRGuide|Search published/i.test(body));
+  }
+  {
+    const { res } = await get('/search/');
+    check('GET /search/ (empty query) returns 200', res.status === 200, `status ${res.status}`);
+  }
+
   // Legacy redirect → HTTP 308 permanent.
   // The canonical legacy form (trailing slash) is a SINGLE permanent hop to the
   // new path; the no-slash form additionally passes through Next's trailing-slash

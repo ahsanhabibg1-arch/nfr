@@ -115,6 +115,41 @@ enum UserAccountStatus {
   SUSPENDED
 }
 
+// ---- Batch 07 — Analytics & Search Intelligence ----------------------------
+
+/// Entity kinds referenced by analytics events (content views, search clicks).
+/// SECTION = a primary-section landing page; CATEGORY = a category archive.
+enum AnalyticsEntityType {
+  ARTICLE
+  DISCIPLINE
+  CATEGORY
+  SECTION
+  RODEO_HUB
+  RODEO_EVENT
+  RODEO_EDITION
+}
+
+/// Analytics data sources kept strictly distinct (§10/§14): first-party observed
+/// events, internal search, and the two external Google providers.
+enum AnalyticsProvider {
+  FIRST_PARTY
+  INTERNAL_SEARCH
+  GOOGLE_SEARCH_CONSOLE
+  GOOGLE_ANALYTICS_4
+}
+
+/// External-provider connection lifecycle. NOT_CONNECTED until real, authorized
+/// credentials are configured and verified (§13/§14). No credentials are stored
+/// in the database — only a non-secret reference label and a status.
+enum ProviderConnectionStatus {
+  NOT_CONNECTED
+  CONFIGURED
+  CONNECTED
+  SYNCING
+  ERROR
+  DISABLED
+}
+
 // ============================================================================
 // EDITORIAL CORE
 // ============================================================================
@@ -777,4 +812,122 @@ model NavigationItem {
   updatedAt  DateTime @updatedAt
 
   @@index([location, sortOrder])
+}
+
+// ============================================================================
+// ANALYTICS & SEARCH INTELLIGENCE (Batch 07)
+// ============================================================================
+// Privacy-conscious, first-party, cookieless model (§7/§8): NO raw IP, NO device
+// fingerprint, NO cross-site identifier, NO persistent per-user id is ever stored.
+// Rapid-duplicate suppression and rate limiting happen in-memory at ingest using a
+// transiently hashed signal that is NEVER persisted. Collection is owner-gated
+// (disabled by default) via AnalyticsConfig. Raw events are minimal and short-lived;
+// AnalyticsDailyAggregate is the durable, dashboard-facing rollup. All timestamps
+// are stored in UTC (display time zone is documented, UTC — §19).
+//
+// A DB-managed generated `tsvector` column ("Article"."searchVector") + GIN index
+// back the public full-text search; it is created in the Batch 07 migration and is
+// intentionally NOT modeled here (queried via parameterized $queryRaw). See
+// INTERNAL_SEARCH_ENGINE.md.
+
+/// One internal-search submission. `normalizedQuery` is already redacted/minimized
+/// (lowercased, whitespace-collapsed, length-bounded, email/number-redacted).
+model SearchQueryEvent {
+  id              String   @id @default(uuid())
+  normalizedQuery String
+  queryLength     Int      @default(0) // length of the raw query (for abuse/quality signals)
+  resultCount     Int      @default(0)
+  zeroResult      Boolean  @default(false)
+  contentType     String? // content-type filter in effect, if any
+  source          String   @default("web")
+  createdAt       DateTime @default(now())
+
+  @@index([createdAt])
+  @@index([normalizedQuery])
+  @@index([zeroResult, createdAt])
+}
+
+/// A click on a search result (query → chosen destination). Used for CTR and to
+/// distinguish satisfied vs. weak-engagement queries.
+model SearchResultClickEvent {
+  id              String              @id @default(uuid())
+  normalizedQuery String
+  entityType      AnalyticsEntityType
+  entityId        String
+  position        Int                 @default(0)
+  createdAt       DateTime            @default(now())
+
+  @@index([createdAt])
+  @@index([normalizedQuery])
+  @@index([entityType, entityId])
+}
+
+/// A first-party observed public content view. Labeled as an observed event, NOT a
+/// verified unique human visitor (§7). Validated against a real published entity.
+model ContentViewEvent {
+  id         String              @id @default(uuid())
+  entityType AnalyticsEntityType
+  entityId   String
+  path       String
+  source     String              @default("web")
+  createdAt  DateTime            @default(now())
+
+  @@index([createdAt])
+  @@index([entityType, entityId, createdAt])
+}
+
+/// Durable per-day rollup for dashboard performance and retention. Raw events can
+/// be pruned past the retention window while aggregates are preserved. Empty-string
+/// entityType/entityId keep the unique key usable for site-wide metrics.
+model AnalyticsDailyAggregate {
+  id         String   @id @default(uuid())
+  day        DateTime @db.Date
+  metric     String // content_view | search_query | search_zero_result | search_click
+  entityType String   @default("")
+  entityId   String   @default("")
+  count      Int      @default(0)
+  updatedAt  DateTime @default(now()) @updatedAt
+
+  @@unique([day, metric, entityType, entityId])
+  @@index([metric, day])
+}
+
+/// External analytics provider connection. Credentials are NEVER stored here
+/// (§9/§13); `propertyRef` is a non-secret label (e.g. GA4 property id, GSC site).
+model AnalyticsProviderConnection {
+  id             String                   @id @default(uuid())
+  provider       AnalyticsProvider        @unique
+  displayName    String
+  status         ProviderConnectionStatus @default(NOT_CONNECTED)
+  propertyRef    String?
+  configuredById String?
+  lastSyncAt     DateTime?
+  lastError      String? // error CATEGORY only — never secrets or raw provider payloads
+  createdAt      DateTime                 @default(now())
+  updatedAt      DateTime                 @default(now()) @updatedAt
+  syncRuns       AnalyticsSyncRun[]
+}
+
+/// A provider ingestion attempt (foundation; no runs execute until connected).
+model AnalyticsSyncRun {
+  id            String                      @id @default(uuid())
+  connectionId  String
+  connection    AnalyticsProviderConnection @relation(fields: [connectionId], references: [id], onDelete: Cascade)
+  provider      AnalyticsProvider
+  status        String                      @default("not_connected") // not_connected|running|completed|failed
+  startedAt     DateTime                    @default(now())
+  completedAt   DateTime?
+  rowsIngested  Int                         @default(0)
+  errorCategory String?
+
+  @@index([provider, startedAt])
+}
+
+/// Analytics configuration (key → JSON): collection-enabled flag, retention days,
+/// redaction options, display time zone. Mirrors the SeoConfig pattern.
+model AnalyticsConfig {
+  key         String   @id
+  value       Json
+  updatedById String?
+  updatedAt   DateTime @default(now()) @updatedAt
 }

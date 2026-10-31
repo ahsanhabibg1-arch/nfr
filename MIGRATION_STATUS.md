@@ -196,3 +196,27 @@ dev + test. Extends `SeoRule`/`SeoAuditRun`/`SeoFinding`, adds enum values
 reset; all content/SEO metadata preserved. Verification: Prisma validate + generate
 OK; typecheck clean; vitest 106/106 (deterministic ×2); `next build` PASS; route
 smoke 24/24, admin smoke 8/8 (incl /admin/seo), media e2e 7/7, cache 10/10.
+
+## Batch 07 — Analytics & Search Intelligence (2026-10-31)
+Additive migration `20261031100000_batch07_analytics_search`, generated offline and
+applied to **dev + test**. Adds enums (`AnalyticsEntityType`, `AnalyticsProvider`,
+`ProviderConnectionStatus`); tables `SearchQueryEvent`, `SearchResultClickEvent`,
+`ContentViewEvent`, `AnalyticsDailyAggregate`, `AnalyticsProviderConnection`,
+`AnalyticsSyncRun`, `AnalyticsConfig`; and a DB-managed generated `tsvector` column
+`Article."searchVector"` (weighted A/B/C) + GIN index `Article_searchVector_idx` for
+full-text search (not modeled in Prisma — queried via parameterized `$queryRaw`). No
+existing table altered destructively; no data reset; seeded content preserved.
+Verification: Prisma validate + generate OK; typecheck clean; vitest **143/143**
+(deterministic ×2); `next build` PASS; route smoke 28/28, admin smoke 9/9 (incl
+/admin/analytics), media e2e 7/7. `test:cache` is a dev-mode test (see
+BATCH07_TEST_REPORT.md).
+
+```bash
+# generated offline (no shadow DB) then applied to dev + test:
+npx prisma migrate diff --from-schema-datasource prisma/schema.prisma \
+  --to-schema-datamodel prisma/schema.prisma --script > \
+  prisma/migrations/20261031100000_batch07_analytics_search/migration.sql
+#   (tsvector column + GIN index appended by hand — see the migration file)
+npx prisma migrate deploy
+DATABASE_URL="$TEST_DATABASE_URL" npx prisma migrate deploy
+```

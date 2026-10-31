@@ -4,6 +4,7 @@ import { getPublishedArticleBySlug, getPublishedArticleSlugs } from '@/lib/conte
 import { ArticleView } from '@/views/ArticleView';
 import { buildMetadata, articleJsonLd, breadcrumbJsonLd, JsonLd } from '@/lib/seo';
 import { ROUTES } from '@/config/routes';
+import { ViewBeacon } from '@/components/analytics/ViewBeacon';
 
 type Params = { params: Promise<{ slug: string }> };
 
@@ -61,6 +62,7 @@ export default async function ArticlePage({ params }: Params) {
         ]}
       />
       <ArticleView article={article} />
+      <ViewBeacon entityType="ARTICLE" entityId={article.id} path={ROUTES.ARTICLE(article.slug)} />
     </>
   );
 }

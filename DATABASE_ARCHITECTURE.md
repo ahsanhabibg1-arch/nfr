@@ -120,3 +120,18 @@ new `SeoConfig`; additive enums. Findings keyed by a stable unique `fingerprint`
 (`seo.audit.run`/`.view`/`seo.finding.manage`) mirror into Role/Permission via
 roleSync; every SEO mutation writes an `AuditLog` row. No tables dropped; no data
 reset. Migration `20261031000000_batch06_seo` (dev + test).
+
+## Batch 07 (2026-10-31)
+Analytics & Search Intelligence. New tables: `SearchQueryEvent`,
+`SearchResultClickEvent`, `ContentViewEvent` (minimal, short-lived raw events — NO IP,
+NO PII, NO persistent id), `AnalyticsDailyAggregate` (durable rollup, unique
+`(day, metric, entityType, entityId)`), `AnalyticsProviderConnection` +
+`AnalyticsSyncRun` (external provider foundation — credentials never stored; `lastError`
+is a category only), and `AnalyticsConfig` (key→JSON settings; collection disabled by
+default). New enums `AnalyticsEntityType`, `AnalyticsProvider`,
+`ProviderConnectionStatus`. Full-text search is backed by a **generated `tsvector`
+column** on `Article` (`searchVector`, weighted title=A/deck+excerpt=B/
+subcategory+articleType=C) with a GIN index — created in raw migration SQL and queried
+via parameterized `$queryRaw` (not a Prisma field). All timestamps UTC. Migration
+`20261031100000_batch07_analytics_search` (dev + test). No existing table altered
+destructively; no data reset.

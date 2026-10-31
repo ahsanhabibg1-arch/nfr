@@ -32,7 +32,10 @@ export type ServiceErrorCode =
   | 'invalid_transition'
   // Batch 05 media codes
   | 'processing'
-  | 'storage';
+  | 'storage'
+  // Batch 07 analytics/ingest codes
+  | 'rate_limited'
+  | 'disabled';
 
 export class ServiceError extends Error {
   code: ServiceErrorCode;

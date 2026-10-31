@@ -59,6 +59,10 @@ export const PublicChrome: React.FC<PublicChromeProps> = ({
           setSearchOpen(false);
           router.push(ROUTES.DISCIPLINE(d.slug));
         }}
+        onSubmitQuery={(q) => {
+          setSearchOpen(false);
+          router.push(`/search/?q=${encodeURIComponent(q)}`);
+        }}
       />
     </div>
   );

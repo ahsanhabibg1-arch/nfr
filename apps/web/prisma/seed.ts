@@ -21,6 +21,7 @@ import {
 import { MEDIA_ASSETS, ADMIN_SOURCES } from '../data/mockAdminData';
 import { PRIMARY_SECTIONS } from '../config/routes';
 import { seedCanonicalNavigation } from '../lib/cms/navCanonical';
+import { seedAnalyticsDefaults } from '../lib/cms/analyticsSeed';
 import type { Article, ContentBlock } from '../types';
 
 const prisma = new PrismaClient();
@@ -197,6 +198,9 @@ async function main() {
   // Materializes the protected header/footer links as `isSystem` rows. Never
   // overwrites an administrator's customized values and never deletes rows.
   const navSeed = await seedCanonicalNavigation(prisma);
+
+  // --- Analytics provider rows (idempotent, create-missing-only) -----------
+  await seedAnalyticsDefaults(prisma);
 
   // --- Redirect registry (mirror of next.config legacy redirects) ----------
   const REDIRECTS: [string, string][] = [

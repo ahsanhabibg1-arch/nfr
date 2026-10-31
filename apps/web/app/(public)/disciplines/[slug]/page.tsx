@@ -4,6 +4,7 @@ import { DisciplineGuideView } from '@/views/DisciplineGuideView';
 import { getDisciplineBySlug, getAllDisciplines } from '@/lib/content';
 import { buildMetadata, disciplineJsonLd, breadcrumbJsonLd, JsonLd } from '@/lib/seo';
 import { ROUTES } from '@/config/routes';
+import { ViewBeacon } from '@/components/analytics/ViewBeacon';
 
 type Params = { params: Promise<{ slug: string }> };
 
@@ -51,6 +52,7 @@ export default async function DisciplinePage({ params }: Params) {
         ]}
       />
       <DisciplineGuideView slug={slug} />
+      <ViewBeacon entityType="DISCIPLINE" entityId={d.id} path={ROUTES.DISCIPLINE(d.slug)} />
     </>
   );
 }

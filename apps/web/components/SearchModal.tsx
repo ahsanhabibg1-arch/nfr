@@ -9,6 +9,8 @@ interface SearchModalProps {
   onClose: () => void;
   onSelectArticle: (article: SearchIndexItem) => void;
   onSelectDiscipline: (discipline: Discipline) => void;
+  // Navigate to the full server-side full-text search page for the current query.
+  onSubmitQuery?: (query: string) => void;
   // Published content from the database (passed down from the server layout).
   searchArticles: SearchIndexItem[];
   searchDisciplines: Discipline[];
@@ -19,6 +21,7 @@ export const SearchModal: React.FC<SearchModalProps> = ({
   onClose,
   onSelectArticle,
   onSelectDiscipline,
+  onSubmitQuery,
   searchArticles,
   searchDisciplines,
 }) => {
@@ -77,6 +80,12 @@ export const SearchModal: React.FC<SearchModalProps> = ({
             autoFocus
             value={query}
             onChange={(e) => setQuery(e.target.value)}
+            onKeyDown={(e) => {
+              if (e.key === 'Enter' && query.trim() && onSubmitQuery) {
+                e.preventDefault();
+                onSubmitQuery(query.trim());
+              }
+            }}
             placeholder="Search NFR coverage, disciplines, streaming guides, or travel..."
             className="w-full bg-transparent text-sm sm:text-base font-sans text-stone-900 placeholder-stone-400 focus:outline-none"
           />
@@ -109,6 +118,15 @@ export const SearchModal: React.FC<SearchModalProps> = ({
         </div>
 
         <div className="max-h-[60vh] overflow-y-auto p-4 space-y-6">
+          {query.trim() && onSubmitQuery && (
+            <button
+              onClick={() => onSubmitQuery(query.trim())}
+              className="w-full flex items-center justify-between p-3 bg-[#0F1115] text-[#D4A757] rounded-sm text-sm font-sans font-semibold hover:bg-[#1a1d23] transition-colors"
+            >
+              <span>View all results for &ldquo;{query.trim()}&rdquo;</span>
+              <span className="text-xs font-mono">Enter →</span>
+            </button>
+          )}
           {(activeFilter === 'all' || activeFilter === 'articles') && filteredResults.articles.length > 0 && (
             <div>
               <div className="text-[11px] uppercase tracking-widest font-sans font-bold text-[#8B5E3C] mb-2 px-2">

@@ -88,3 +88,20 @@ All checks run server-side. `media.assign` does not replace the target domain's
 permission: rodeo assignment also requires `rodeo.manage`, and article ownership/
 workflow rules continue to apply. This mapping is implemented for local testing
 but must be confirmed or changed before production deployment.
+
+## Batch 07 — Analytics & Search permissions (owner-approved)
+
+Six new permissions (see ANALYTICS_RBAC_MATRIX.md for the full grid):
+`analytics.view`, `analytics.config`, `analytics.export`, `search.analytics.view`,
+`search.config`, `analytics.provider.manage`.
+
+- **Super Admin / Administrator** — all six.
+- **Editor** — `analytics.view` + `search.analytics.view`.
+- **Author** — `analytics.view` only, **own-scoped** (performance for own articles; no
+  site-wide search intelligence).
+- **SEO Manager** — `analytics.view`, `analytics.export`, `search.analytics.view`,
+  `search.config`, `analytics.provider.manage` (no unrelated system administration).
+
+`analytics.config` (privacy-sensitive collection/retention controls) is Admin/Super
+Admin only. Enforced server-side in `lib/cms/analyticsService.ts`, audited, mirrored via
+`roleSync`. Public users have no dashboard access (search page only).

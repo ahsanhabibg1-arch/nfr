@@ -216,3 +216,29 @@ addressed in `apps/web`:
   (no audit runs on page load).
 - **Schema.org validity ≠ rich results.** Structural validity is reported; Google
   rich-result eligibility / rankings are never promised.
+
+## Batch 07 — Analytics & Search
+
+- **Collection disabled by default.** The first-party analytics pipeline is fully
+  implemented but records nothing until an administrator enables it (Admin → Analytics →
+  Providers & Config), pending an owner privacy/consent decision. Dashboards therefore
+  show real-but-empty data until then.
+- **Searchable corpus.** Only entities with a real public canonical URL are returned:
+  articles (full FTS), discipline guides, and primary sections. **Rodeo hubs/events/
+  editions are intentionally excluded** from search results (no public detail route yet) —
+  they are used for content-gap cross-referencing only. Adding public rodeo pages is a
+  future batch.
+- **FTS coverage.** The `tsvector` covers title/deck/excerpt/subcategory/articleType, not
+  full article block body. Body-level matching would need a trigger-maintained column or a
+  separate search table.
+- **In-memory rate limiting.** The ingest rate limiter + dedup are per-process
+  (single-instance). On a multi-instance deployment the effective limit is
+  `instances × limit`; true distributed limiting needs a shared backend (e.g. Redis). Not
+  claimed as complete.
+- **Observed events, not unique visitors.** Content views are first-party observed events,
+  explicitly not verified unique humans; no unique-visitor count is claimed.
+- **External providers not connected.** GSC/GA4 are an honest foundation only — no network
+  calls, no stored credentials, no fabricated metrics. Connecting them is owner-gated.
+- **`test:cache` is a dev-mode test.** It creates a brand-new article after build and
+  expects it immediately reachable, which relies on Next dev's always-dynamic rendering;
+  run it against `npm run dev` (prod `next start` negative-caches a not-yet-generated path).

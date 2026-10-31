@@ -373,3 +373,26 @@ detail JSON, assignedToId, resolvedById/At, resolutionNote). New enums
 `SeoFindingKind` (DEFECT/RECOMMENDATION/OPPORTUNITY/NOT_PERFORMED), `SeoSeverity`
 += HIGH/MEDIUM/LOW/INFO, `SeoFindingStatus` += REOPENED. New `SeoConfig`
 (key→JSON) for rule/threshold config. `fingerprint` stays unique (dedup).
+
+## Batch 07 additions
+Migration `20261031100000_batch07_analytics_search` (additive). New models:
+- **SearchQueryEvent** — `normalizedQuery` (redacted), `queryLength`, `resultCount`,
+  `zeroResult`, `contentType?`, `source`, `createdAt`. Indexed on `createdAt`,
+  `normalizedQuery`, `(zeroResult, createdAt)`.
+- **SearchResultClickEvent** — `normalizedQuery`, `entityType`, `entityId`, `position`,
+  `createdAt`.
+- **ContentViewEvent** — `entityType`, `entityId`, `path`, `source`, `createdAt`.
+- **AnalyticsDailyAggregate** — `day` (Date), `metric`, `entityType` (default ''),
+  `entityId` (default ''), `count`; unique `(day, metric, entityType, entityId)`.
+- **AnalyticsProviderConnection** — `provider` (unique), `displayName`, `status`,
+  `propertyRef?` (non-secret), `lastError?` (category only), timestamps.
+- **AnalyticsSyncRun** — `connectionId`→connection, `provider`, `status`, counts, error
+  category.
+- **AnalyticsConfig** — `key`→JSON settings (collection flags, retention, redaction, tz).
+
+New enums `AnalyticsEntityType` (ARTICLE/DISCIPLINE/CATEGORY/SECTION/RODEO_HUB/
+RODEO_EVENT/RODEO_EDITION), `AnalyticsProvider` (FIRST_PARTY/INTERNAL_SEARCH/
+GOOGLE_SEARCH_CONSOLE/GOOGLE_ANALYTICS_4), `ProviderConnectionStatus`. A generated
+`tsvector` column `Article.searchVector` + GIN index back full-text search and are
+intentionally **not** modeled in Prisma (raw-SQL + `$queryRaw`). No personal identifiers
+are stored in any analytics table.

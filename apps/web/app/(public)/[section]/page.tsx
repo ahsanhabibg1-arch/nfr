@@ -3,6 +3,7 @@ import { notFound } from 'next/navigation';
 import { SectionLandingView } from '@/views/SectionLandingView';
 import { getSectionMeta, getAllSectionKeys } from '@/lib/content';
 import { buildMetadata, breadcrumbJsonLd, JsonLd } from '@/lib/seo';
+import { ViewBeacon } from '@/components/analytics/ViewBeacon';
 
 type Params = { params: Promise<{ section: string }> };
 
@@ -38,6 +39,7 @@ export default async function SectionPage({ params }: Params) {
         ])}
       />
       <SectionLandingView sectionKey={section} />
+      <ViewBeacon entityType="SECTION" entityId={section} path={meta.path} />
     </>
   );
 }
