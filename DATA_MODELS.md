@@ -441,3 +441,15 @@ Migration `20261101000000_batch10_rodeo_hub_event` (additive). New model:
 `RodeoHub` gains `hubEvents` and `RodeoEvent` gains `hubLinks` back-relations. No enums, no other
 tables. Public pages read these plus existing `RodeoEventEdition`/`Venue`/`Article*` junctions;
 hub/event slugs are unique across both tables (service-enforced).
+
+## Batch 11 additions
+Migration `20261101100000_batch11_entity_seo_faq` (additive). Polymorphic landing SEO + FAQ:
+- **EntitySeo** — `(entityType, entityId)` unique; `seoTitle`, `metaDescription`,
+  `canonicalOverride` (same-site), `ogImage`, `noindex` (additive-only), `intro` (plain text).
+- **EntityFaq** — `(entityType, entityId, question)` unique; `question`, `answer`, `sortOrder`,
+  `enabled`. Only enabled rows render publicly; FAQPage JSON-LD is built from exactly those rows.
+- New enum **LandingEntityType** (DISCIPLINE/CATEGORY/RODEO_HUB/RODEO_EVENT/RODEO_EDITION).
+
+Both are polymorphic (no FK) — integrity (existence, type, per-entity authorization) is enforced
+in the services, and orphan rows are cleaned on the owning entity's delete. Articles keep their
+own `ArticleSeo`. No existing table altered.

@@ -307,3 +307,17 @@ breadcrumb/Event JSON-LD (edition `Event` only when dates are verified), public 
 associations (event-vs-edition separation preserved). Only PUBLISHED articles are linked; dates
 are verified-or-explicitly-unknown. The `RodeoHubEvent` junction links hubs to events. See
 PHASE1_BATCH10_REPORT.md, ROUTES.md, MIGRATION_REPLAY_VERIFICATION.md.
+
+## Batch 11 — Landing-page SEO & FAQ
+
+Polymorphic, additive SEO + FAQ layer for the five landing entity types (rodeo hubs/events/
+editions, disciplines, categories). `lib/cms/{landingEntities,entitySeoService,faqService,
+landingAdminService}.ts` enforce existence + per-entity permission (reuses `rodeo.manage` /
+`taxonomy.manage`) + audit; orphan cleanup on entity delete. Public pages' `generateMetadata`
+merges editor overrides onto derived metadata (empty = unchanged; `noindex` additive-only;
+canonical same-site only), and render an editor intro + an accessible `<details>` FAQ accordion
+(`components/FaqAccordion.tsx`, `EntityIntro.tsx`) with conditional `FAQPage` JSON-LD built only
+from visible FAQs. The CMS manager lives at `/admin/landing-seo/`
+(`views/admin/AdminLandingSeoPage.tsx` → `app/admin/landing-seo-actions.ts`), which also makes
+discipline description/tagline/summary editable (deep guide JSON preserved). See
+PHASE1_BATCH11_REPORT.md.

@@ -311,3 +311,24 @@ addressed in `apps/web`:
   `nfrguide_test` FTS gate, **no Docker**). It runs on local PostgreSQL via
   `npm run test:migration` once a one-time CREATEDB-capable `MIGRATION_REPLAY_ADMIN_URL` is
   provided — no production privileges, nothing existing reset.
+
+## Batch 11 — Landing SEO & FAQ
+
+- **Dev admin accounts need re-bootstrapping.** A prior session reset the development database;
+  data content was restored via the idempotent seed, but user accounts were not — run
+  `cd apps/web && npm run bootstrap:admin` to recreate your Super Admin login. (The test DB was
+  never reset.)
+- **SEO overrides are additive/safe.** Empty fields fall back to derived metadata; editor
+  `noindex` can only add restriction (cannot force-index a thin/unpublished page); canonical
+  overrides are same-site-only.
+- **FAQ rich results are not guaranteed.** `FAQPage` JSON-LD is emitted only from visible,
+  enabled FAQs (accurate, no hidden content); whether Google shows a rich result is at its
+  discretion.
+- **Polymorphic integrity is service-enforced** (no DB FK on `EntitySeo`/`EntityFaq`); orphan
+  rows are cleaned on the owning entity's delete, and every mutation checks entity existence +
+  per-entity authorization.
+- **Hero-image picker + block-based editorial content** for landing entities are future work
+  (`ogImage` URL + plain-text intro cover this batch). Venue public pages + a Competitor entity
+  remain future batches.
+- **`prisma db seed` server-only fix:** `analyticsSeed` no longer imports the `server-only`
+  providers module (inlined), so the full seed runs under plain `tsx`.

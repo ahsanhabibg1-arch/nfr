@@ -289,3 +289,22 @@ local PostgreSQL (`nfrguide_test`) FTS checks — **no Docker**. The full from-z
 replay is implemented (`npm run test:migration`) and runs on local Postgres when a one-time
 `MIGRATION_REPLAY_ADMIN_URL` (a CREATEDB-capable local role) is supplied; it does not reset dev/
 test and grants no production privileges. This remains the one explicit unresolved gate.
+
+## Batch 11 — Landing SEO & FAQ (2026-11-01)
+Additive migration `20261101100000_batch11_entity_seo_faq` (dev + test): enum `LandingEntityType`
++ tables `EntitySeo`, `EntityFaq`. The generated `searchVector` DROP/ALTER drift was hand-stripped
+(FTS + GIN preserved). Chain now ends `… → 20261101100000_batch11_entity_seo_faq`.
+
+**Incidents handled this batch:**
+1. The first hand-strip accidentally also removed `CREATE TYPE "LandingEntityType"`; the failed
+   apply was cleared with `prisma migrate resolve --rolled-back <name>` and re-applied correctly.
+   Lesson: when stripping the `searchVector` drift, keep the `CREATE TYPE`/`CreateEnum` lines —
+   only remove `DROP INDEX "Article_searchVector_idx"` and
+   `ALTER TABLE "Article" ALTER COLUMN "searchVector" DROP DEFAULT`.
+2. A prior session had **reset the development database** (contrary to policy). It was restored
+   with `npm run db:seed` + `scripts/seed-rodeo-links.mts` (test DB was not affected). Dev user
+   accounts must be re-created via `npm run bootstrap:admin`. `prisma db seed` was also repaired
+   (it had crashed importing `server-only` via `analyticsSeed`).
+
+The full fresh-from-zero replay remains the one explicit outstanding gate (local Postgres,
+`MIGRATION_REPLAY_ADMIN_URL`, no Docker).

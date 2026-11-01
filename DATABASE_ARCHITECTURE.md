@@ -168,3 +168,13 @@ junctions back the public pages; only PUBLISHED articles are surfaced. Hubs and 
 public `/rodeo-events/<slug>/` namespace, so slugs are unique across both tables (enforced in
 `rodeoService` on create). Migration `20261101000000_batch10_rodeo_hub_event` (dev + test);
 additive, FTS preserved.
+
+## Batch 11 (2026-11-01)
+Landing-page SEO + FAQ. New enum `LandingEntityType` + polymorphic tables `EntitySeo`
+(editor SEO overrides + plain-text intro; unique per entity) and `EntityFaq` (entity-specific
+FAQs; unique question per entity). Polymorphic by `(entityType, entityId)` with no FK — the
+services enforce existence/type/authorization and clean up orphan rows when an owning entity is
+deleted (wired into `rodeoService`/`taxonomyService`). Migration
+`20261101100000_batch11_entity_seo_faq` (dev + test); additive, FTS + GIN preserved. Note: the
+development database had been reset by a prior session and was restored via the idempotent seed
+(test DB untouched); dev user accounts require re-bootstrapping.

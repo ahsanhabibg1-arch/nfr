@@ -1,34 +1,89 @@
 'use server';
 
 import { revalidatePath } from 'next/cache';
-import { requireActor, toActionError, type ActionResult } from '@/lib/cms/guard';
+import type { LandingEntityType } from '@prisma/client';
+import { getActor, AuthzError, toActionError, type ActionResult } from '@/lib/cms/guard';
 import * as entitySeo from '@/lib/cms/entitySeoService';
 import * as faq from '@/lib/cms/faqService';
 import type { EntitySeoInput } from '@/lib/cms/entitySeoService';
 import type { FaqInput } from '@/lib/cms/faqService';
 
-const rev = () => { revalidatePath('/admin/landing-seo/'); revalidatePath('/', 'layout'); };
-const voidAct = (p: Promise<void>): Promise<ActionResult> =>
-  p.then(() => { rev(); return { ok: true as const }; }).catch((e) => toActionError(e));
-
-// SEO actions
-export async function upsertEntitySeoAction(entityType: string, entityId: string, input: EntitySeoInput) {
-  try { const a = await requireActor('rodeo.manage'); const r = await entitySeo.upsertEntitySeo(a, entityType as any, entityId, input); rev(); return { ok: true, id: r.id }; } catch (e) { return toActionError(e) as ActionResult<{ id: string }>; }
+/**
+ * Landing-page SEO + FAQ Server Actions (Batch 11). Each action only needs an
+ * AUTHENTICATED actor here; the per-entity permission (rodeo.manage for rodeo/
+ * discipline, taxonomy.manage for category) is enforced inside the services via
+ * `requireEntityPerm`, so category editors are gated correctly (fixing the earlier
+ * hardcoded `rodeo.manage`). Every mutation is audited in the service layer.
+ */
+function rev(entityType?: string, entityId?: string) {
+  revalidatePath('/admin/landing-seo/');
+  // Revalidate the affected public landing page so overrides/FAQs show immediately.
+  revalidatePath('/', 'layout');
+  void entityType;
+  void entityId;
+}
+async function actor() {
+  const a = await getActor();
+  if (!a) throw new AuthzError('unauthenticated');
+  return a;
 }
 
-// FAQ actions
-export async function createFaqAction(entityType: string, entityId: string, input: FaqInput) {
-  try { const a = await requireActor('rodeo.manage'); const r = await faq.createFaq(a, entityType as any, entityId, input); rev(); return { ok: true, id: r.id }; } catch (e) { return toActionError(e) as ActionResult<{ id: string }>; }
+export async function upsertEntitySeoAction(entityType: LandingEntityType, entityId: string, input: EntitySeoInput): Promise<ActionResult<{ id: string }>> {
+  try {
+    const r = await entitySeo.upsertEntitySeo(await actor(), entityType, entityId, input);
+    rev();
+    return { ok: true, id: r.id };
+  } catch (e) {
+    return toActionError(e) as ActionResult<{ id: string }>;
+  }
 }
-export async function updateFaqAction(id: string, input: FaqInput) {
-  try { const a = await requireActor('rodeo.manage'); const r = await faq.updateFaq(a, id, input); rev(); return { ok: true, id: r.id }; } catch (e) { return toActionError(e) as ActionResult<{ id: string }>; }
+
+export async function createFaqAction(entityType: LandingEntityType, entityId: string, input: FaqInput): Promise<ActionResult<{ id: string }>> {
+  try {
+    const r = await faq.createFaq(await actor(), entityType, entityId, input);
+    rev();
+    return { ok: true, id: r.id };
+  } catch (e) {
+    return toActionError(e) as ActionResult<{ id: string }>;
+  }
 }
-export async function deleteFaqAction(id: string) {
-  try { const a = await requireActor('rodeo.manage'); await faq.deleteFaq(a, id); rev(); return { ok: true }; } catch (e) { return toActionError(e); }
+
+export async function updateFaqAction(id: string, input: FaqInput): Promise<ActionResult> {
+  try {
+    await faq.updateFaq(await actor(), id, input);
+    rev();
+    return { ok: true };
+  } catch (e) {
+    return toActionError(e);
+  }
 }
-export async function setFaqEnabledAction(id: string, enabled: boolean) {
-  try { const a = await requireActor('rodeo.manage'); await faq.setFaqEnabled(a, id, enabled); rev(); return { ok: true }; } catch (e) { return toActionError(e); }
+
+export async function deleteFaqAction(id: string): Promise<ActionResult> {
+  try {
+    await faq.deleteFaq(await actor(), id);
+    rev();
+    return { ok: true };
+  } catch (e) {
+    return toActionError(e);
+  }
 }
-export async function reorderFaqsAction(entityType: string, entityId: string, orderedIds: string[]) {
-  try { const a = await requireActor('rodeo.manage'); await faq.reorderFaqs(a, entityType as any, entityId, orderedIds); rev(); return { ok: true }; } catch (e) { return toActionError(e); }
+
+export async function setFaqEnabledAction(id: string, enabled: boolean): Promise<ActionResult> {
+  try {
+    await faq.setFaqEnabled(await actor(), id, enabled);
+    rev();
+    return { ok: true };
+  } catch (e) {
+    return toActionError(e);
+  }
+}
+
+export async function reorderFaqsAction(entityType: LandingEntityType, entityId: string, orderedIds: string[]): Promise<ActionResult> {
+  try {
+    await faq.reorderFaqs(await actor(), entityType, entityId, orderedIds);
+    rev();
+    return { ok: true };
+  } catch (e) {
+    return toActionError(e);
+  }
 }

@@ -142,3 +142,12 @@ Assignment boundaries (enforced in `teamService`, serializable): only a Super Ad
 grant/remove `super_admin`; no self role/status change; the last active Super Admin is
 protected; `role.assign` required for role changes; all changes audited + session-revoking.
 The `/admin/account/` page (own password + sessions) is available to any authenticated staff.
+
+## Batch 11 — Landing SEO & FAQ (no new permissions)
+
+The landing SEO/FAQ layer reuses existing permissions — **no new permission strings**:
+`rodeo.manage` governs rodeo hub/event/edition **and discipline** SEO/FAQ/field edits;
+`taxonomy.manage` governs **category** SEO/FAQ. Server actions only authenticate; the services
+enforce the correct per-entity permission (`permForEntity`) + existence + audit — so a category
+editor needs `taxonomy.manage` (not `rodeo.manage`). The `/admin/landing-seo/` manager is
+reachable by holders of either permission; editing is still gated per entity.

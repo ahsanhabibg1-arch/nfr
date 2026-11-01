@@ -3,7 +3,7 @@
 import { revalidatePath } from 'next/cache';
 import { requireActor, toActionError, type ActionResult } from '@/lib/cms/guard';
 import * as rodeo from '@/lib/cms/rodeoService';
-import type { HubInput, EventInput, EditionInput, VenueInput } from '@/lib/cms/rodeoService';
+import type { HubInput, EventInput, EditionInput, VenueInput, DisciplineInput } from '@/lib/cms/rodeoService';
 
 const rev = () => { revalidatePath('/admin/rodeo-coverage/'); revalidatePath('/', 'layout'); };
 const withId = (p: Promise<{ id: string }>): Promise<ActionResult<{ id: string }>> =>
@@ -30,3 +30,6 @@ export async function deleteEditionAction(id: string) { try { const a = await re
 export async function createVenueAction(input: VenueInput) { try { const a = await requireActor('rodeo.manage'); return withId(rodeo.createVenue(a, input)); } catch (e) { return toActionError(e) as ActionResult<{ id: string }>; } }
 export async function updateVenueAction(id: string, input: VenueInput) { try { const a = await requireActor('rodeo.manage'); return voidAct(rodeo.updateVenue(a, id, input)); } catch (e) { return toActionError(e); } }
 export async function deleteVenueAction(id: string) { try { const a = await requireActor('rodeo.manage'); return voidAct(rodeo.deleteVenue(a, id)); } catch (e) { return toActionError(e); } }
+
+// Disciplines (Batch 11: editable description/tagline/summary; deep guide JSON preserved)
+export async function updateDisciplineAction(id: string, input: DisciplineInput) { try { const a = await requireActor('rodeo.manage'); return voidAct(rodeo.updateDiscipline(a, id, input)); } catch (e) { return toActionError(e); } }

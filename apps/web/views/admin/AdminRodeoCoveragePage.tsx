@@ -73,7 +73,7 @@ export const AdminRodeoCoveragePage: React.FC<Props> = ({ hubs, events, editions
 
   return (
     <div className="space-y-6">
-      <AdminPageHeader title="Rodeo Coverage" description="Hubs, recurring events and their annual editions, venues and disciplines. A recurring event is the stable identity; an edition is one year's occurrence. Entities referenced by articles cannot be deleted." />
+      <AdminPageHeader title="Rodeo Coverage" description="Hubs, recurring events and their annual editions, venues and disciplines. A recurring event is the stable identity; an edition is one year's occurrence. Entities referenced by articles cannot be deleted." actions={<a href="/admin/landing-seo/" className="px-3.5 py-1.5 text-xs font-sans font-semibold text-white bg-[#0F1115] hover:bg-stone-800 rounded-xs">Landing SEO &amp; FAQ →</a>} />
       {notice && <div className="p-3 bg-emerald-50 border border-emerald-200 text-emerald-800 text-xs rounded-xs">{notice}</div>}
       {!canManage && <div className="p-3 bg-stone-50 border border-stone-200 text-stone-600 text-xs rounded-xs">You have read-only access to rodeo coverage. Editing requires the <code>rodeo.manage</code> permission.</div>}
       <AdminTabs tabs={tabs} activeTab={tab} onChange={(t) => setTab(t as Tab)} />
