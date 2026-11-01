@@ -17,6 +17,12 @@ export const ROUTES = {
   DISCIPLINE_PATTERN: '/disciplines/:slug',
   CATEGORY: (slug: string) => `/categories/${slug}/`,
   CATEGORY_PATTERN: '/categories/:slug',
+  // Public rodeo entity pages (Batch 10) — nested under the /rodeo-events/ section.
+  // Hubs and recurring events share the depth-1 namespace (cross-table slug
+  // uniqueness enforced on write); an event URL is hub-independent.
+  RODEO_HUB: (slug: string) => `/rodeo-events/${slug}/`,
+  RODEO_EVENT: (slug: string) => `/rodeo-events/${slug}/`,
+  RODEO_EDITION: (eventSlug: string, editionSlug: string) => `/rodeo-events/${eventSlug}/${editionSlug}/`,
 
   // Admin CMS Routes (12 Modules)
   ADMIN: '/admin/',

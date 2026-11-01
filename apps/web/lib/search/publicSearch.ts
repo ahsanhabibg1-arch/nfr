@@ -57,7 +57,7 @@ function clampPageSize(n: unknown): number {
   return Math.min(PAGE_SIZE_MAX, Math.max(1, Math.floor(v)));
 }
 function normType(t: unknown): SearchTypeFilter {
-  return t === 'article' || t === 'discipline' || t === 'section' ? t : 'all';
+  return t === 'article' || t === 'discipline' || t === 'section' || t === 'rodeo' ? t : 'all';
 }
 function normSort(s: unknown): SearchSort {
   return s === 'newest' ? 'newest' : 'relevance';
@@ -91,13 +91,14 @@ export async function runPublicSearch(input: Partial<SearchFilters> & { q?: stri
   const empty: SearchResponse = {
     query: input.q ?? '', normalizedQuery: q, tokens, filters, emptyQuery: true,
     articles: { rows: [], total: 0, page, pageSize, totalPages: 0 },
-    disciplines: [], sections: [], totalResults: 0, zeroResult: false,
+    disciplines: [], sections: [], rodeo: [], totalResults: 0, zeroResult: false,
   };
   if (!q) return empty;
 
   const wantArticles = type === 'all' || type === 'article';
   const wantDisciplines = type === 'all' || type === 'discipline';
   const wantSections = type === 'all' || type === 'section';
+  const wantRodeo = type === 'all' || type === 'rodeo';
 
   // ---- Articles: PostgreSQL FTS (parameterized) ----
   let articles = { rows: [] as PublicSearchResult[], total: 0, page, pageSize, totalPages: 0 };
@@ -143,6 +144,7 @@ export async function runPublicSearch(input: Partial<SearchFilters> & { q?: stri
         imageUrl: r.heroImageUrl,
         date: (r.publishedAt ?? r.updatedAt)?.toISOString() ?? null,
         rank: Number(r.rank) || 0,
+        analyticsEntityType: 'ARTICLE',
       })),
       total,
       page,
@@ -177,6 +179,7 @@ export async function runPublicSearch(input: Partial<SearchFilters> & { q?: stri
         imageUrl: x.row.image ?? null,
         date: null,
         rank: x.score,
+        analyticsEntityType: 'DISCIPLINE',
       }));
   }
 
@@ -199,10 +202,35 @@ export async function runPublicSearch(input: Partial<SearchFilters> & { q?: stri
         imageUrl: null,
         date: null,
         rank: x.score,
+        analyticsEntityType: 'SECTION',
       }));
   }
 
-  const totalResults = articles.total + disciplines.length + sections.length;
+  // ---- Rodeo hubs / events / editions (bounded, in-memory) ----
+  let rodeo: PublicSearchResult[] = [];
+  if (wantRodeo) {
+    const [hubs, events, editions] = await Promise.all([
+      prisma.rodeoHub.findMany({ select: { id: true, slug: true, title: true, region: true, description: true } }),
+      prisma.rodeoEvent.findMany({ select: { id: true, slug: true, name: true, location: true, description: true } }),
+      prisma.rodeoEventEdition.findMany({ select: { id: true, editionSlug: true, label: true, event: { select: { slug: true, name: true } } } }),
+    ]);
+    const scored: (PublicSearchResult & { _s: number })[] = [];
+    for (const h of hubs) {
+      const s = scoreText([h.title, h.region, h.description], tokens, q);
+      if (s > 0) scored.push({ type: 'rodeo', id: h.id, title: h.title, url: `/rodeo-events/${h.slug}/`, excerpt: buildExcerpt(h.description || '', tokens), contentType: 'Rodeo Hub', category: h.region ?? null, imageUrl: null, date: null, rank: s, analyticsEntityType: 'RODEO_HUB', _s: s });
+    }
+    for (const e of events) {
+      const s = scoreText([e.name, e.location, e.description], tokens, q);
+      if (s > 0) scored.push({ type: 'rodeo', id: e.id, title: e.name, url: `/rodeo-events/${e.slug}/`, excerpt: buildExcerpt(e.description || '', tokens), contentType: 'Rodeo Event', category: e.location ?? null, imageUrl: null, date: null, rank: s, analyticsEntityType: 'RODEO_EVENT', _s: s });
+    }
+    for (const ed of editions) {
+      const s = scoreText([ed.label, ed.event.name], tokens, q);
+      if (s > 0) scored.push({ type: 'rodeo', id: ed.id, title: `${ed.event.name}: ${ed.label}`, url: `/rodeo-events/${ed.event.slug}/${ed.editionSlug}/`, excerpt: '', contentType: 'Rodeo Edition', category: null, imageUrl: null, date: null, rank: s, analyticsEntityType: 'RODEO_EDITION', _s: s });
+    }
+    rodeo = scored.sort((a, b) => b._s - a._s || a.title.localeCompare(b.title)).slice(0, SIDE_LIMIT).map(({ _s, ...r }) => { void _s; return r; });
+  }
+
+  const totalResults = articles.total + disciplines.length + sections.length + rodeo.length;
   return {
     query: input.q ?? '',
     normalizedQuery: q,
@@ -212,6 +240,7 @@ export async function runPublicSearch(input: Partial<SearchFilters> & { q?: stri
     articles,
     disciplines,
     sections,
+    rodeo,
     totalResults,
     zeroResult: totalResults === 0,
   };

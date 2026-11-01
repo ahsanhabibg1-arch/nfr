@@ -159,3 +159,12 @@ existing `UserAccountStatus` (INVITED/ACTIVE/SUSPENDED). All governance mutation
 via `AuditLog`. Migration `20261031300000_batch09_admin_governance` (dev + test); additive, no
 data reset; the FTS `searchVector` column + GIN index are preserved and now protected by the
 `npm run test:migration` replay gate.
+
+## Batch 10 (2026-11-01)
+Public rodeo entity pages. New junction `RodeoHubEvent` (hub↔recurring-event M:N, cascade both
+sides) so a hub can list its associated events while event URLs stay hub-independent. No other
+schema change — existing `RodeoHub`/`RodeoEvent`/`RodeoEventEdition`/`Venue` + `Article*`
+junctions back the public pages; only PUBLISHED articles are surfaced. Hubs and events share the
+public `/rodeo-events/<slug>/` namespace, so slugs are unique across both tables (enforced in
+`rodeoService` on create). Migration `20261101000000_batch10_rodeo_hub_event` (dev + test);
+additive, FTS preserved.

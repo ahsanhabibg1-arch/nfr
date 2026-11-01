@@ -11,7 +11,11 @@ type Params = { params: Promise<{ section: string }> };
 export const dynamicParams = false;
 
 export function generateStaticParams() {
-  return getAllSectionKeys().map((section) => ({ section }));
+  // `rodeo-events` is served by its own static route (app/(public)/rodeo-events/)
+  // so it can list DB hubs/events; exclude it here to avoid a duplicate path.
+  return getAllSectionKeys()
+    .filter((section) => section !== 'rodeo-events')
+    .map((section) => ({ section }));
 }
 
 export async function generateMetadata({ params }: Params): Promise<Metadata> {

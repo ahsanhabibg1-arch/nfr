@@ -595,6 +595,7 @@ model RodeoHub {
   sortOrder   Int          @default(0)
   articles    ArticleHub[]
   media       RodeoHubMedia[]
+  hubEvents   RodeoHubEvent[]
 }
 
 /// Stable recurring event identity, independent of any hub (Master Reqs §2.1).
@@ -612,6 +613,21 @@ model RodeoEvent {
   editions     RodeoEventEdition[]
   articles     ArticleEvent[]
   media        RodeoEventMedia[]
+  hubLinks     RodeoHubEvent[]
+}
+
+/// Curated hub ↔ recurring-event association (Batch 10). A hub lists its associated
+/// events without owning them — the event URL is hub-independent (Master Reqs:
+/// "hub association does not change event URL"). Additive M:N join.
+model RodeoHubEvent {
+  hubId     String
+  eventId   String
+  hub       RodeoHub   @relation(fields: [hubId], references: [id], onDelete: Cascade)
+  event     RodeoEvent @relation(fields: [eventId], references: [id], onDelete: Cascade)
+  sortOrder Int        @default(0)
+
+  @@id([hubId, eventId])
+  @@index([eventId])
 }
 
 /// Specific occurrence/year. Unique per (eventId, editionSlug) — Master Reqs §7.2.

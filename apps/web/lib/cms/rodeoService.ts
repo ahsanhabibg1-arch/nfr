@@ -15,6 +15,21 @@ import { ServiceError } from './articleService';
 const req = (a: Actor) => { if (!roleHasPermission(a.roles, 'rodeo.manage')) throw new ServiceError('forbidden', 'Not permitted to manage rodeo coverage'); };
 const slugify = (s: string) => s.toLowerCase().trim().replace(/[^a-z0-9]+/g, '-').replace(/(^-|-$)/g, '');
 
+/**
+ * Batch 10: hubs and recurring events share the public `/rodeo-events/<slug>/`
+ * namespace, so their slugs must be unique ACROSS both tables (Postgres cannot
+ * express a cross-table unique constraint, so this is enforced at write time; slugs
+ * are immutable after create, so only creates need the check). See
+ * scripts/rodeo-slug-scan.mts for a one-time collision audit.
+ */
+async function assertRodeoSlugFree(slug: string): Promise<void> {
+  const [hub, event] = await Promise.all([
+    prisma.rodeoHub.findUnique({ where: { slug }, select: { id: true } }),
+    prisma.rodeoEvent.findUnique({ where: { slug }, select: { id: true } }),
+  ]);
+  if (hub || event) throw new ServiceError('conflict', `The URL slug "${slug}" is already used by another rodeo hub or event.`);
+}
+
 // ---- Hubs ----
 export interface HubRow { id: string; slug: string; title: string; region: string | null; circuitType: string | null; articleCount: number; }
 export async function listHubs(): Promise<HubRow[]> {
@@ -26,6 +41,7 @@ export type HubInput = z.input<typeof HubInput>;
 export async function createHub(a: Actor, raw: HubInput): Promise<{ id: string }> {
   req(a); const v = HubInput.parse(raw); const id = `hub-${slugify(v.title)}`;
   if (await prisma.rodeoHub.findUnique({ where: { id } })) throw new ServiceError('conflict', 'A hub with that name exists.');
+  await assertRodeoSlugFree(slugify(v.title));
   await prisma.rodeoHub.create({ data: { id, slug: slugify(v.title), title: v.title, region: v.region ?? null, circuitType: v.circuitType ?? null, description: v.description ?? null } });
   await audit(a.id, 'rodeo.hub.create', 'rodeo_hub', id, v.title); return { id };
 }
@@ -53,6 +69,7 @@ export type EventInput = z.input<typeof EventInput>;
 export async function createEvent(a: Actor, raw: EventInput): Promise<{ id: string }> {
   req(a); const v = EventInput.parse(raw); const id = `event-${slugify(v.name)}`;
   if (await prisma.rodeoEvent.findUnique({ where: { id } })) throw new ServiceError('conflict', 'An event with that name exists.');
+  await assertRodeoSlugFree(slugify(v.name));
   await prisma.rodeoEvent.create({ data: { id, slug: slugify(v.name), name: v.name, location: v.location ?? null, status: v.status ?? null, description: v.description ?? null, organizerName: v.organizerName ?? null, isFlagship: v.isFlagship ?? false } });
   await audit(a.id, 'rodeo.event.create', 'rodeo_event', id, v.name); return { id };
 }

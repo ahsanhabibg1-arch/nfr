@@ -79,6 +79,7 @@ export function SearchControls(props: SearchControlsProps) {
             <option value="article">Articles</option>
             <option value="discipline">Disciplines</option>
             <option value="section">Sections</option>
+            <option value="rodeo">Rodeo events</option>
           </select>
         </label>
 

@@ -5,7 +5,7 @@
  * intentionally NOT returned as clickable results (they would 404). See
  * INTERNAL_SEARCH_ENGINE.md and KNOWN_LIMITATIONS.md.
  */
-export type SearchResultType = 'article' | 'discipline' | 'section';
+export type SearchResultType = 'article' | 'discipline' | 'section' | 'rodeo';
 export type SearchSort = 'relevance' | 'newest';
 export type SearchTypeFilter = 'all' | SearchResultType;
 
@@ -20,6 +20,8 @@ export interface PublicSearchResult {
   imageUrl: string | null;
   date: string | null; // ISO (published or updated), when meaningful
   rank: number;
+  /** AnalyticsEntityType for click tracking (ARTICLE/DISCIPLINE/SECTION/RODEO_*). */
+  analyticsEntityType: string;
 }
 
 export interface SearchFilters {
@@ -49,6 +51,7 @@ export interface SearchResponse {
   articles: PagedArticles;
   disciplines: PublicSearchResult[];
   sections: PublicSearchResult[];
+  rodeo: PublicSearchResult[];
   totalResults: number; // sum of what was actually returned under the active filter
   zeroResult: boolean; // a real query that matched nothing
 }

@@ -432,3 +432,12 @@ Migration `20261031300000_batch09_admin_governance` (additive). New models:
 
 `User` gains a `passwordResets` back-relation. No new enums; account status reuses
 `UserAccountStatus`. Only token HASHes are stored (never raw tokens); no passwords/secrets.
+
+## Batch 10 additions
+Migration `20261101000000_batch10_rodeo_hub_event` (additive). New model:
+- **RodeoHubEvent** — composite PK `(hubId, eventId)`, `sortOrder`; `hub`→RodeoHub (cascade),
+  `event`→RodeoEvent (cascade); indexed on `eventId`. Curated hub↔recurring-event M:N.
+
+`RodeoHub` gains `hubEvents` and `RodeoEvent` gains `hubLinks` back-relations. No enums, no other
+tables. Public pages read these plus existing `RodeoEventEdition`/`Venue`/`Article*` junctions;
+hub/event slugs are unique across both tables (service-enforced).

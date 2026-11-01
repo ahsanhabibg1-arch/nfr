@@ -21,7 +21,6 @@ export const metadata: Metadata = {
 };
 
 const str = (v: string | string[] | undefined) => (Array.isArray(v) ? v[0] : v) || '';
-const ENTITY_TYPE: Record<string, string> = { article: 'ARTICLE', discipline: 'DISCIPLINE', section: 'SECTION' };
 
 function ResultCard({ r, query, tokens, position }: { r: PublicSearchResult; query: string; tokens: string[]; position: number }) {
   return (
@@ -29,7 +28,7 @@ function ResultCard({ r, query, tokens, position }: { r: PublicSearchResult; que
       <TrackedResultLink
         href={r.url}
         query={query}
-        entityType={ENTITY_TYPE[r.type] ?? 'ARTICLE'}
+        entityType={r.analyticsEntityType}
         entityId={r.id}
         position={position}
         className="block p-4 bg-white border border-stone-200 rounded-sm hover:border-[#D4A757] transition-colors"
@@ -165,6 +164,17 @@ export default async function SearchPage({
                 <ul className="grid grid-cols-1 sm:grid-cols-2 gap-2">
                   {result.disciplines.map((d, i) => (
                     <ResultCard key={d.id} r={d} query={result.normalizedQuery} tokens={result.tokens} position={i + 1} />
+                  ))}
+                </ul>
+              </section>
+            )}
+
+            {result.rodeo.length > 0 && (
+              <section className="mb-6">
+                <h2 className="text-[11px] uppercase tracking-widest font-sans font-bold text-[#8B5E3C] mb-2">Rodeo Hubs, Events &amp; Editions</h2>
+                <ul className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                  {result.rodeo.map((r, i) => (
+                    <ResultCard key={r.id} r={r} query={result.normalizedQuery} tokens={result.tokens} position={i + 1} />
                   ))}
                 </ul>
               </section>

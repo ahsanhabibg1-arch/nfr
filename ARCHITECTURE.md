@@ -293,3 +293,17 @@ gate (`scripts/migration-replay.mts`, `npm run test:migration`) + a Vitest FTS r
 the PostgreSQL `searchVector` column permanently. See PHASE1_BATCH09_REPORT.md,
 TEAM_MANAGEMENT_ARCHITECTURE.md, ACCOUNT_LIFECYCLE_SECURITY.md, RBAC_GOVERNANCE.md,
 SYSTEM_SETTINGS_ARCHITECTURE.md, ADMIN_AUDIT_LOG_OPERATIONS.md, MIGRATION_REPLAY_VERIFICATION.md.
+
+## Batch 10 — Public Rodeo Entity Pages
+
+Public, SEO-complete pages for rodeo hubs, recurring events and annual editions under
+`/rodeo-events/`. `lib/rodeoContent.ts` (server-only published reads + hub-or-event resolver) →
+`views/RodeoViews.tsx` → `app/(public)/rodeo-events/{page,[slug],[slug]/[edition]}`. A static
+`rodeo-events/` section page lists DB hubs/events (the `[section]` route excludes that key). Hub
+and event share the depth-1 slug namespace with cross-table uniqueness enforced on write;
+editions nest under their event and enforce parentage. Integrated across the stack: sitemap +
+breadcrumb/Event JSON-LD (edition `Event` only when dates are verified), public search inclusion
+(type `rodeo`), first-party view beacons (RODEO_* now validated), and per-entity monetization
+associations (event-vs-edition separation preserved). Only PUBLISHED articles are linked; dates
+are verified-or-explicitly-unknown. The `RodeoHubEvent` junction links hubs to events. See
+PHASE1_BATCH10_REPORT.md, ROUTES.md, MIGRATION_REPLAY_VERIFICATION.md.

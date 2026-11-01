@@ -109,9 +109,11 @@ async function main() {
 
   // --- Rodeo hubs ----------------------------------------------------------
   const hubIds = new Set<string>();
+  const hubSeededId = new Map<string, string>(); // mock hub id -> seeded hub id
   let hOrder = 0;
   for (const h of RODEO_HUBS) {
     const id = `hub-${h.slug || slugify(h.title)}`;
+    hubSeededId.set(h.id, id);
     await prisma.rodeoHub.upsert({
       where: { id },
       update: { slug: h.slug || slugify(h.title), title: h.title, region: h.region, circuitType: h.circuitType, description: h.description, annualEventsCount: h.annualEventsCount ?? 0, sortOrder: hOrder },
@@ -142,6 +144,14 @@ async function main() {
         create: { id: edId, eventId: id, editionSlug: String(e.currentEdition.year), label: `${e.name} ${e.currentEdition.year}`, year: e.currentEdition.year, purseBenchmark: e.currentEdition.purseBenchmark },
       });
       editionIds.add(edId);
+    }
+    // Batch 10: associate the event with its hub (idempotent, create-missing).
+    const mockHubId = (e as { hubId?: string }).hubId;
+    const hubRef = mockHubId ? hubSeededId.get(mockHubId) ?? mockHubId : undefined;
+    if (hubRef) {
+      await prisma.rodeoHubEvent
+        .upsert({ where: { hubId_eventId: { hubId: hubRef, eventId: id } }, update: {}, create: { hubId: hubRef, eventId: id } })
+        .catch(() => {});
     }
   }
 

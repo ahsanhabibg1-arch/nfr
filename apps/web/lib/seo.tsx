@@ -119,6 +119,44 @@ export function disciplineJsonLd(discipline: Discipline): Record<string, unknown
   };
 }
 
+/**
+ * schema.org Event for a rodeo edition — emitted ONLY when dates are verified
+ * (Master Reqs §8.2: never fabricate event data). Returns null for editions with
+ * unknown dates, so the page omits structured event data rather than inventing it.
+ */
+export function rodeoEditionJsonLd(input: {
+  name: string;
+  startAt: string | null;
+  endAt: string | null;
+  url: string;
+  description?: string | null;
+  venue?: { name: string; city: string | null; state: string | null; country: string | null } | null;
+}): Record<string, unknown> | null {
+  if (!input.startAt) return null;
+  const data: Record<string, unknown> = {
+    '@context': 'https://schema.org',
+    '@type': 'Event',
+    name: input.name,
+    startDate: input.startAt,
+    url: input.url,
+  };
+  if (input.endAt) data.endDate = input.endAt;
+  if (input.description) data.description = input.description;
+  if (input.venue) {
+    data.location = {
+      '@type': 'Place',
+      name: input.venue.name,
+      address: {
+        '@type': 'PostalAddress',
+        ...(input.venue.city ? { addressLocality: input.venue.city } : {}),
+        ...(input.venue.state ? { addressRegion: input.venue.state } : {}),
+        ...(input.venue.country ? { addressCountry: input.venue.country } : {}),
+      },
+    };
+  }
+  return data;
+}
+
 export function breadcrumbJsonLd(
   items: { name: string; path: string }[],
 ): Record<string, unknown> {

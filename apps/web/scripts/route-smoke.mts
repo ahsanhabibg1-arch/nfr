@@ -74,6 +74,25 @@ async function main() {
     check('GET /categories/nfr-competition/ returns 200', res.status === 200, `status ${res.status}`);
   }
 
+  // Public rodeo entity pages (Batch 10): section landing + seeded hub/event + 404.
+  {
+    const { res } = await get('/rodeo-events/');
+    check('GET /rodeo-events/ (section landing) returns 200', res.status === 200, `status ${res.status}`);
+  }
+  {
+    const { res, body } = await get('/rodeo-events/calgary-stampede/');
+    check('GET seeded rodeo event returns 200', res.status === 200, `status ${res.status}`);
+    check('rodeo event has canonical', /rel="canonical"/.test(body));
+  }
+  {
+    const { res } = await get('/rodeo-events/canadian-professional-rodeo/');
+    check('GET seeded rodeo hub returns 200', res.status === 200, `status ${res.status}`);
+  }
+  {
+    const { res } = await get('/rodeo-events/this-rodeo-does-not-exist-404/');
+    check('GET unknown rodeo slug returns 404', res.status === 404, `status ${res.status}`);
+  }
+
   // Public internal search (Batch 07): 200, noindex, SSR results.
   {
     const { res, body } = await get('/search/?q=rodeo');

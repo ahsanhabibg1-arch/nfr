@@ -111,3 +111,24 @@ All under `app/admin/` (dynamic, `noindex`, disallowed in robots): `/admin/`,
 `/admin/rodeo-coverage/`, `/admin/editorial-organization/`, `/admin/media/`,
 `/admin/sources/`, `/admin/seo/`, `/admin/website/`, `/admin/analytics/`,
 `/admin/monetization/`, `/admin/team/`, `/admin/settings/`.
+
+---
+
+# Phase 1 / Batch 10 — Public Rodeo Entity Routes (2026-11-01)
+
+Nested under the `/rodeo-events/` section (trailing-slash, indexable). Hubs and recurring
+events share the depth-1 namespace; cross-table slug uniqueness is enforced on write.
+
+| Path | File | Rendering |
+|---|---|---|
+| `/rodeo-events/` | `app/(public)/rodeo-events/page.tsx` | Static section landing + DB hub/event directory (the `[section]` route excludes `rodeo-events`) |
+| `/rodeo-events/<slug>/` | `app/(public)/rodeo-events/[slug]/page.tsx` | Resolves a **hub or recurring event** (event precedence); 404 if neither; `noindex` when content-less |
+| `/rodeo-events/<event>/<edition>/` | `app/(public)/rodeo-events/[slug]/[edition]/page.tsx` | Annual edition; enforces the edition belongs to the parent event; `Event` JSON-LD only when dates are verified |
+
+Admin additions (Batch 09, outside the sidebar modules): `/admin/account/` (any staff);
+public, unauthenticated setup links `/admin/accept-invitation/` and `/admin/reset-password/`.
+First-party affiliate redirect (Batch 08): `/go/[id]/`.
+
+Rodeo hubs/events/editions are included in the public search page (`/search/`, type filter
+`rodeo`) and the XML sitemap. Disciplines keep their canonical `/disciplines/<slug>/` — no
+discipline-in-edition URLs (avoids duplicate canonicals).

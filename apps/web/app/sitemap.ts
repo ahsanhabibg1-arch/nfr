@@ -6,6 +6,7 @@ import {
   getAllSectionKeys,
   getSectionMeta,
 } from '@/lib/content';
+import { getAllRodeoSlugs } from '@/lib/rodeoContent';
 
 /**
  * Central indexability policy (Master Requirements §8.2 / Batch 01 §12): the XML
@@ -53,6 +54,18 @@ export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
       changeFrequency: 'weekly',
       priority: 0.7,
     });
+  }
+
+  // Public rodeo entity pages (Batch 10): hubs, recurring events, annual editions.
+  const rodeo = await getAllRodeoSlugs();
+  for (const slug of rodeo.hubs) {
+    entries.push({ url: `${SITE_URL}/rodeo-events/${slug}/`, lastModified: now, changeFrequency: 'monthly', priority: 0.5 });
+  }
+  for (const slug of rodeo.events) {
+    entries.push({ url: `${SITE_URL}/rodeo-events/${slug}/`, lastModified: now, changeFrequency: 'monthly', priority: 0.6 });
+  }
+  for (const e of rodeo.editions) {
+    entries.push({ url: `${SITE_URL}/rodeo-events/${e.eventSlug}/${e.editionSlug}/`, lastModified: now, changeFrequency: 'weekly', priority: 0.6 });
   }
 
   return entries;

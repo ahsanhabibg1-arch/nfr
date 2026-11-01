@@ -109,6 +109,35 @@ export interface PublicAdPlacement {
   responsive: boolean;
 }
 
+export interface PublicAssociation {
+  partnerName: string;
+  relationshipType: string;
+  note: string | null;
+}
+
+/** Active commercial partner associations for a rodeo/editorial entity (Batch 08
+ * model, surfaced on Batch 10 rodeo pages). Only active associations whose partner is
+ * active + verified and within any effective window are returned. Event-vs-edition
+ * separation is preserved by the exact (entityType, entityId) match. */
+export async function getEntityCommercialAssociations(entityType: string, entityId: string): Promise<PublicAssociation[]> {
+  const now = new Date();
+  const rows = await prisma.commercialEntityAssociation.findMany({
+    where: {
+      entityType: entityType as never,
+      entityId,
+      isActive: true,
+      partner: { isActive: true, verificationStatus: 'VERIFIED' },
+      AND: [
+        { OR: [{ effectiveFrom: null }, { effectiveFrom: { lte: now } }] },
+        { OR: [{ effectiveTo: null }, { effectiveTo: { gte: now } }] },
+      ],
+    },
+    orderBy: { createdAt: 'asc' },
+    select: { relationshipType: true, note: true, partner: { select: { name: true } } },
+  });
+  return rows.map((r) => ({ partnerName: r.partner.name, relationshipType: r.relationshipType, note: r.note }));
+}
+
 /** Active ad placements for a page scope. Returns [] unless the owner has enabled
  * AdSense in config — and even when enabled, the renderer shows a reserved, clearly
  * labeled container with NO ad script injected in this batch (§9/§10/§25). */

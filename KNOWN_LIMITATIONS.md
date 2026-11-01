@@ -292,3 +292,22 @@ addressed in `apps/web`:
 - **System Settings scope.** Site identity / editorial / rodeo defaults persist and validate,
   but are not yet deeply wired into public metadata rendering (future enhancement); they are a
   typed source of truth ready for that wiring. Security-critical config stays code/env-only.
+
+## Batch 10 — Public rodeo entity pages
+
+- **Rodeo entities now have public pages** (`/rodeo-events/<hub-or-event>/` and
+  `/rodeo-events/<event>/<edition>/`), resolving the prior "no public route / excluded from
+  search" limitation. They are included in search and the sitemap.
+- **Cross-table slug uniqueness** (hub vs event) is enforced at write time in `rodeoService`
+  (Postgres cannot express a cross-table unique constraint); the `/rodeo-events/<slug>/`
+  resolver uses event-precedence as a deterministic safety net, and
+  `scripts/seed-rodeo-links.mts` seeds hub↔event links.
+- **Discipline-in-edition URLs omitted** by design — disciplines keep `/disciplines/<slug>/` to
+  avoid duplicate canonicals; editions link to discipline guides instead.
+- **Content-less rodeo entities are `noindex`** until they have real content.
+- **Edition dates** render as verified or explicitly "to be confirmed"; schema.org `Event`
+  JSON-LD is emitted only when dates are verified (never fabricated).
+- **Full fresh-from-zero migration replay still deferred** (owner chose the local
+  `nfrguide_test` FTS gate, **no Docker**). It runs on local PostgreSQL via
+  `npm run test:migration` once a one-time CREATEDB-capable `MIGRATION_REPLAY_ADMIN_URL` is
+  provided — no production privileges, nothing existing reset.

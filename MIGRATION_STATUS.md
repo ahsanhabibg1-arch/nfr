@@ -274,3 +274,18 @@ Supply `MIGRATION_REPLAY_ADMIN_URL` (a CREATEDB-capable maintenance URL) for the
 `…batch04_navigation` → `…batch05_media` → `20261031000000_batch06_seo` →
 `20261031100000_batch07_analytics_search` → `20261031200000_batch08_monetization` →
 `20261031300000_batch09_admin_governance` (all applied to dev + test).
+
+## Batch 10 — Public rodeo entity pages (2026-11-01)
+Additive migration `20261101000000_batch10_rodeo_hub_event` (dev + test): one junction
+`RodeoHubEvent` (hub↔recurring-event M:N). The generated diff's `searchVector` DROP/ALTER drift
+was hand-stripped per the hazard above; FTS column + GIN index preserved. No existing table
+altered; no data reset. Hub↔event links seeded idempotently via `scripts/seed-rodeo-links.mts`.
+Verification: vitest **186/186** (×2); `next build` PASS; route 33/33, admin 13/13, media 7/7,
+cache 10/10, migration/FTS gate **5/5** (local `nfrguide_test`). Chain now ends
+`… → 20261101000000_batch10_rodeo_hub_event`.
+
+**Migration-replay gate status (carried forward).** Per owner decision, verification uses the
+local PostgreSQL (`nfrguide_test`) FTS checks — **no Docker**. The full from-zero fresh-DB
+replay is implemented (`npm run test:migration`) and runs on local Postgres when a one-time
+`MIGRATION_REPLAY_ADMIN_URL` (a CREATEDB-capable local role) is supplied; it does not reset dev/
+test and grants no production privileges. This remains the one explicit unresolved gate.

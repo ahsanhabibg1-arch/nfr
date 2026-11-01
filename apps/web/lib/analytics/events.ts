@@ -73,8 +73,20 @@ async function entityIsPublic(entityType: AnalyticsEntityType, entityId: string)
     }
     case 'SECTION':
       return Object.prototype.hasOwnProperty.call(PRIMARY_SECTIONS, entityId);
+    case 'RODEO_HUB': {
+      const h = await prisma.rodeoHub.findUnique({ where: { id: entityId }, select: { id: true } });
+      return !!h;
+    }
+    case 'RODEO_EVENT': {
+      const e = await prisma.rodeoEvent.findUnique({ where: { id: entityId }, select: { id: true } });
+      return !!e;
+    }
+    case 'RODEO_EDITION': {
+      const ed = await prisma.rodeoEventEdition.findUnique({ where: { id: entityId }, select: { id: true } });
+      return !!ed;
+    }
     default:
-      return false; // RODEO_* — no public detail route yet
+      return false;
   }
 }
 
