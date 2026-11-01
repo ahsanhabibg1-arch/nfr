@@ -48,6 +48,11 @@ export async function deleteCategory(actor: Actor, id: string): Promise<void> {
   if (c.id.startsWith('cat-')) throw new ServiceError('forbidden', 'Foundational primary-section categories cannot be deleted.');
   if (c._count.articles > 0) throw new ServiceError('conflict', `Cannot delete: ${c._count.articles} article(s) use this category.`);
   await prisma.category.delete({ where: { id } });
+  // Batch 11: remove polymorphic SEO/FAQ rows for this category (orphan cleanup).
+  const { deleteEntitySeoForEntity } = await import('./entitySeoService');
+  const { deleteFaqsForEntity } = await import('./faqService');
+  await deleteEntitySeoForEntity('CATEGORY', id);
+  await deleteFaqsForEntity('CATEGORY', id);
   await audit(actor.id, 'category.delete', 'category', id, c.name);
 }
 

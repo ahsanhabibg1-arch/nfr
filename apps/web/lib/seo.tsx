@@ -30,6 +30,8 @@ interface BuildMetaInput {
   noindex?: boolean;
   publishedTime?: string;
   authorName?: string;
+  /** Absolute canonical URL overriding the path-derived one (same-site only, validated upstream). */
+  canonical?: string;
 }
 
 function absolute(pathOrUrl: string | undefined): string {
@@ -47,8 +49,9 @@ export function buildMetadata({
   noindex = false,
   publishedTime,
   authorName,
+  canonical: canonicalOverride,
 }: BuildMetaInput): Metadata {
-  const canonical = `${SITE_URL}${path}`;
+  const canonical = canonicalOverride || `${SITE_URL}${path}`;
   const ogImage = absolute(image);
   // Mirror the Phase 0 suffix behaviour without double-appending when the brand
   // is already present (root layout sets no template, so this is authoritative).
@@ -168,6 +171,25 @@ export function breadcrumbJsonLd(
       position: i + 1,
       name: item.name,
       item: `${SITE_URL}${item.path}`,
+    })),
+  };
+}
+
+/**
+ * FAQPage structured data (Batch 11). Returns null unless there is at least one
+ * visible FAQ, and is built from EXACTLY the enabled FAQs rendered on the page (no
+ * hidden content). Rich-result display is at the search engine's discretion — this
+ * only provides accurate structured data, it does not guarantee rich results.
+ */
+export function faqPageJsonLd(faqs: { question: string; answer: string }[]): Record<string, unknown> | null {
+  if (!faqs || faqs.length === 0) return null;
+  return {
+    '@context': 'https://schema.org',
+    '@type': 'FAQPage',
+    mainEntity: faqs.map((f) => ({
+      '@type': 'Question',
+      name: f.question,
+      acceptedAnswer: { '@type': 'Answer', text: f.answer },
     })),
   };
 }

@@ -2,9 +2,13 @@ import type { Metadata } from 'next';
 import { notFound } from 'next/navigation';
 import { DisciplineGuideView } from '@/views/DisciplineGuideView';
 import { getDisciplineBySlug, getAllDisciplines } from '@/lib/content';
-import { buildMetadata, disciplineJsonLd, breadcrumbJsonLd, JsonLd } from '@/lib/seo';
+import { buildMetadata, disciplineJsonLd, breadcrumbJsonLd, faqPageJsonLd, JsonLd } from '@/lib/seo';
 import { ROUTES } from '@/config/routes';
 import { ViewBeacon } from '@/components/analytics/ViewBeacon';
+import { getEntitySeo, mergeSeoMeta } from '@/lib/cms/entitySeoService';
+import { listPublicFaqs } from '@/lib/cms/faqService';
+import { EntityIntro } from '@/components/editorial/EntityIntro';
+import { FaqAccordion } from '@/components/FaqAccordion';
 
 type Params = { params: Promise<{ slug: string }> };
 
@@ -26,18 +30,21 @@ export async function generateMetadata({ params }: Params): Promise<Metadata> {
       noindex: true,
     });
   }
-  return buildMetadata({
+  const seo = await getEntitySeo('DISCIPLINE', d.id);
+  return buildMetadata(mergeSeoMeta(seo, {
     title: `${d.name} Guide`,
     description: d.summary,
     path: ROUTES.DISCIPLINE(d.slug),
     image: d.image,
-  });
+  }));
 }
 
 export default async function DisciplinePage({ params }: Params) {
   const { slug } = await params;
   const d = await getDisciplineBySlug(slug);
   if (!d) notFound();
+  const [seo, faqs] = await Promise.all([getEntitySeo('DISCIPLINE', d.id), listPublicFaqs('DISCIPLINE', d.id)]);
+  const faqLd = faqPageJsonLd(faqs);
 
   return (
     <>
@@ -49,9 +56,16 @@ export default async function DisciplinePage({ params }: Params) {
             { name: 'NFR Competition', path: ROUTES.COMPETITION },
             { name: d.name, path: ROUTES.DISCIPLINE(d.slug) },
           ]),
+          ...(faqLd ? [faqLd] : []),
         ]}
       />
       <DisciplineGuideView slug={slug} />
+      {(seo?.intro || faqs.length > 0) && (
+        <div className="max-w-3xl mx-auto px-4 sm:px-6 pb-10">
+          <EntityIntro intro={seo?.intro} />
+          <FaqAccordion faqs={faqs} />
+        </div>
+      )}
       <ViewBeacon entityType="DISCIPLINE" entityId={d.id} path={ROUTES.DISCIPLINE(d.slug)} />
     </>
   );

@@ -193,6 +193,12 @@ export async function getPublishedCategories(): Promise<{ slug: string; name: st
   return rows.map((c) => ({ slug: c.slug, name: c.name }));
 }
 
+/** Category row by slug (for landing SEO/FAQ keying — Batch 11). */
+export async function getCategoryBySlug(slug: string): Promise<{ id: string; slug: string; name: string; description: string | null } | null> {
+  const c = await prisma.category.findUnique({ where: { slug }, select: { id: true, slug: true, name: true, description: true } });
+  return c ?? null;
+}
+
 export async function getAllDisciplines(): Promise<Discipline[]> {
   const rows = await prisma.discipline.findMany({ orderBy: { sortOrder: 'asc' } });
   return rows.map(toDiscipline);

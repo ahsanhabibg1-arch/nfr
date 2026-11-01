@@ -3,6 +3,13 @@ import Link from 'next/link';
 import { ROUTES } from '../config/routes';
 import type { PublicHub, PublicEvent, PublicEdition, PublicArticleRef, PublicEditionCard, PublicEventCard } from '../lib/rodeoContent';
 import type { PublicAssociation } from '../lib/monetization/publicMonetization';
+import { EntityIntro } from '../components/editorial/EntityIntro';
+import { FaqAccordion } from '../components/FaqAccordion';
+
+export interface LandingExtras {
+  intro?: string | null;
+  faqs?: { id: string; question: string; answer: string }[];
+}
 
 /**
  * Public rodeo entity views (Batch 10). Server-rendered, no client JS. Only published
@@ -119,13 +126,14 @@ export function RodeoDirectory({ hubs, events }: { hubs: { slug: string; title: 
   );
 }
 
-export function RodeoHubView({ hub }: { hub: PublicHub }) {
+export function RodeoHubView({ hub, extras }: { hub: PublicHub; extras?: LandingExtras }) {
   return (
     <PageShell>
       <nav className="text-xs font-mono text-stone-500 mb-3"><Link href={ROUTES.MORE_RODEO} className="hover:underline">Rodeo Events</Link> / {hub.title}</nav>
       {hub.region && <span className="text-[11px] font-sans text-[#8B5E3C] uppercase tracking-widest font-bold">{hub.region}{hub.circuitType ? ` · ${hub.circuitType}` : ''}</span>}
       <h1 className="text-3xl font-serif font-black text-stone-900 mt-1">{hub.title}</h1>
       {hub.description && <p className="text-stone-700 font-sans mt-3 leading-relaxed">{hub.description}</p>}
+      <EntityIntro intro={extras?.intro} />
       {hub.events.length > 0 ? (
         <section className="mt-8">
           <h2 className="text-[11px] uppercase tracking-widest font-sans font-bold text-[#8B5E3C] mb-2">Events in this hub</h2>
@@ -135,11 +143,12 @@ export function RodeoHubView({ hub }: { hub: PublicHub }) {
         <p className="mt-8 text-sm text-stone-500 font-sans">No events are associated with this hub yet.</p>
       )}
       <ArticleList articles={hub.articles} />
+      <FaqAccordion faqs={extras?.faqs ?? []} />
     </PageShell>
   );
 }
 
-export function RodeoEventView({ event, associations }: { event: PublicEvent; associations: PublicAssociation[] }) {
+export function RodeoEventView({ event, associations, extras }: { event: PublicEvent; associations: PublicAssociation[]; extras?: LandingExtras }) {
   return (
     <PageShell>
       <nav className="text-xs font-mono text-stone-500 mb-3"><Link href={ROUTES.MORE_RODEO} className="hover:underline">Rodeo Events</Link> / {event.name}</nav>
@@ -150,6 +159,7 @@ export function RodeoEventView({ event, associations }: { event: PublicEvent; as
       <h1 className="text-3xl font-serif font-black text-stone-900 mt-1">{event.name}</h1>
       {event.traditionalMonth && <p className="text-sm text-stone-500 font-sans mt-1">Traditionally held in {event.traditionalMonth}</p>}
       {event.description && <p className="text-stone-700 font-sans mt-3 leading-relaxed">{event.description}</p>}
+      <EntityIntro intro={extras?.intro} />
       {event.officialUrl && (
         <p className="mt-2 text-xs font-sans"><a href={event.officialUrl} target="_blank" rel="noopener noreferrer nofollow" className="text-[#8B5E3C] underline">Official event site ↗</a></p>
       )}
@@ -169,11 +179,12 @@ export function RodeoEventView({ event, associations }: { event: PublicEvent; as
 
       <ArticleList articles={event.articles} />
       <PartnersStrip associations={associations} />
+      <FaqAccordion faqs={extras?.faqs ?? []} />
     </PageShell>
   );
 }
 
-export function RodeoEditionView({ edition, associations }: { edition: PublicEdition; associations: PublicAssociation[] }) {
+export function RodeoEditionView({ edition, associations, extras }: { edition: PublicEdition; associations: PublicAssociation[]; extras?: LandingExtras }) {
   return (
     <PageShell>
       <nav className="text-xs font-mono text-stone-500 mb-3">
@@ -188,8 +199,10 @@ export function RodeoEditionView({ edition, associations }: { edition: PublicEdi
       <p className="mt-4 text-xs font-sans text-stone-500">
         This edition is specific to {edition.label}. Broadcast, ticket and commercial details are verified per edition and are not carried over from other years. <Link href={ROUTES.RODEO_EVENT(edition.event.slug)} className="text-[#8B5E3C] underline">See all editions →</Link>
       </p>
+      <EntityIntro intro={extras?.intro} />
       <ArticleList articles={edition.articles} />
       <PartnersStrip associations={associations} />
+      <FaqAccordion faqs={extras?.faqs ?? []} />
     </PageShell>
   );
 }

@@ -4,6 +4,14 @@ import { prisma } from '../db';
 import { Actor, audit } from './guard';
 import { roleHasPermission } from '../auth/rbac';
 import { ServiceError } from './articleService';
+import { deleteEntitySeoForEntity } from './entitySeoService';
+import { deleteFaqsForEntity } from './faqService';
+
+/** Remove polymorphic SEO/FAQ rows when an owning entity is deleted (Batch 11). */
+async function cleanupLandingRows(entityType: 'RODEO_HUB' | 'RODEO_EVENT' | 'RODEO_EDITION' | 'DISCIPLINE' | 'CATEGORY', id: string): Promise<void> {
+  await deleteEntitySeoForEntity(entityType, id);
+  await deleteFaqsForEntity(entityType, id);
+}
 
 /**
  * Rodeo Coverage management (Batch 04 §6/§7). Requires `rodeo.manage`.
@@ -55,6 +63,7 @@ export async function deleteHub(a: Actor, id: string): Promise<void> {
   req(a); const linked = await prisma.articleHub.count({ where: { hubId: id } });
   if (linked > 0) throw new ServiceError('conflict', `Cannot delete: ${linked} article(s) reference this hub.`);
   await prisma.rodeoHub.delete({ where: { id } }).catch(() => { throw new ServiceError('not_found', 'Hub not found'); });
+  await cleanupLandingRows('RODEO_HUB', id);
   await audit(a.id, 'rodeo.hub.delete', 'rodeo_hub', id);
 }
 
@@ -85,6 +94,7 @@ export async function deleteEvent(a: Actor, id: string): Promise<void> {
   if (editions > 0) throw new ServiceError('conflict', `Cannot delete: remove its ${editions} edition(s) first.`);
   if (articles > 0) throw new ServiceError('conflict', `Cannot delete: ${articles} article(s) reference this event.`);
   await prisma.rodeoEvent.delete({ where: { id } }).catch(() => { throw new ServiceError('not_found', 'Event not found'); });
+  await cleanupLandingRows('RODEO_EVENT', id);
   await audit(a.id, 'rodeo.event.delete', 'rodeo_event', id);
 }
 
@@ -113,6 +123,7 @@ export async function deleteEdition(a: Actor, id: string): Promise<void> {
   req(a); const articles = await prisma.articleEdition.count({ where: { editionId: id } });
   if (articles > 0) throw new ServiceError('conflict', `Cannot delete: ${articles} article(s) reference this edition.`);
   await prisma.rodeoEventEdition.delete({ where: { id } }).catch(() => { throw new ServiceError('not_found', 'Edition not found'); });
+  await cleanupLandingRows('RODEO_EDITION', id);
   await audit(a.id, 'rodeo.edition.delete', 'event_edition', id);
 }
 
@@ -143,11 +154,26 @@ export async function deleteVenue(a: Actor, id: string): Promise<void> {
   await audit(a.id, 'rodeo.venue.delete', 'venue', id);
 }
 
-// ---- Disciplines (read-only foundational) ----
+// ---- Disciplines ----
 export interface DisciplineRef { id: string; slug: string; name: string; articleCount: number; }
 export async function listDisciplinesRef(): Promise<DisciplineRef[]> {
   const rows = await prisma.discipline.findMany({ orderBy: { sortOrder: 'asc' }, include: { _count: { select: { articles: true } } } });
   return rows.map((d) => ({ id: d.id, slug: d.slug, name: d.name, articleCount: d._count.articles }));
+}
+/// Batch 11: editable discipline fields (slug/name/deep guide JSON are intentionally
+/// NOT editable here — the evergreen guide content is preserved).
+const DisciplineInput = z.object({
+  shortName: z.string().max(80).optional(),
+  category: z.enum(['Roughstock', 'Timed Event']).optional(),
+  tagline: z.string().max(240).optional(),
+  summary: z.string().min(1).max(2000),
+});
+export type DisciplineInput = z.input<typeof DisciplineInput>;
+export async function updateDiscipline(a: Actor, id: string, raw: DisciplineInput): Promise<void> {
+  req(a); const v = DisciplineInput.parse(raw);
+  if (!(await prisma.discipline.findUnique({ where: { id }, select: { id: true } }))) throw new ServiceError('not_found', 'Discipline not found');
+  await prisma.discipline.update({ where: { id }, data: { shortName: v.shortName ?? null, category: v.category ?? null, tagline: v.tagline ?? null, summary: v.summary } });
+  await audit(a.id, 'rodeo.discipline.update', 'discipline', id);
 }
 export async function listEventsForSelect(): Promise<{ id: string; name: string }[]> {
   return prisma.rodeoEvent.findMany({ orderBy: { name: 'asc' }, select: { id: true, name: true } });

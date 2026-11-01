@@ -1,24 +1,1050 @@
-// NFRGuide.com — Relational Editorial Schema (Phase 1 / Batch 02)
-// PostgreSQL + Prisma. Grounded in Master Requirements v2.0 §7 (logical schema),
-// Batch 02 §4 (entity set), DATA_MODELS.md, and the existing TypeScript contracts.
-//
-// Scope note: this batch builds the schema + a READ layer. No authentication,
-// no RBAC enforcement, no activated CMS writes (those are Batch 03). The
-// identity tables (User/Role/Permission/UserRole/AuditLog) and SEO-intelligence
-// tables (SeoRule/SeoFinding/SeoAuditRun) are the foundation only.
+generator client {
+  provider = "prisma-client-js"
+}
 
 datasource db {
   provider = "postgresql"
   url      = env("DATABASE_URL")
 }
 
-generator client {
-  provider = "prisma-client-js"
+/// Editorial byline identity (distinct from auth User — Master Reqs §7.1 authors).
+model Author {
+  id            String    @id @default(uuid())
+  slug          String    @unique
+  name          String
+  role          String
+  avatar        String?
+  bio           String?
+  credentials   String?
+  editorialBeat String?
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
+  articles      Article[]
 }
 
-// ============================================================================
-// ENUMS
-// ============================================================================
+/// One of the five approved primary sections (and future sub-sections).
+model Category {
+  id          String    @id @default(uuid())
+  slug        String    @unique
+  name        String    @unique
+  description String?
+  sortOrder   Int       @default(0)
+  articles    Article[]
+}
+
+model Tag {
+  id       String       @id @default(uuid())
+  slug     String       @unique
+  name     String
+  articles ArticleTag[]
+}
+
+model Article {
+  id                  String                         @id @default(uuid())
+  slug                String                         @unique
+  title               String
+  deck                String?
+  excerpt             String
+  imageSeoTitle       String?
+  imageAltText        String?
+  subcategory         String?
+  articleType         String
+  workflowStatus      WorkflowStatus                 @default(DRAFT)
+  readTime            String?
+  wordCount           Int?
+  isLeadHero          Boolean                        @default(false)
+  isFeatured          Boolean                        @default(false)
+  heroImageUrl        String?
+  imageCredit         String?
+  imageCaption        String?
+  imageRightsStatus   ImageRightsStatus              @default(UNRESOLVED)
+  disclosureType      String                         @default("editorial-independent")
+  disclosureNote      String?
+  takeaways           String[]                       @default([])
+  publishedAt         DateTime?
+  scheduledAt         DateTime?
+  reviewedAt          DateTime?
+  createdAt           DateTime                       @default(now())
+  updatedAt           DateTime                       @updatedAt
+  authorId            String
+  categoryId          String
+  createdById         String?
+  version             Int                            @default(1)
+  searchVector        Unsupported("tsvector")?       @default(dbgenerated("((((setweight(to_tsvector('english'::regconfig, COALESCE(title, ''::text)), 'A'::\"char\") || setweight(to_tsvector('english'::regconfig, COALESCE(deck, ''::text)), 'B'::\"char\")) || setweight(to_tsvector('english'::regconfig, COALESCE(excerpt, ''::text)), 'B'::\"char\")) || setweight(to_tsvector('english'::regconfig, COALESCE(subcategory, ''::text)), 'C'::\"char\")) || setweight(to_tsvector('english'::regconfig, COALESCE(\"articleType\", ''::text)), 'C'::\"char\"))"))
+  affiliatePlacements AffiliatePlacement[]
+  author              Author                         @relation(fields: [authorId], references: [id])
+  category            Category                       @relation(fields: [categoryId], references: [id])
+  createdBy           User?                          @relation("ArticleCreatedBy", fields: [createdById], references: [id])
+  blocks              ArticleBlock[]
+  disciplines         ArticleDiscipline[]
+  editions            ArticleEdition[]
+  events              ArticleEvent[]
+  hubs                ArticleHub[]
+  media               ArticleMedia[]
+  relatedTo           ArticleRelation[]              @relation("ArticleRelationSource")
+  relatedFrom         ArticleRelation[]              @relation("ArticleRelationTarget")
+  revisions           ArticleRevision[]
+  seo                 ArticleSeo?
+  sources             ArticleSource[]
+  tags                ArticleTag[]
+  workflow            EditorialWorkflowHistory[]
+  seoFindings         SeoFinding[]
+  sponsorships        SponsoredContentRelationship[]
+
+  @@index([workflowStatus])
+  @@index([categoryId])
+  @@index([publishedAt])
+  @@index([workflowStatus, publishedAt])
+  @@index([searchVector], type: Gin)
+}
+
+/// Curated article-to-article relationships (replaces relatedArticleIds JSON).
+model ArticleRelation {
+  sourceId String
+  targetId String
+  source   Article @relation("ArticleRelationSource", fields: [sourceId], references: [id], onDelete: Cascade)
+  target   Article @relation("ArticleRelationTarget", fields: [targetId], references: [id], onDelete: Cascade)
+
+  @@id([sourceId, targetId])
+}
+
+/// Structured article body. JSON `data` is justified: block shapes are a flexible
+/// discriminated union; blockType + sortOrder stay queryable columns.
+model ArticleBlock {
+  id        String  @id @default(uuid())
+  articleId String
+  sortOrder Int
+  blockType String
+  data      Json
+  article   Article @relation(fields: [articleId], references: [id], onDelete: Cascade)
+
+  @@unique([articleId, sortOrder])
+  @@index([articleId])
+}
+
+/// Per-article SEO payload (Master Reqs §5 / Batch 02 §4 ArticleSEO).
+model ArticleSeo {
+  id                 String  @id @default(uuid())
+  articleId          String  @unique
+  seoTitle           String?
+  metaDescription    String?
+  canonicalUrl       String?
+  ogImage            String?
+  robots             String  @default("index, follow")
+  structuredDataType String  @default("Article")
+  article            Article @relation(fields: [articleId], references: [id], onDelete: Cascade)
+}
+
+model ArticleRevision {
+  id         String         @id @default(uuid())
+  articleId  String
+  revisionNo Int
+  actorName  String
+  actorRole  String
+  status     WorkflowStatus
+  summary    String
+  snapshot   Json
+  createdAt  DateTime       @default(now())
+  actorId    String?
+  actor      User?          @relation(fields: [actorId], references: [id])
+  article    Article        @relation(fields: [articleId], references: [id], onDelete: Cascade)
+
+  @@unique([articleId, revisionNo])
+  @@index([articleId, createdAt])
+}
+
+/// Workflow state transition log (distinct from content revisions).
+model EditorialWorkflowHistory {
+  id         String          @id @default(uuid())
+  articleId  String
+  fromStatus WorkflowStatus?
+  toStatus   WorkflowStatus
+  actorName  String
+  note       String?
+  createdAt  DateTime        @default(now())
+  actorId    String?
+  actor      User?           @relation(fields: [actorId], references: [id])
+  article    Article         @relation(fields: [articleId], references: [id], onDelete: Cascade)
+
+  @@index([articleId, createdAt])
+}
+
+model ArticleTag {
+  articleId String
+  tagId     String
+  article   Article @relation(fields: [articleId], references: [id], onDelete: Cascade)
+  tag       Tag     @relation(fields: [tagId], references: [id], onDelete: Cascade)
+
+  @@id([articleId, tagId])
+}
+
+/// Reusable source directory.
+model Source {
+  id               String               @id @default(uuid())
+  title            String
+  url              String
+  publisher        String?
+  type             String?
+  classification   SourceClassification @default(INDEPENDENT_REFERENCE)
+  status           SourceStatus         @default(NEEDS_REVIEW)
+  verificationDate DateTime?
+  articles         ArticleSource[]
+
+  @@index([status])
+}
+
+model ArticleSource {
+  articleId String
+  sourceId  String
+  note      String?
+  sortOrder Int     @default(0)
+  article   Article @relation(fields: [articleId], references: [id], onDelete: Cascade)
+  source    Source  @relation(fields: [sourceId], references: [id], onDelete: Cascade)
+
+  @@id([articleId, sourceId])
+}
+
+/// Digital asset (Batch 05). Binaries live in object storage (`storageProvider` +
+/// `storageKey`); Postgres holds only metadata/relationships/lifecycle. Legacy
+/// seeded rows use provider `legacy-local` and keep their `/assets/...` url.
+model MediaAsset {
+  id                  String                   @id @default(uuid())
+  storageKey          String                   @unique
+  url                 String
+  filename            String
+  mimeType            String?
+  dimensions          String?
+  bytes               Int?
+  format              String?
+  seoTitle            String?
+  altText             String?
+  credit              String?
+  rightsStatus        ImageRightsStatus        @default(UNRESOLVED)
+  uploadedAt          DateTime                 @default(now())
+  caption             String?
+  checksum            String?
+  copyrightHolder     String?
+  derivatives         Json?
+  extension           String?
+  height              Int?
+  licenseSourceUrl    String?
+  licenseType         MediaLicenseType         @default(UNCONFIRMED)
+  processingStatus    MediaProcessingStatus    @default(READY)
+  rightsConfirmed     Boolean                  @default(false)
+  rightsConfirmedAt   DateTime?
+  rightsConfirmedById String?
+  safeFilename        String?
+  sourceAttribution   String?
+  storageProvider     String                   @default("legacy-local")
+  title               String?
+  updatedAt           DateTime                 @default(now()) @updatedAt
+  uploadedById        String?
+  usageRestrictions   String?
+  visibility          MediaVisibility          @default(PUBLIC)
+  width               Int?
+  articles            ArticleMedia[]
+  disciplines         DisciplineMedia[]
+  uploadedBy          User?                    @relation("MediaUploader", fields: [uploadedById], references: [id])
+  editions            RodeoEventEditionMedia[]
+  events              RodeoEventMedia[]
+  hubs                RodeoHubMedia[]
+  venues              VenueMedia[]
+
+  @@index([visibility, processingStatus])
+  @@index([uploadedById])
+  @@index([checksum])
+}
+
+model RodeoHubMedia {
+  hubId     String
+  mediaId   String
+  role      String     @default("gallery")
+  sortOrder Int        @default(0)
+  hub       RodeoHub   @relation(fields: [hubId], references: [id], onDelete: Cascade)
+  media     MediaAsset @relation(fields: [mediaId], references: [id], onDelete: Cascade)
+
+  @@id([hubId, mediaId])
+  @@index([mediaId])
+}
+
+model RodeoEventMedia {
+  eventId   String
+  mediaId   String
+  role      String     @default("gallery")
+  sortOrder Int        @default(0)
+  event     RodeoEvent @relation(fields: [eventId], references: [id], onDelete: Cascade)
+  media     MediaAsset @relation(fields: [mediaId], references: [id], onDelete: Cascade)
+
+  @@id([eventId, mediaId])
+  @@index([mediaId])
+}
+
+model RodeoEventEditionMedia {
+  editionId String
+  mediaId   String
+  role      String            @default("gallery")
+  sortOrder Int               @default(0)
+  edition   RodeoEventEdition @relation(fields: [editionId], references: [id], onDelete: Cascade)
+  media     MediaAsset        @relation(fields: [mediaId], references: [id], onDelete: Cascade)
+
+  @@id([editionId, mediaId])
+  @@index([mediaId])
+}
+
+model DisciplineMedia {
+  disciplineId String
+  mediaId      String
+  role         String     @default("gallery")
+  sortOrder    Int        @default(0)
+  discipline   Discipline @relation(fields: [disciplineId], references: [id], onDelete: Cascade)
+  media        MediaAsset @relation(fields: [mediaId], references: [id], onDelete: Cascade)
+
+  @@id([disciplineId, mediaId])
+  @@index([mediaId])
+}
+
+model VenueMedia {
+  venueId   String
+  mediaId   String
+  role      String     @default("gallery")
+  sortOrder Int        @default(0)
+  media     MediaAsset @relation(fields: [mediaId], references: [id], onDelete: Cascade)
+  venue     Venue      @relation(fields: [venueId], references: [id], onDelete: Cascade)
+
+  @@id([venueId, mediaId])
+  @@index([mediaId])
+}
+
+model ArticleMedia {
+  articleId String
+  mediaId   String
+  usageKey  String
+  altText   String?
+  caption   String?
+  sortOrder Int        @default(0)
+  article   Article    @relation(fields: [articleId], references: [id], onDelete: Cascade)
+  media     MediaAsset @relation(fields: [mediaId], references: [id], onDelete: Cascade)
+
+  @@id([articleId, usageKey])
+  @@index([mediaId])
+}
+
+/// The seven NFR disciplines. Rich evergreen guide body stored as JSON (`guide`)
+/// — a flexible nested structure that does not benefit from further tables yet.
+model Discipline {
+  id          String              @id @default(uuid())
+  slug        String              @unique
+  name        String
+  shortName   String?
+  category    String?
+  tagline     String?
+  summary     String
+  image       String?
+  imageCredit String?
+  guide       Json?
+  sortOrder   Int                 @default(0)
+  articles    ArticleDiscipline[]
+  media       DisciplineMedia[]
+  events      EventDiscipline[]
+}
+
+model RodeoHub {
+  id                String          @id @default(uuid())
+  slug              String          @unique
+  title             String
+  region            String?
+  circuitType       String?
+  description       String?
+  annualEventsCount Int             @default(0)
+  sortOrder         Int             @default(0)
+  articles          ArticleHub[]
+  hubEvents         RodeoHubEvent[]
+  media             RodeoHubMedia[]
+}
+
+/// Stable recurring event identity, independent of any hub (Master Reqs §2.1).
+model RodeoEvent {
+  id               String              @id @default(uuid())
+  slug             String              @unique
+  name             String
+  location         String?
+  traditionalMonth String?
+  status           String?
+  description      String?
+  organizerName    String?
+  officialUrl      String?
+  isFlagship       Boolean             @default(false)
+  articles         ArticleEvent[]
+  editions         RodeoEventEdition[]
+  media            RodeoEventMedia[]
+  hubLinks         RodeoHubEvent[]
+}
+
+/// Curated hub ↔ recurring-event association (Batch 10). A hub lists its associated
+/// events without owning them — the event URL is hub-independent (Master Reqs:
+/// "hub association does not change event URL"). Additive M:N join.
+model RodeoHubEvent {
+  hubId     String
+  eventId   String
+  sortOrder Int        @default(0)
+  event     RodeoEvent @relation(fields: [eventId], references: [id], onDelete: Cascade)
+  hub       RodeoHub   @relation(fields: [hubId], references: [id], onDelete: Cascade)
+
+  @@id([hubId, eventId])
+  @@index([eventId])
+}
+
+/// Specific occurrence/year. Unique per (eventId, editionSlug) — Master Reqs §7.2.
+model RodeoEventEdition {
+  id             String                   @id @default(uuid())
+  eventId        String
+  editionSlug    String
+  label          String
+  year           Int?
+  startAt        DateTime?
+  endAt          DateTime?
+  timezone       String?
+  purseBenchmark String?
+  venueId        String?
+  articles       ArticleEdition[]
+  event          RodeoEvent               @relation(fields: [eventId], references: [id], onDelete: Cascade)
+  venue          Venue?                   @relation(fields: [venueId], references: [id])
+  media          RodeoEventEditionMedia[]
+
+  @@unique([eventId, editionSlug])
+}
+
+model Venue {
+  id       String              @id @default(uuid())
+  slug     String              @unique
+  name     String
+  city     String?
+  state    String?
+  country  String?
+  editions RodeoEventEdition[]
+  media    VenueMedia[]
+}
+
+model EventDiscipline {
+  disciplineId String
+  eventId      String
+  eventSlugRef String
+  discipline   Discipline @relation(fields: [disciplineId], references: [id], onDelete: Cascade)
+
+  @@id([disciplineId, eventId])
+}
+
+model ArticleDiscipline {
+  articleId    String
+  disciplineId String
+  article      Article    @relation(fields: [articleId], references: [id], onDelete: Cascade)
+  discipline   Discipline @relation(fields: [disciplineId], references: [id], onDelete: Cascade)
+
+  @@id([articleId, disciplineId])
+}
+
+model ArticleHub {
+  articleId String
+  hubId     String
+  article   Article  @relation(fields: [articleId], references: [id], onDelete: Cascade)
+  hub       RodeoHub @relation(fields: [hubId], references: [id], onDelete: Cascade)
+
+  @@id([articleId, hubId])
+}
+
+model ArticleEvent {
+  articleId String
+  eventId   String
+  article   Article    @relation(fields: [articleId], references: [id], onDelete: Cascade)
+  event     RodeoEvent @relation(fields: [eventId], references: [id], onDelete: Cascade)
+
+  @@id([articleId, eventId])
+}
+
+model ArticleEdition {
+  articleId String
+  editionId String
+  article   Article           @relation(fields: [articleId], references: [id], onDelete: Cascade)
+  edition   RodeoEventEdition @relation(fields: [editionId], references: [id], onDelete: Cascade)
+
+  @@id([articleId, editionId])
+}
+
+/// Normalized redirect registry. One active redirect per source path.
+model ArticleRedirect {
+  id         String         @id @default(uuid())
+  sourcePath String         @unique
+  targetPath String
+  statusCode Int            @default(308)
+  status     RedirectStatus @default(ACTIVE)
+  createdAt  DateTime       @default(now())
+}
+
+model SeoRule {
+  id          String         @id @default(uuid())
+  code        String         @unique
+  group       String
+  severity    SeoSeverity
+  enabled     Boolean        @default(true)
+  description String?
+  appliesTo   String?
+  category    String         @default("technical")
+  config      Json?
+  defaultKind SeoFindingKind @default(DEFECT)
+  ruleVersion String         @default("1")
+  title       String?
+  findings    SeoFinding[]
+}
+
+model SeoAuditRun {
+  id            String       @id @default(uuid())
+  scope         String
+  engineVersion String
+  startedAt     DateTime     @default(now())
+  completedAt   DateTime?
+  status        String       @default("completed")
+  summary       Json?
+  totalFindings Int          @default(0)
+  triggeredById String?
+  findings      SeoFinding[]
+
+  @@index([startedAt])
+}
+
+model SeoFinding {
+  id             String           @id @default(uuid())
+  ruleId         String
+  auditRunId     String?
+  articleId      String?
+  fingerprint    String           @unique
+  severity       SeoSeverity
+  status         SeoFindingStatus @default(OPEN)
+  evidence       String?
+  firstSeenAt    DateTime         @default(now())
+  lastSeenAt     DateTime         @default(now())
+  affectedUrl    String?
+  assignedToId   String?
+  category       String           @default("technical")
+  detail         Json?
+  entityId       String?
+  entityType     String           @default("article")
+  kind           SeoFindingKind   @default(DEFECT)
+  recommendation String?
+  resolutionNote String?
+  resolvedAt     DateTime?
+  resolvedById   String?
+  ruleCode       String           @default("")
+  ruleVersion    String           @default("1")
+  article        Article?         @relation(fields: [articleId], references: [id])
+  auditRun       SeoAuditRun?     @relation(fields: [auditRunId], references: [id])
+  rule           SeoRule          @relation(fields: [ruleId], references: [id])
+
+  @@index([status])
+  @@index([severity])
+  @@index([entityType, entityId])
+  @@index([category])
+}
+
+model SeoConfig {
+  key         String   @id
+  value       Json
+  updatedById String?
+  updatedAt   DateTime @default(now()) @updatedAt
+}
+
+model User {
+  id              String                     @id @default(uuid())
+  email           String                     @unique
+  name            String
+  status          UserAccountStatus          @default(INVITED)
+  createdAt       DateTime                   @default(now())
+  lastLoginAt     DateTime?
+  passwordHash    String?
+  createdArticles Article[]                  @relation("ArticleCreatedBy")
+  revisions       ArticleRevision[]
+  auditLogs       AuditLog[]
+  workflowEvents  EditorialWorkflowHistory[]
+  uploadedMedia   MediaAsset[]               @relation("MediaUploader")
+  passwordResets  PasswordResetToken[]
+  sessions        Session[]
+  roles           UserRole[]
+}
+
+/// Server-side session (opaque token stored as a SHA-256 hash; validated and
+/// revocable server-side — Batch 03 §3).
+model Session {
+  id        String   @id @default(uuid())
+  userId    String
+  tokenHash String   @unique
+  expiresAt DateTime
+  createdAt DateTime @default(now())
+  ipAddress String?
+  userAgent String?
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@index([expiresAt])
+}
+
+model Role {
+  id          String           @id @default(uuid())
+  key         String           @unique
+  name        String
+  permissions RolePermission[]
+  users       UserRole[]
+}
+
+model Permission {
+  id    String           @id @default(uuid())
+  key   String           @unique
+  label String
+  roles RolePermission[]
+}
+
+model UserRole {
+  userId String
+  roleId String
+  role   Role   @relation(fields: [roleId], references: [id], onDelete: Cascade)
+  user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@id([userId, roleId])
+}
+
+model RolePermission {
+  roleId       String
+  permissionId String
+  permission   Permission @relation(fields: [permissionId], references: [id], onDelete: Cascade)
+  role         Role       @relation(fields: [roleId], references: [id], onDelete: Cascade)
+
+  @@id([roleId, permissionId])
+}
+
+model AuditLog {
+  id         String   @id @default(uuid())
+  actorId    String?
+  action     String
+  entityType String
+  entityId   String?
+  detail     String?
+  createdAt  DateTime @default(now())
+  actor      User?    @relation(fields: [actorId], references: [id])
+
+  @@index([entityType, createdAt])
+}
+
+/// Site navigation (Batch 04 §F). `location` groups menus (header / footer-*).
+/// `isSystem` protects canonical primary-section links from deletion; the five
+/// section routes and seven discipline routes are never renamed/removed here.
+model NavigationItem {
+  id         String   @id @default(uuid())
+  location   String
+  label      String
+  url        String
+  sortOrder  Int      @default(0)
+  isExternal Boolean  @default(false)
+  isSystem   Boolean  @default(false)
+  visible    Boolean  @default(true)
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+
+  @@index([location, sortOrder])
+}
+
+/// One internal-search submission. `normalizedQuery` is already redacted/minimized
+/// (lowercased, whitespace-collapsed, length-bounded, email/number-redacted).
+model SearchQueryEvent {
+  id              String   @id @default(uuid())
+  normalizedQuery String
+  queryLength     Int      @default(0)
+  resultCount     Int      @default(0)
+  zeroResult      Boolean  @default(false)
+  contentType     String?
+  source          String   @default("web")
+  createdAt       DateTime @default(now())
+
+  @@index([createdAt])
+  @@index([normalizedQuery])
+  @@index([zeroResult, createdAt])
+}
+
+/// A click on a search result (query → chosen destination). Used for CTR and to
+/// distinguish satisfied vs. weak-engagement queries.
+model SearchResultClickEvent {
+  id              String              @id @default(uuid())
+  normalizedQuery String
+  entityType      AnalyticsEntityType
+  entityId        String
+  position        Int                 @default(0)
+  createdAt       DateTime            @default(now())
+
+  @@index([createdAt])
+  @@index([normalizedQuery])
+  @@index([entityType, entityId])
+}
+
+/// A first-party observed public content view. Labeled as an observed event, NOT a
+/// verified unique human visitor (§7). Validated against a real published entity.
+model ContentViewEvent {
+  id         String              @id @default(uuid())
+  entityType AnalyticsEntityType
+  entityId   String
+  path       String
+  source     String              @default("web")
+  createdAt  DateTime            @default(now())
+
+  @@index([createdAt])
+  @@index([entityType, entityId, createdAt])
+}
+
+/// Durable per-day rollup for dashboard performance and retention. Raw events can
+/// be pruned past the retention window while aggregates are preserved. Empty-string
+/// entityType/entityId keep the unique key usable for site-wide metrics.
+model AnalyticsDailyAggregate {
+  id         String   @id @default(uuid())
+  day        DateTime @db.Date
+  metric     String
+  entityType String   @default("")
+  entityId   String   @default("")
+  count      Int      @default(0)
+  updatedAt  DateTime @default(now()) @updatedAt
+
+  @@unique([day, metric, entityType, entityId])
+  @@index([metric, day])
+}
+
+/// External analytics provider connection. Credentials are NEVER stored here
+/// (§9/§13); `propertyRef` is a non-secret label (e.g. GA4 property id, GSC site).
+model AnalyticsProviderConnection {
+  id             String                   @id @default(uuid())
+  provider       AnalyticsProvider        @unique
+  displayName    String
+  status         ProviderConnectionStatus @default(NOT_CONNECTED)
+  propertyRef    String?
+  configuredById String?
+  lastSyncAt     DateTime?
+  lastError      String?
+  createdAt      DateTime                 @default(now())
+  updatedAt      DateTime                 @default(now()) @updatedAt
+  syncRuns       AnalyticsSyncRun[]
+}
+
+/// A provider ingestion attempt (foundation; no runs execute until connected).
+model AnalyticsSyncRun {
+  id            String                      @id @default(uuid())
+  connectionId  String
+  provider      AnalyticsProvider
+  status        String                      @default("not_connected")
+  startedAt     DateTime                    @default(now())
+  completedAt   DateTime?
+  rowsIngested  Int                         @default(0)
+  errorCategory String?
+  connection    AnalyticsProviderConnection @relation(fields: [connectionId], references: [id], onDelete: Cascade)
+
+  @@index([provider, startedAt])
+}
+
+/// Analytics configuration (key → JSON): collection-enabled flag, retention days,
+/// redaction options, display time zone. Mirrors the SeoConfig pattern.
+model AnalyticsConfig {
+  key         String   @id
+  value       Json
+  updatedById String?
+  updatedAt   DateTime @default(now()) @updatedAt
+}
+
+/// A commercial partner. `verificationStatus` + evidence gate any "official" claim;
+/// `isActive` gates public rendering. Never pre-populated with invented partners.
+model AffiliatePartner {
+  id                 String                         @id @default(uuid())
+  name               String
+  slug               String                         @unique
+  website            String?
+  category           AffiliateCategory              @default(OTHER)
+  programType        String?
+  isActive           Boolean                        @default(false)
+  verificationStatus PartnerVerificationStatus      @default(UNVERIFIED)
+  verifiedAt         DateTime?
+  lastVerifiedAt     DateTime?
+  complianceNotes    String?
+  createdById        String?
+  createdAt          DateTime                       @default(now())
+  updatedAt          DateTime                       @default(now()) @updatedAt
+  links              AffiliateLink[]
+  programs           AffiliateProgram[]
+  associations       CommercialEntityAssociation[]
+  disclosures        MonetizationDisclosure[]
+  sponsorships       SponsoredContentRelationship[]
+
+  @@index([isActive, verificationStatus])
+  @@index([category])
+}
+
+/// Optional grouping of links under a named partner program.
+model AffiliateProgram {
+  id          String                @id @default(uuid())
+  partnerId   String
+  name        String
+  programType String?
+  category    AffiliateCategory     @default(OTHER)
+  defaultRel  AffiliateRelAttribute @default(SPONSORED_NOFOLLOW)
+  status      MonetizationStatus    @default(DRAFT)
+  notes       String?
+  createdAt   DateTime              @default(now())
+  updatedAt   DateTime              @default(now()) @updatedAt
+  links       AffiliateLink[]
+  partner     AffiliatePartner      @relation(fields: [partnerId], references: [id], onDelete: Cascade)
+
+  @@index([partnerId])
+}
+
+/// Centralized affiliate link registry. `merchantUrl` is the original destination;
+/// `trackingUrl` the affiliate destination (resolved by the /go redirect). URLs are
+/// validated server-side (no javascript:/data:/private-network targets).
+model AffiliateLink {
+  id                String                    @id @default(uuid())
+  partnerId         String
+  programId         String?
+  label             String
+  merchantUrl       String
+  trackingUrl       String?
+  category          AffiliateCategory         @default(OTHER)
+  rel               AffiliateRelAttribute     @default(SPONSORED_NOFOLLOW)
+  status            MonetizationStatus        @default(DRAFT)
+  isActive          Boolean                   @default(false)
+  editorialContext  String?
+  effectiveFrom     DateTime?
+  effectiveTo       DateTime?
+  lastVerifiedAt    DateTime?
+  verificationNotes String?
+  createdById       String?
+  createdAt         DateTime                  @default(now())
+  updatedAt         DateTime                  @default(now()) @updatedAt
+  clicks            AffiliateClickAggregate[]
+  partner           AffiliatePartner          @relation(fields: [partnerId], references: [id])
+  program           AffiliateProgram?         @relation(fields: [programId], references: [id])
+  placements        AffiliatePlacement[]
+
+  @@index([partnerId])
+  @@index([isActive, status])
+  @@index([category])
+}
+
+/// Assignment of a link to a content entity (article/rodeo). Created/proposed via
+/// article-edit rights; activation gated by monetization permissions.
+model AffiliatePlacement {
+  id           String               @id @default(uuid())
+  linkId       String
+  entityType   CommercialEntityType @default(ARTICLE)
+  entityId     String
+  articleId    String?
+  position     String?
+  status       MonetizationStatus   @default(DRAFT)
+  isActive     Boolean              @default(false)
+  note         String?
+  proposedById String?
+  approvedById String?
+  createdAt    DateTime             @default(now())
+  updatedAt    DateTime             @default(now()) @updatedAt
+  article      Article?             @relation(fields: [articleId], references: [id], onDelete: Cascade)
+  link         AffiliateLink        @relation(fields: [linkId], references: [id], onDelete: Cascade)
+
+  @@index([entityType, entityId])
+  @@index([articleId])
+  @@index([linkId])
+}
+
+/// AdSense-ready logical placement. `enabled` + MonetizationConfiguration.adsenseEnabled
+/// both gate public display; defaults keep external serving OFF.
+model AdPlacement {
+  id              String          @id @default(uuid())
+  slot            AdPlacementSlot
+  name            String
+  pageScope       String          @default("global")
+  enabled         Boolean         @default(false)
+  device          String          @default("all")
+  position        Int             @default(0)
+  priority        Int             @default(0)
+  responsive      Boolean         @default(true)
+  adUnitConfig    Json?
+  complianceNotes String?
+  createdById     String?
+  createdAt       DateTime        @default(now())
+  updatedAt       DateTime        @default(now()) @updatedAt
+
+  @@index([pageScope, enabled])
+  @@index([slot])
+}
+
+/// Reusable disclosure policy text (§15). `partnerId` optional for partner-specific
+/// disclosure. Rendered close to the relevant commercial content, not only in footer.
+model MonetizationDisclosure {
+  id                String            @id @default(uuid())
+  key               String            @unique
+  scope             String
+  label             String
+  body              String
+  requiredProminent Boolean           @default(true)
+  enabled           Boolean           @default(true)
+  partnerId         String?
+  updatedById       String?
+  updatedAt         DateTime          @default(now()) @updatedAt
+  partner           AffiliatePartner? @relation(fields: [partnerId], references: [id])
+
+  @@index([scope])
+}
+
+/// Sponsored-content classification, separate from ordinary affiliate links (§16).
+model SponsoredContentRelationship {
+  id              String                @id @default(uuid())
+  articleId       String
+  partnerId       String?
+  sponsorName     String
+  disclosureLabel String                @default("Sponsored")
+  rel             AffiliateRelAttribute @default(SPONSORED)
+  startAt         DateTime?
+  endAt           DateTime?
+  reviewNotes     String?
+  status          MonetizationStatus    @default(DRAFT)
+  isActive        Boolean               @default(false)
+  createdById     String?
+  createdAt       DateTime              @default(now())
+  updatedAt       DateTime              @default(now()) @updatedAt
+  article         Article               @relation(fields: [articleId], references: [id], onDelete: Cascade)
+  partner         AffiliatePartner?     @relation(fields: [partnerId], references: [id])
+
+  @@index([articleId])
+  @@index([partnerId])
+}
+
+/// A commercial relationship between a partner and a rodeo/editorial entity (§12).
+/// Keeps event-vs-edition separation via entityType; never auto-copied across years.
+model CommercialEntityAssociation {
+  id               String               @id @default(uuid())
+  partnerId        String
+  entityType       CommercialEntityType
+  entityId         String
+  relationshipType String
+  note             String?
+  status           MonetizationStatus   @default(DRAFT)
+  isActive         Boolean              @default(false)
+  effectiveFrom    DateTime?
+  effectiveTo      DateTime?
+  createdById      String?
+  createdAt        DateTime             @default(now())
+  updatedAt        DateTime             @default(now()) @updatedAt
+  partner          AffiliatePartner     @relation(fields: [partnerId], references: [id], onDelete: Cascade)
+
+  @@index([entityType, entityId])
+  @@index([partnerId])
+}
+
+/// Monetization configuration (key → JSON): adsenseEnabled, clickTrackingEnabled,
+/// publisherId, global disclosure toggles. External serving/tracking OFF by default.
+model MonetizationConfiguration {
+  key         String   @id
+  value       Json
+  updatedById String?
+  updatedAt   DateTime @default(now()) @updatedAt
+}
+
+/// Durable per-day outbound-click rollup (§18). Only written when click tracking is
+/// owner-enabled; no identifiers stored. Mirrors the analytics aggregate pattern.
+model AffiliateClickAggregate {
+  id        String        @id @default(uuid())
+  linkId    String
+  day       DateTime      @db.Date
+  count     Int           @default(0)
+  updatedAt DateTime      @default(now()) @updatedAt
+  link      AffiliateLink @relation(fields: [linkId], references: [id], onDelete: Cascade)
+
+  @@unique([linkId, day])
+  @@index([day])
+}
+
+/// Single-use, time-limited staff invitation. The raw token is shown once to the
+/// inviting admin to share manually (no email is sent); only its SHA-256 hash is
+/// stored. Accepting it sets the staff password and activates the account.
+model StaffInvitation {
+  id             String    @id @default(uuid())
+  email          String
+  roleKey        String
+  tokenHash      String    @unique
+  status         String    @default("PENDING")
+  invitedById    String?
+  acceptedUserId String?
+  expiresAt      DateTime
+  usedAt         DateTime?
+  createdAt      DateTime  @default(now())
+
+  @@index([email])
+  @@index([status, expiresAt])
+}
+
+/// Single-use, short-lived password reset token (hashed). Administrator-assisted
+/// foundation — raw token is shown once for manual delivery; no email is sent.
+model PasswordResetToken {
+  id          String    @id @default(uuid())
+  userId      String
+  tokenHash   String    @unique
+  expiresAt   DateTime
+  usedAt      DateTime?
+  createdById String?
+  createdAt   DateTime  @default(now())
+  user        User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@index([expiresAt])
+}
+
+/// Typed site-wide configuration (key → validated JSON). Domain-specific settings stay
+/// owned by their modules (SEO/Analytics/Monetization); this holds only site identity,
+/// editorial/rodeo display defaults and non-secret operational preferences (§16).
+model SystemSetting {
+  key         String   @id
+  value       Json
+  updatedById String?
+  updatedAt   DateTime @default(now()) @updatedAt
+}
+
+/// Editor-controlled SEO overrides + editorial intro for a landing entity. All fields
+/// optional; absent values fall back to the page's derived metadata. `noindex` is
+/// additive-only (combined with content-based noindex, never overriding it).
+model EntitySeo {
+  id                String            @id @default(uuid())
+  entityType        LandingEntityType
+  entityId          String
+  seoTitle          String?
+  metaDescription   String?
+  canonicalOverride String?
+  ogImage           String?
+  noindex           Boolean           @default(false)
+  intro             String?
+  updatedById       String?
+  updatedAt         DateTime          @default(now()) @updatedAt
+
+  @@unique([entityType, entityId])
+  @@index([entityType])
+}
+
+/// Entity-specific FAQ. Only `enabled` FAQs render publicly, ordered by `sortOrder`.
+/// Duplicate questions within one entity are blocked (DB unique + case-insensitive
+/// service check); empty questions/answers are rejected in the service.
+model EntityFaq {
+  id          String            @id @default(uuid())
+  entityType  LandingEntityType
+  entityId    String
+  question    String
+  answer      String
+  sortOrder   Int               @default(0)
+  enabled     Boolean           @default(true)
+  createdById String?
+  updatedById String?
+  createdAt   DateTime          @default(now())
+  updatedAt   DateTime          @default(now()) @updatedAt
+
+  @@unique([entityType, entityId, question])
+  @@index([entityType, entityId, sortOrder])
+}
 
 enum WorkflowStatus {
   DRAFT
@@ -37,8 +1063,6 @@ enum ImageRightsStatus {
   UNRESOLVED
 }
 
-// Media licensing/usage category (Batch 05 §11). UNCONFIRMED until an editor
-// explicitly records lawful usage rights.
 enum MediaLicenseType {
   OWNED
   LICENSED
@@ -48,7 +1072,6 @@ enum MediaLicenseType {
   UNCONFIRMED
 }
 
-// Media lifecycle (Batch 05 §13).
 enum MediaProcessingStatus {
   UPLOADING
   PROCESSING
@@ -79,15 +1102,12 @@ enum SeoSeverity {
   WARNING
   NOTICE
   PASSED
-  // Batch 06 priority levels (§13). WARNING/NOTICE kept for legacy seeded rules.
   HIGH
   MEDIUM
   LOW
   INFO
 }
 
-// Batch 06 §3: separate actual defects from recommendations / opportunities /
-// checks that could not be performed.
 enum SeoFindingKind {
   DEFECT
   RECOMMENDATION
@@ -100,7 +1120,6 @@ enum SeoFindingStatus {
   IN_PROGRESS
   RESOLVED
   IGNORED
-  // Batch 06 (§14). IGNORED doubles as "dismissed / accepted risk".
   REOPENED
 }
 
@@ -114,8 +1133,6 @@ enum UserAccountStatus {
   INVITED
   SUSPENDED
 }
-
-// ---- Batch 07 — Analytics & Search Intelligence ----------------------------
 
 /// Entity kinds referenced by analytics events (content views, search clicks).
 /// SECTION = a primary-section landing page; CATEGORY = a category archive.
@@ -149,8 +1166,6 @@ enum ProviderConnectionStatus {
   ERROR
   DISABLED
 }
-
-// ---- Batch 08 — Monetization & Affiliate Management -------------------------
 
 /// Commercial product category for partners/links (§6).
 enum AffiliateCategory {
@@ -211,1083 +1226,11 @@ enum CommercialEntityType {
   CATEGORY
 }
 
-// ============================================================================
-// EDITORIAL CORE
-// ============================================================================
-
-/// Editorial byline identity (distinct from auth User — Master Reqs §7.1 authors).
-model Author {
-  id            String    @id @default(uuid())
-  slug          String    @unique
-  name          String
-  role          String
-  avatar        String?
-  bio           String?
-  credentials   String?
-  editorialBeat String?
-  createdAt     DateTime  @default(now())
-  updatedAt     DateTime  @updatedAt
-  articles      Article[]
-}
-
-/// One of the five approved primary sections (and future sub-sections).
-model Category {
-  id          String    @id @default(uuid())
-  slug        String    @unique
-  name        String    @unique
-  description String?
-  sortOrder   Int       @default(0)
-  articles    Article[]
-}
-
-model Tag {
-  id       String       @id @default(uuid())
-  slug     String       @unique
-  name     String
-  articles ArticleTag[]
-}
-
-model Article {
-  id          String   @id @default(uuid())
-  slug        String   @unique
-
-  // Approved eight primary editorial fields (URL slug kept separate, above).
-  title       String // 01 Main Headline (H1)
-  deck        String? // 02 Secondary Editorial Deck
-  excerpt     String // 03 Editorial Excerpt / Summary
-  // 04 Article Body => ArticleBlock[] (relational, below)
-  // 05 SEO Title, 06 Meta Description => ArticleSeo (1:1, below)
-  imageSeoTitle String? // 07 Image SEO Title
-  imageAltText  String? // 08 Image ALT Text
-
-  subcategory       String?
-  articleType       String
-  workflowStatus    WorkflowStatus    @default(DRAFT)
-  version           Int               @default(1)
-  readTime          String?
-  wordCount         Int?
-  isLeadHero        Boolean           @default(false)
-  isFeatured        Boolean           @default(false)
-
-  heroImageUrl      String?
-  imageCredit       String?
-  imageCaption      String?
-  imageRightsStatus ImageRightsStatus @default(UNRESOLVED)
-
-  disclosureType    String            @default("editorial-independent")
-  disclosureNote    String?
-
-  takeaways         String[]          @default([])
-
-  // DB-managed full-text search vector (Batch 07): a generated STORED tsvector with a
-  // GIN index, created in raw migration SQL and queried via parameterized $queryRaw.
-  // Declared here as Unsupported so schema and DB agree and `migrate diff` never tries
-  // to drop it; it is excluded from the generated client (never read/written via Prisma).
-  searchVector      Unsupported("tsvector")?
-
-  publishedAt       DateTime?
-  scheduledAt       DateTime?
-  reviewedAt        DateTime?
-  createdAt         DateTime          @default(now())
-  updatedAt         DateTime          @updatedAt
-
-  // Relations
-  authorId    String
-  author      Author   @relation(fields: [authorId], references: [id])
-  categoryId  String
-  category    Category @relation(fields: [categoryId], references: [id])
-  createdById String?
-  createdBy   User?    @relation("ArticleCreatedBy", fields: [createdById], references: [id], onDelete: SetNull)
-
-  blocks      ArticleBlock[]
-  seo         ArticleSeo?
-  revisions   ArticleRevision[]
-  workflow    EditorialWorkflowHistory[]
-  tags        ArticleTag[]
-  sources     ArticleSource[]
-  media       ArticleMedia[]
-  disciplines ArticleDiscipline[]
-  hubs        ArticleHub[]
-  events      ArticleEvent[]
-  editions    ArticleEdition[]
-  seoFindings SeoFinding[]
-  // Batch 08 monetization (commercial, kept separate from editorial facts)
-  affiliatePlacements AffiliatePlacement[]
-  sponsorships        SponsoredContentRelationship[]
-
-  // Self-relation for curated related articles.
-  relatedTo   ArticleRelation[] @relation("ArticleRelationSource")
-  relatedFrom ArticleRelation[] @relation("ArticleRelationTarget")
-
-  @@index([workflowStatus])
-  @@index([categoryId])
-  @@index([publishedAt])
-  @@index([workflowStatus, publishedAt])
-}
-
-/// Curated article-to-article relationships (replaces relatedArticleIds JSON).
-model ArticleRelation {
-  sourceId  String
-  targetId  String
-  source    Article @relation("ArticleRelationSource", fields: [sourceId], references: [id], onDelete: Cascade)
-  target    Article @relation("ArticleRelationTarget", fields: [targetId], references: [id], onDelete: Cascade)
-
-  @@id([sourceId, targetId])
-}
-
-/// Structured article body. JSON `data` is justified: block shapes are a flexible
-/// discriminated union; blockType + sortOrder stay queryable columns.
-model ArticleBlock {
-  id        String  @id @default(uuid())
-  articleId String
-  article   Article @relation(fields: [articleId], references: [id], onDelete: Cascade)
-  sortOrder Int
-  blockType String // paragraph|heading|quote|table|callout|image|sourceLink|list|disclosure|divider
-  data      Json
-
-  @@unique([articleId, sortOrder])
-  @@index([articleId])
-}
-
-/// Per-article SEO payload (Master Reqs §5 / Batch 02 §4 ArticleSEO).
-model ArticleSeo {
-  id                 String  @id @default(uuid())
-  articleId          String  @unique
-  article            Article @relation(fields: [articleId], references: [id], onDelete: Cascade)
-  seoTitle           String? // 05 SEO Title
-  metaDescription    String? // 06 Meta Description
-  canonicalUrl       String?
-  ogImage            String?
-  robots             String  @default("index, follow")
-  structuredDataType String  @default("Article")
-}
-
-model ArticleRevision {
-  id        String         @id @default(uuid())
-  articleId String
-  article   Article        @relation(fields: [articleId], references: [id], onDelete: Cascade)
-  revisionNo Int
-  actorName String
-  actorRole String
-  actorId   String?
-  actor     User?          @relation(fields: [actorId], references: [id], onDelete: SetNull)
-  status    WorkflowStatus
-  summary   String
-  snapshot  Json
-  createdAt DateTime       @default(now())
-
-  @@unique([articleId, revisionNo])
-  @@index([articleId, createdAt])
-}
-
-/// Workflow state transition log (distinct from content revisions).
-model EditorialWorkflowHistory {
-  id         String         @id @default(uuid())
-  articleId  String
-  article    Article        @relation(fields: [articleId], references: [id], onDelete: Cascade)
-  fromStatus WorkflowStatus?
-  toStatus   WorkflowStatus
-  actorName  String
-  actorId    String?
-  actor      User?          @relation(fields: [actorId], references: [id], onDelete: SetNull)
-  note       String?
-  createdAt  DateTime       @default(now())
-
-  @@index([articleId, createdAt])
-}
-
-model ArticleTag {
-  articleId String
-  tagId     String
-  article   Article @relation(fields: [articleId], references: [id], onDelete: Cascade)
-  tag       Tag     @relation(fields: [tagId], references: [id], onDelete: Cascade)
-
-  @@id([articleId, tagId])
-}
-
-// ============================================================================
-// EVIDENCE & MEDIA
-// ============================================================================
-
-/// Reusable source directory.
-model Source {
-  id              String               @id @default(uuid())
-  title           String
-  url             String
-  publisher       String?
-  type            String?
-  classification  SourceClassification @default(INDEPENDENT_REFERENCE)
-  status          SourceStatus         @default(NEEDS_REVIEW)
-  verificationDate DateTime?
-  articles        ArticleSource[]
-
-  @@index([status])
-}
-
-model ArticleSource {
-  articleId String
-  sourceId  String
-  article   Article @relation(fields: [articleId], references: [id], onDelete: Cascade)
-  source    Source  @relation(fields: [sourceId], references: [id], onDelete: Cascade)
-  note      String?
-  sortOrder Int     @default(0)
-
-  @@id([articleId, sourceId])
-}
-
-/// Digital asset (Batch 05). Binaries live in object storage (`storageProvider` +
-/// `storageKey`); Postgres holds only metadata/relationships/lifecycle. Legacy
-/// seeded rows use provider `legacy-local` and keep their `/assets/...` url.
-model MediaAsset {
-  id              String                @id @default(uuid())
-  storageProvider String                @default("legacy-local") // local | r2 | s3 | legacy-local
-  storageKey      String                @unique
-  url             String                // public URL (route handler or CDN)
-  filename        String                // original filename (as uploaded)
-  safeFilename    String?               // sanitized basename
-  extension       String?
-  mimeType        String?
-  bytes           Int?
-  width           Int?
-  height          Int?
-  dimensions      String?               // legacy display string e.g. "1920 × 1080"
-  checksum        String?               // sha256 hex of the original bytes
-  format          String?
-  // Reusable, asset-level metadata (§8A)
-  title           String?
-  seoTitle        String?
-  altText         String?
-  caption         String?
-  credit          String?               // photographer / credit line
-  copyrightHolder String?
-  licenseType     MediaLicenseType      @default(UNCONFIRMED)
-  licenseSourceUrl String?
-  usageRestrictions String?
-  sourceAttribution String?
-  rightsStatus    ImageRightsStatus     @default(UNRESOLVED) // kept for legacy compatibility
-  rightsConfirmed Boolean               @default(false)
-  rightsConfirmedById String?
-  rightsConfirmedAt DateTime?
-  // Lifecycle (§13)
-  processingStatus MediaProcessingStatus @default(READY)
-  visibility      MediaVisibility       @default(PUBLIC)
-  derivatives     Json?                 // { thumb:{key,w,h}, md:{...}, lg:{...} }
-  // Ownership / audit
-  uploadedById    String?
-  uploadedBy      User?                 @relation("MediaUploader", fields: [uploadedById], references: [id], onDelete: SetNull)
-  uploadedAt      DateTime              @default(now())
-  updatedAt       DateTime              @default(now()) @updatedAt
-  // Relationships (reusable across entities — no binary duplication, §10)
-  articles        ArticleMedia[]
-  hubs            RodeoHubMedia[]
-  events          RodeoEventMedia[]
-  editions        RodeoEventEditionMedia[]
-  disciplines     DisciplineMedia[]
-  venues          VenueMedia[]
-
-  @@index([visibility, processingStatus])
-  @@index([uploadedById])
-  @@index([checksum])
-}
-
-// Rodeo entity ↔ media junctions. `role` keeps the recurring-event vs. edition
-// distinction (events and editions are separate tables), 'hero' | 'gallery'.
-model RodeoHubMedia {
-  hubId     String
-  mediaId   String
-  hub       RodeoHub   @relation(fields: [hubId], references: [id], onDelete: Cascade)
-  media     MediaAsset @relation(fields: [mediaId], references: [id], onDelete: Cascade)
-  role      String     @default("gallery")
-  sortOrder Int        @default(0)
-  @@id([hubId, mediaId])
-  @@index([mediaId])
-}
-
-model RodeoEventMedia {
-  eventId   String
-  mediaId   String
-  event     RodeoEvent @relation(fields: [eventId], references: [id], onDelete: Cascade)
-  media     MediaAsset @relation(fields: [mediaId], references: [id], onDelete: Cascade)
-  role      String     @default("gallery")
-  sortOrder Int        @default(0)
-  @@id([eventId, mediaId])
-  @@index([mediaId])
-}
-
-model RodeoEventEditionMedia {
-  editionId String
-  mediaId   String
-  edition   RodeoEventEdition @relation(fields: [editionId], references: [id], onDelete: Cascade)
-  media     MediaAsset        @relation(fields: [mediaId], references: [id], onDelete: Cascade)
-  role      String            @default("gallery")
-  sortOrder Int               @default(0)
-  @@id([editionId, mediaId])
-  @@index([mediaId])
-}
-
-model DisciplineMedia {
-  disciplineId String
-  mediaId      String
-  discipline   Discipline @relation(fields: [disciplineId], references: [id], onDelete: Cascade)
-  media        MediaAsset @relation(fields: [mediaId], references: [id], onDelete: Cascade)
-  role         String     @default("gallery")
-  sortOrder    Int        @default(0)
-  @@id([disciplineId, mediaId])
-  @@index([mediaId])
-}
-
-model VenueMedia {
-  venueId   String
-  mediaId   String
-  venue     Venue      @relation(fields: [venueId], references: [id], onDelete: Cascade)
-  media     MediaAsset @relation(fields: [mediaId], references: [id], onDelete: Cascade)
-  role      String     @default("gallery")
-  sortOrder Int        @default(0)
-  @@id([venueId, mediaId])
-  @@index([mediaId])
-}
-
-model ArticleMedia {
-  articleId String
-  mediaId   String
-  article   Article    @relation(fields: [articleId], references: [id], onDelete: Cascade)
-  media     MediaAsset @relation(fields: [mediaId], references: [id], onDelete: Cascade)
-  usageKey  String // e.g. "hero", "inline-1"
-  altText   String?
-  caption   String?
-  sortOrder Int    @default(0)
-
-  @@id([articleId, usageKey])
-  @@index([mediaId])
-}
-
-// ============================================================================
-// RODEO COVERAGE
-// ============================================================================
-
-/// The seven NFR disciplines. Rich evergreen guide body stored as JSON (`guide`)
-/// — a flexible nested structure that does not benefit from further tables yet.
-model Discipline {
-  id          String              @id @default(uuid())
-  slug        String              @unique
-  name        String
-  shortName   String?
-  category    String? // Roughstock | Timed Event
-  tagline     String?
-  summary     String
-  image       String?
-  imageCredit String?
-  guide       Json?
-  sortOrder   Int                 @default(0)
-  articles    ArticleDiscipline[]
-  events      EventDiscipline[]
-  media       DisciplineMedia[]
-}
-
-model RodeoHub {
-  id          String       @id @default(uuid())
-  slug        String       @unique
-  title       String
-  region      String?
-  circuitType String?
-  description String?
-  annualEventsCount Int    @default(0)
-  sortOrder   Int          @default(0)
-  articles    ArticleHub[]
-  media       RodeoHubMedia[]
-  hubEvents   RodeoHubEvent[]
-}
-
-/// Stable recurring event identity, independent of any hub (Master Reqs §2.1).
-model RodeoEvent {
-  id           String               @id @default(uuid())
-  slug         String               @unique
-  name         String
-  location     String?
-  traditionalMonth String?
-  status       String?
-  description  String?
-  organizerName String?
-  officialUrl  String?
-  isFlagship   Boolean              @default(false)
-  editions     RodeoEventEdition[]
-  articles     ArticleEvent[]
-  media        RodeoEventMedia[]
-  hubLinks     RodeoHubEvent[]
-}
-
-/// Curated hub ↔ recurring-event association (Batch 10). A hub lists its associated
-/// events without owning them — the event URL is hub-independent (Master Reqs:
-/// "hub association does not change event URL"). Additive M:N join.
-model RodeoHubEvent {
-  hubId     String
-  eventId   String
-  hub       RodeoHub   @relation(fields: [hubId], references: [id], onDelete: Cascade)
-  event     RodeoEvent @relation(fields: [eventId], references: [id], onDelete: Cascade)
-  sortOrder Int        @default(0)
-
-  @@id([hubId, eventId])
-  @@index([eventId])
-}
-
-/// Specific occurrence/year. Unique per (eventId, editionSlug) — Master Reqs §7.2.
-model RodeoEventEdition {
-  id          String           @id @default(uuid())
-  eventId     String
-  event       RodeoEvent       @relation(fields: [eventId], references: [id], onDelete: Cascade)
-  editionSlug String
-  label       String
-  year        Int?
-  startAt     DateTime?
-  endAt       DateTime?
-  timezone    String?
-  purseBenchmark String?
-  venueId     String?
-  venue       Venue?           @relation(fields: [venueId], references: [id])
-  articles    ArticleEdition[]
-  media       RodeoEventEditionMedia[]
-
-  @@unique([eventId, editionSlug])
-}
-
-model Venue {
-  id       String              @id @default(uuid())
-  slug     String              @unique
-  name     String
-  city     String?
-  state    String?
-  country  String?
-  editions RodeoEventEdition[]
-  media    VenueMedia[]
-}
-
-model EventDiscipline {
-  disciplineId String
-  eventId      String
-  discipline   Discipline @relation(fields: [disciplineId], references: [id], onDelete: Cascade)
-  // Associates a discipline with a recurring event (composite unique).
-  // Event relation intentionally via id only to keep this light.
-  eventSlugRef String
-
-  @@id([disciplineId, eventId])
-}
-
-// Article ↔ Rodeo junction tables (composite unique keys — Master Reqs §7.3).
-model ArticleDiscipline {
-  articleId    String
-  disciplineId String
-  article      Article    @relation(fields: [articleId], references: [id], onDelete: Cascade)
-  discipline   Discipline @relation(fields: [disciplineId], references: [id], onDelete: Cascade)
-
-  @@id([articleId, disciplineId])
-}
-
-model ArticleHub {
-  articleId String
-  hubId     String
-  article   Article  @relation(fields: [articleId], references: [id], onDelete: Cascade)
-  hub       RodeoHub @relation(fields: [hubId], references: [id], onDelete: Cascade)
-
-  @@id([articleId, hubId])
-}
-
-model ArticleEvent {
-  articleId String
-  eventId   String
-  article   Article    @relation(fields: [articleId], references: [id], onDelete: Cascade)
-  event     RodeoEvent @relation(fields: [eventId], references: [id], onDelete: Cascade)
-
-  @@id([articleId, eventId])
-}
-
-model ArticleEdition {
-  articleId String
-  editionId String
-  article   Article           @relation(fields: [articleId], references: [id], onDelete: Cascade)
-  edition   RodeoEventEdition @relation(fields: [editionId], references: [id], onDelete: Cascade)
-
-  @@id([articleId, editionId])
-}
-
-// ============================================================================
-// PUBLISHING & SEO FOUNDATION (no scanning worker in this batch)
-// ============================================================================
-
-/// Normalized redirect registry. One active redirect per source path.
-model ArticleRedirect {
-  id         String         @id @default(uuid())
-  sourcePath String         @unique
-  targetPath String
-  statusCode Int            @default(308)
-  status     RedirectStatus @default(ACTIVE)
-  createdAt  DateTime       @default(now())
-}
-
-model SeoRule {
-  id          String       @id @default(uuid())
-  code        String       @unique
-  group       String
-  category    String       @default("technical") // technical|content|editorial|structured_data|internal_link|rodeo_entity|image
-  title       String?
-  severity    SeoSeverity
-  defaultKind SeoFindingKind @default(DEFECT)
-  enabled     Boolean      @default(true)
-  ruleVersion String       @default("1")
-  config      Json?        // configurable thresholds (§15)
-  appliesTo   String?      // content-type eligibility hint
-  description String?
-  findings    SeoFinding[]
-}
-
-model SeoAuditRun {
-  id            String       @id @default(uuid())
-  scope         String
-  engineVersion String
-  startedAt     DateTime     @default(now())
-  completedAt   DateTime?
-  status        String       @default("completed") // running|completed|failed
-  triggeredById String?
-  totalFindings Int          @default(0)
-  summary       Json?        // counts by severity/category
-  findings      SeoFinding[]
-
-  @@index([startedAt])
-}
-
-model SeoFinding {
-  id           String           @id @default(uuid())
-  ruleId       String
-  rule         SeoRule          @relation(fields: [ruleId], references: [id])
-  ruleCode     String           @default("") // denormalized stable id
-  ruleVersion  String           @default("1")
-  auditRunId   String?
-  auditRun     SeoAuditRun?     @relation(fields: [auditRunId], references: [id], onDelete: SetNull)
-  // Affected entity — articleId keeps its FK; entityType/entityId are the generic
-  // pointer for rodeo/media/route/structured-data findings.
-  articleId    String?
-  article      Article?         @relation(fields: [articleId], references: [id], onDelete: SetNull)
-  entityType   String           @default("article")
-  entityId     String?
-  affectedUrl  String?
-  fingerprint  String           @unique
-  kind         SeoFindingKind   @default(DEFECT)
-  category     String           @default("technical")
-  severity     SeoSeverity
-  status       SeoFindingStatus @default(OPEN)
-  evidence     String?
-  recommendation String?
-  detail       Json?
-  // Remediation workflow (§14) — ids stored without FK to avoid User churn.
-  assignedToId String?
-  resolvedById String?
-  resolvedAt   DateTime?
-  resolutionNote String?
-  firstSeenAt  DateTime         @default(now())
-  lastSeenAt   DateTime         @default(now())
-
-  @@index([status])
-  @@index([severity])
-  @@index([entityType, entityId])
-  @@index([category])
-}
-
-// Batch 06 §15: rule/threshold configuration (key → JSON value).
-model SeoConfig {
-  key         String   @id
-  value       Json
-  updatedById String?
-  updatedAt   DateTime @default(now()) @updatedAt
-}
-
-// ============================================================================
-// IDENTITY FOUNDATION (tables only — no auth logic until Batch 03)
-// ============================================================================
-
-model User {
-  id             String            @id @default(uuid())
-  email          String            @unique
-  name           String
-  passwordHash   String?
-  status         UserAccountStatus @default(INVITED)
-  lastLoginAt    DateTime?
-  createdAt      DateTime          @default(now())
-  roles          UserRole[]
-  auditLogs      AuditLog[]
-  sessions       Session[]
-  createdArticles Article[]        @relation("ArticleCreatedBy")
-  revisions      ArticleRevision[]
-  workflowEvents EditorialWorkflowHistory[]
-  uploadedMedia  MediaAsset[]      @relation("MediaUploader")
-  passwordResets PasswordResetToken[]
-}
-
-/// Server-side session (opaque token stored as a SHA-256 hash; validated and
-/// revocable server-side — Batch 03 §3).
-model Session {
-  id        String   @id @default(uuid())
-  userId    String
-  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
-  tokenHash String   @unique
-  expiresAt DateTime
-  createdAt DateTime @default(now())
-  ipAddress String?
-  userAgent String?
-
-  @@index([userId])
-  @@index([expiresAt])
-}
-
-model Role {
-  id          String           @id @default(uuid())
-  key         String           @unique // super_admin, administrator, editor, author, seo_manager
-  name        String
-  users       UserRole[]
-  permissions RolePermission[]
-}
-
-model Permission {
-  id    String           @id @default(uuid())
-  key   String           @unique
-  label String
-  roles RolePermission[]
-}
-
-model UserRole {
-  userId String
-  roleId String
-  user   User @relation(fields: [userId], references: [id], onDelete: Cascade)
-  role   Role @relation(fields: [roleId], references: [id], onDelete: Cascade)
-
-  @@id([userId, roleId])
-}
-
-model RolePermission {
-  roleId       String
-  permissionId String
-  role         Role       @relation(fields: [roleId], references: [id], onDelete: Cascade)
-  permission   Permission @relation(fields: [permissionId], references: [id], onDelete: Cascade)
-
-  @@id([roleId, permissionId])
-}
-
-model AuditLog {
-  id         String   @id @default(uuid())
-  actorId    String?
-  actor      User?    @relation(fields: [actorId], references: [id], onDelete: SetNull)
-  action     String
-  entityType String
-  entityId   String?
-  detail     String?
-  createdAt  DateTime @default(now())
-
-  @@index([entityType, createdAt])
-}
-
-/// Site navigation (Batch 04 §F). `location` groups menus (header / footer-*).
-/// `isSystem` protects canonical primary-section links from deletion; the five
-/// section routes and seven discipline routes are never renamed/removed here.
-model NavigationItem {
-  id         String   @id @default(uuid())
-  location   String
-  label      String
-  url        String
-  sortOrder  Int      @default(0)
-  isExternal Boolean  @default(false)
-  isSystem   Boolean  @default(false)
-  visible    Boolean  @default(true)
-  createdAt  DateTime @default(now())
-  updatedAt  DateTime @updatedAt
-
-  @@index([location, sortOrder])
-}
-
-// ============================================================================
-// ANALYTICS & SEARCH INTELLIGENCE (Batch 07)
-// ============================================================================
-// Privacy-conscious, first-party, cookieless model (§7/§8): NO raw IP, NO device
-// fingerprint, NO cross-site identifier, NO persistent per-user id is ever stored.
-// Rapid-duplicate suppression and rate limiting happen in-memory at ingest using a
-// transiently hashed signal that is NEVER persisted. Collection is owner-gated
-// (disabled by default) via AnalyticsConfig. Raw events are minimal and short-lived;
-// AnalyticsDailyAggregate is the durable, dashboard-facing rollup. All timestamps
-// are stored in UTC (display time zone is documented, UTC — §19).
-//
-// A DB-managed generated `tsvector` column ("Article"."searchVector") + GIN index
-// back the public full-text search; it is created in the Batch 07 migration and is
-// intentionally NOT modeled here (queried via parameterized $queryRaw). See
-// INTERNAL_SEARCH_ENGINE.md.
-
-/// One internal-search submission. `normalizedQuery` is already redacted/minimized
-/// (lowercased, whitespace-collapsed, length-bounded, email/number-redacted).
-model SearchQueryEvent {
-  id              String   @id @default(uuid())
-  normalizedQuery String
-  queryLength     Int      @default(0) // length of the raw query (for abuse/quality signals)
-  resultCount     Int      @default(0)
-  zeroResult      Boolean  @default(false)
-  contentType     String? // content-type filter in effect, if any
-  source          String   @default("web")
-  createdAt       DateTime @default(now())
-
-  @@index([createdAt])
-  @@index([normalizedQuery])
-  @@index([zeroResult, createdAt])
-}
-
-/// A click on a search result (query → chosen destination). Used for CTR and to
-/// distinguish satisfied vs. weak-engagement queries.
-model SearchResultClickEvent {
-  id              String              @id @default(uuid())
-  normalizedQuery String
-  entityType      AnalyticsEntityType
-  entityId        String
-  position        Int                 @default(0)
-  createdAt       DateTime            @default(now())
-
-  @@index([createdAt])
-  @@index([normalizedQuery])
-  @@index([entityType, entityId])
-}
-
-/// A first-party observed public content view. Labeled as an observed event, NOT a
-/// verified unique human visitor (§7). Validated against a real published entity.
-model ContentViewEvent {
-  id         String              @id @default(uuid())
-  entityType AnalyticsEntityType
-  entityId   String
-  path       String
-  source     String              @default("web")
-  createdAt  DateTime            @default(now())
-
-  @@index([createdAt])
-  @@index([entityType, entityId, createdAt])
-}
-
-/// Durable per-day rollup for dashboard performance and retention. Raw events can
-/// be pruned past the retention window while aggregates are preserved. Empty-string
-/// entityType/entityId keep the unique key usable for site-wide metrics.
-model AnalyticsDailyAggregate {
-  id         String   @id @default(uuid())
-  day        DateTime @db.Date
-  metric     String // content_view | search_query | search_zero_result | search_click
-  entityType String   @default("")
-  entityId   String   @default("")
-  count      Int      @default(0)
-  updatedAt  DateTime @default(now()) @updatedAt
-
-  @@unique([day, metric, entityType, entityId])
-  @@index([metric, day])
-}
-
-/// External analytics provider connection. Credentials are NEVER stored here
-/// (§9/§13); `propertyRef` is a non-secret label (e.g. GA4 property id, GSC site).
-model AnalyticsProviderConnection {
-  id             String                   @id @default(uuid())
-  provider       AnalyticsProvider        @unique
-  displayName    String
-  status         ProviderConnectionStatus @default(NOT_CONNECTED)
-  propertyRef    String?
-  configuredById String?
-  lastSyncAt     DateTime?
-  lastError      String? // error CATEGORY only — never secrets or raw provider payloads
-  createdAt      DateTime                 @default(now())
-  updatedAt      DateTime                 @default(now()) @updatedAt
-  syncRuns       AnalyticsSyncRun[]
-}
-
-/// A provider ingestion attempt (foundation; no runs execute until connected).
-model AnalyticsSyncRun {
-  id            String                      @id @default(uuid())
-  connectionId  String
-  connection    AnalyticsProviderConnection @relation(fields: [connectionId], references: [id], onDelete: Cascade)
-  provider      AnalyticsProvider
-  status        String                      @default("not_connected") // not_connected|running|completed|failed
-  startedAt     DateTime                    @default(now())
-  completedAt   DateTime?
-  rowsIngested  Int                         @default(0)
-  errorCategory String?
-
-  @@index([provider, startedAt])
-}
-
-/// Analytics configuration (key → JSON): collection-enabled flag, retention days,
-/// redaction options, display time zone. Mirrors the SeoConfig pattern.
-model AnalyticsConfig {
-  key         String   @id
-  value       Json
-  updatedById String?
-  updatedAt   DateTime @default(now()) @updatedAt
-}
-
-// ============================================================================
-// MONETIZATION & AFFILIATE MANAGEMENT (Batch 08)
-// ============================================================================
-// Commercial relationships are kept STRICTLY separate from editorial facts and
-// source verification: an affiliate partner is NOT an official source, and a paid
-// placement is NOT an editorial endorsement. No partner, revenue, commission,
-// approval, availability or price is ever fabricated. External ad serving and
-// outbound click tracking are DISABLED by default (owner-gated). No API secrets or
-// private affiliate credentials are stored here. See MONETIZATION_ARCHITECTURE.md.
-
-/// A commercial partner. `verificationStatus` + evidence gate any "official" claim;
-/// `isActive` gates public rendering. Never pre-populated with invented partners.
-model AffiliatePartner {
-  id                 String                    @id @default(uuid())
-  name               String
-  slug               String                    @unique
-  website            String?
-  category           AffiliateCategory         @default(OTHER)
-  programType        String?
-  isActive           Boolean                   @default(false)
-  verificationStatus PartnerVerificationStatus @default(UNVERIFIED)
-  verifiedAt         DateTime?
-  lastVerifiedAt     DateTime?
-  complianceNotes    String?
-  createdById        String?
-  createdAt          DateTime                  @default(now())
-  updatedAt          DateTime                  @default(now()) @updatedAt
-
-  programs     AffiliateProgram[]
-  links        AffiliateLink[]
-  sponsorships SponsoredContentRelationship[]
-  associations CommercialEntityAssociation[]
-  disclosures  MonetizationDisclosure[]
-
-  @@index([isActive, verificationStatus])
-  @@index([category])
-}
-
-/// Optional grouping of links under a named partner program.
-model AffiliateProgram {
-  id          String                @id @default(uuid())
-  partnerId   String
-  partner     AffiliatePartner      @relation(fields: [partnerId], references: [id], onDelete: Cascade)
-  name        String
-  programType String?
-  category    AffiliateCategory     @default(OTHER)
-  defaultRel  AffiliateRelAttribute @default(SPONSORED_NOFOLLOW)
-  status      MonetizationStatus    @default(DRAFT)
-  notes       String?
-  createdAt   DateTime              @default(now())
-  updatedAt   DateTime              @default(now()) @updatedAt
-  links       AffiliateLink[]
-
-  @@index([partnerId])
-}
-
-/// Centralized affiliate link registry. `merchantUrl` is the original destination;
-/// `trackingUrl` the affiliate destination (resolved by the /go redirect). URLs are
-/// validated server-side (no javascript:/data:/private-network targets).
-model AffiliateLink {
-  id               String                   @id @default(uuid())
-  partnerId        String
-  partner          AffiliatePartner         @relation(fields: [partnerId], references: [id], onDelete: Restrict)
-  programId        String?
-  program          AffiliateProgram?        @relation(fields: [programId], references: [id], onDelete: SetNull)
-  label            String
-  merchantUrl      String
-  trackingUrl      String?
-  category         AffiliateCategory        @default(OTHER)
-  rel              AffiliateRelAttribute    @default(SPONSORED_NOFOLLOW)
-  status           MonetizationStatus       @default(DRAFT)
-  isActive         Boolean                  @default(false)
-  editorialContext String?
-  effectiveFrom    DateTime?
-  effectiveTo      DateTime?
-  lastVerifiedAt   DateTime?
-  verificationNotes String?
-  createdById      String?
-  createdAt        DateTime                 @default(now())
-  updatedAt        DateTime                 @default(now()) @updatedAt
-
-  placements AffiliatePlacement[]
-  clicks     AffiliateClickAggregate[]
-
-  @@index([partnerId])
-  @@index([isActive, status])
-  @@index([category])
-}
-
-/// Assignment of a link to a content entity (article/rodeo). Created/proposed via
-/// article-edit rights; activation gated by monetization permissions.
-model AffiliatePlacement {
-  id          String               @id @default(uuid())
-  linkId      String
-  link        AffiliateLink        @relation(fields: [linkId], references: [id], onDelete: Cascade)
-  entityType  CommercialEntityType @default(ARTICLE)
-  entityId    String
-  articleId   String?
-  article     Article?             @relation(fields: [articleId], references: [id], onDelete: Cascade)
-  position    String?
-  status      MonetizationStatus   @default(DRAFT)
-  isActive    Boolean              @default(false)
-  note        String?
-  proposedById String?
-  approvedById String?
-  createdAt   DateTime             @default(now())
-  updatedAt   DateTime             @default(now()) @updatedAt
-
-  @@index([entityType, entityId])
-  @@index([articleId])
-  @@index([linkId])
-}
-
-/// AdSense-ready logical placement. `enabled` + MonetizationConfiguration.adsenseEnabled
-/// both gate public display; defaults keep external serving OFF.
-model AdPlacement {
-  id              String          @id @default(uuid())
-  slot            AdPlacementSlot
-  name            String
-  pageScope       String          @default("global") // home|article|category|rodeo_event|global
-  enabled         Boolean         @default(false)
-  device          String          @default("all") // all|desktop|mobile
-  position        Int             @default(0)
-  priority        Int             @default(0)
-  responsive      Boolean         @default(true)
-  adUnitConfig    Json? // publisher/ad-unit id ONLY when authorized; null by default
-  complianceNotes String?
-  createdById     String?
-  createdAt       DateTime        @default(now())
-  updatedAt       DateTime        @default(now()) @updatedAt
-
-  @@index([pageScope, enabled])
-  @@index([slot])
-}
-
-/// Reusable disclosure policy text (§15). `partnerId` optional for partner-specific
-/// disclosure. Rendered close to the relevant commercial content, not only in footer.
-model MonetizationDisclosure {
-  id              String            @id @default(uuid())
-  key             String            @unique
-  scope           String // site|article|callout|sponsored|ad|partner
-  label           String
-  body            String
-  requiredProminent Boolean         @default(true)
-  enabled         Boolean           @default(true)
-  partnerId       String?
-  partner         AffiliatePartner? @relation(fields: [partnerId], references: [id], onDelete: SetNull)
-  updatedById     String?
-  updatedAt       DateTime          @default(now()) @updatedAt
-
-  @@index([scope])
-}
-
-/// Sponsored-content classification, separate from ordinary affiliate links (§16).
-model SponsoredContentRelationship {
-  id              String                @id @default(uuid())
-  articleId       String
-  article         Article               @relation(fields: [articleId], references: [id], onDelete: Cascade)
-  partnerId       String?
-  partner         AffiliatePartner?     @relation(fields: [partnerId], references: [id], onDelete: SetNull)
-  sponsorName     String
-  disclosureLabel String                @default("Sponsored")
-  rel             AffiliateRelAttribute @default(SPONSORED)
-  startAt         DateTime?
-  endAt           DateTime?
-  reviewNotes     String?
-  status          MonetizationStatus    @default(DRAFT)
-  isActive        Boolean               @default(false)
-  createdById     String?
-  createdAt       DateTime              @default(now())
-  updatedAt       DateTime              @default(now()) @updatedAt
-
-  @@index([articleId])
-  @@index([partnerId])
-}
-
-/// A commercial relationship between a partner and a rodeo/editorial entity (§12).
-/// Keeps event-vs-edition separation via entityType; never auto-copied across years.
-model CommercialEntityAssociation {
-  id               String               @id @default(uuid())
-  partnerId        String
-  partner          AffiliatePartner     @relation(fields: [partnerId], references: [id], onDelete: Cascade)
-  entityType       CommercialEntityType
-  entityId         String
-  relationshipType String // streaming|tickets|travel|apparel|other
-  note             String?
-  status           MonetizationStatus   @default(DRAFT)
-  isActive         Boolean              @default(false)
-  effectiveFrom    DateTime?
-  effectiveTo      DateTime?
-  createdById      String?
-  createdAt        DateTime             @default(now())
-  updatedAt        DateTime             @default(now()) @updatedAt
-
-  @@index([entityType, entityId])
-  @@index([partnerId])
-}
-
-/// Monetization configuration (key → JSON): adsenseEnabled, clickTrackingEnabled,
-/// publisherId, global disclosure toggles. External serving/tracking OFF by default.
-model MonetizationConfiguration {
-  key         String   @id
-  value       Json
-  updatedById String?
-  updatedAt   DateTime @default(now()) @updatedAt
-}
-
-/// Durable per-day outbound-click rollup (§18). Only written when click tracking is
-/// owner-enabled; no identifiers stored. Mirrors the analytics aggregate pattern.
-model AffiliateClickAggregate {
-  id        String        @id @default(uuid())
-  linkId    String
-  link      AffiliateLink @relation(fields: [linkId], references: [id], onDelete: Cascade)
-  day       DateTime      @db.Date
-  count     Int           @default(0)
-  updatedAt DateTime      @default(now()) @updatedAt
-
-  @@unique([linkId, day])
-  @@index([day])
-}
-
-// ============================================================================
-// ADMIN GOVERNANCE (Batch 09) — team invitations, password resets, settings
-// ============================================================================
-// Secure, no-email-required foundations: only token HASHes are stored (never raw
-// tokens), tokens are single-use + time-limited, and nothing here holds a secret or a
-// password. System settings are a typed key→JSON store (validated in the service).
-
-/// Single-use, time-limited staff invitation. The raw token is shown once to the
-/// inviting admin to share manually (no email is sent); only its SHA-256 hash is
-/// stored. Accepting it sets the staff password and activates the account.
-model StaffInvitation {
-  id             String    @id @default(uuid())
-  email          String
-  roleKey        String // one of the five approved role keys
-  tokenHash      String    @unique
-  status         String    @default("PENDING") // PENDING | ACCEPTED | REVOKED | EXPIRED
-  invitedById    String?
-  acceptedUserId String?
-  expiresAt      DateTime
-  usedAt         DateTime?
-  createdAt      DateTime  @default(now())
-
-  @@index([email])
-  @@index([status, expiresAt])
-}
-
-/// Single-use, short-lived password reset token (hashed). Administrator-assisted
-/// foundation — raw token is shown once for manual delivery; no email is sent.
-model PasswordResetToken {
-  id        String    @id @default(uuid())
-  userId    String
-  user      User      @relation(fields: [userId], references: [id], onDelete: Cascade)
-  tokenHash String    @unique
-  expiresAt DateTime
-  usedAt    DateTime?
-  createdById String?
-  createdAt DateTime  @default(now())
-
-  @@index([userId])
-  @@index([expiresAt])
-}
-
-/// Typed site-wide configuration (key → validated JSON). Domain-specific settings stay
-/// owned by their modules (SEO/Analytics/Monetization); this holds only site identity,
-/// editorial/rodeo display defaults and non-secret operational preferences (§16).
-model SystemSetting {
-  key         String   @id
-  value       Json
-  updatedById String?
-  updatedAt   DateTime @default(now()) @updatedAt
+/// Landing-page entity kinds that support editable SEO + FAQs (Batch 11 scope).
+enum LandingEntityType {
+  DISCIPLINE
+  CATEGORY
+  RODEO_HUB
+  RODEO_EVENT
+  RODEO_EDITION
 }
