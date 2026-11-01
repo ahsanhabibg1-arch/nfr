@@ -277,3 +277,19 @@ tracking are disabled by default (owner-gated). Advisory commercial-compliance c
 distinct from the unchanged 37 SEO rules. See MONETIZATION_ARCHITECTURE.md,
 AFFILIATE_PARTNER_MANAGEMENT.md, AFFILIATE_LINK_SYSTEM.md, AD_PLACEMENT_MANAGEMENT.md,
 MONETIZATION_DISCLOSURE_POLICY.md, MONETIZATION_RBAC_MATRIX.md, MONETIZATION_SECURITY_POLICY.md.
+
+## Batch 09 — Team & Permissions, System Settings, Governance
+
+Real admin foundations over the identity tables. `lib/cms/teamService.ts` (directory,
+invitations, status, role assignment, sessions, password/reset — RBAC + audit, serializable for
+Super-Admin-critical changes) and `lib/cms/settingsService.ts` (typed site/editorial/rodeo
+config, safe operational status, audit-log viewer) → `app/admin/{team,settings,account,invite}-actions.ts`
+→ rewritten `AdminTeamPage`/`AdminSettingsPage` + `/admin/account/` + public
+`/admin/accept-invitation/` and `/admin/reset-password/`. A centralized permission registry
+(`lib/auth/permissions.ts`) maps the 12 modules to their view permission, drives sidebar
+visibility, and generates the real permission matrix (no new permissions, no role changes).
+Secure no-email invitation/reset tokens (hashed, single-use, time-limited). A migration-replay
+gate (`scripts/migration-replay.mts`, `npm run test:migration`) + a Vitest FTS regression protect
+the PostgreSQL `searchVector` column permanently. See PHASE1_BATCH09_REPORT.md,
+TEAM_MANAGEMENT_ARCHITECTURE.md, ACCOUNT_LIFECYCLE_SECURITY.md, RBAC_GOVERNANCE.md,
+SYSTEM_SETTINGS_ARCHITECTURE.md, ADMIN_AUDIT_LOG_OPERATIONS.md, MIGRATION_REPLAY_VERIFICATION.md.

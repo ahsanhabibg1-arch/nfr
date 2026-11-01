@@ -252,3 +252,25 @@ CREATE INDEX IF NOT EXISTS "Article_searchVector_idx" ON "Article" USING GIN ("s
 "searchVector" …`** before saving/applying. The `Unsupported("tsvector")` declaration
 downgrades the diff from a data-losing `DROP COLUMN` to index/`DROP DEFAULT` noise that errors
 (rather than loses data) if applied, but the hand-strip step is still mandatory.
+
+## Batch 09 — Admin Governance (2026-10-31)
+Additive migration `20261031300000_batch09_admin_governance` (dev + test). Adds
+`StaffInvitation`, `PasswordResetToken`, `SystemSetting` + a `User.passwordResets`
+back-relation. The generated diff's `DROP INDEX "Article_searchVector_idx"` /
+`ALTER COLUMN "searchVector" DROP DEFAULT` were **stripped by hand** before saving (per the
+hazard above); the FTS column + GIN index are preserved. No existing table altered; no data
+reset. Verification: Prisma validate + generate OK; typecheck clean; vitest **180/180**
+(deterministic ×2); `next build` PASS; route 28/28, admin 13/13, media 7/7, cache 10/10,
+migration replay 5/5.
+
+### Migration replay gate (new, §24/§25)
+`npm run test:migration` (`scripts/migration-replay.mts`) replays all migrations from zero onto
+a disposable `<db>_migration_replay` database and asserts the FTS column/index/query survive —
+or, when the role lacks `CREATEDB`, verifies the same artifacts on the test DB and says so.
+Supply `MIGRATION_REPLAY_ADMIN_URL` (a CREATEDB-capable maintenance URL) for the full run. See
+`MIGRATION_REPLAY_VERIFICATION.md`. A permanent Vitest FTS regression also runs in the suite.
+
+**Applied-migration chain:** `20261028000000_init` → `…batch03_auth_rbac` →
+`…batch04_navigation` → `…batch05_media` → `20261031000000_batch06_seo` →
+`20261031100000_batch07_analytics_search` → `20261031200000_batch08_monetization` →
+`20261031300000_batch09_admin_governance` (all applied to dev + test).

@@ -1,5 +1,6 @@
 import { requireUser } from '@/lib/auth/currentUser';
 import { primaryRoleLabel } from '@/lib/auth/rbac';
+import { visibleModuleIds } from '@/lib/auth/permissions';
 import { AdminLayout } from '@/components/admin/AdminLayout';
 
 /**
@@ -12,6 +13,7 @@ export default async function DashboardLayout({ children }: { children: React.Re
   return (
     <AdminLayout
       user={{ name: user.name, email: user.email, roleLabel: primaryRoleLabel(user.roles) }}
+      visibleModules={visibleModuleIds(user.roles)}
     >
       {children}
     </AdminLayout>

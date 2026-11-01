@@ -802,6 +802,7 @@ model User {
   revisions      ArticleRevision[]
   workflowEvents EditorialWorkflowHistory[]
   uploadedMedia  MediaAsset[]      @relation("MediaUploader")
+  passwordResets PasswordResetToken[]
 }
 
 /// Server-side session (opaque token stored as a SHA-256 hash; validated and
@@ -1221,4 +1222,56 @@ model AffiliateClickAggregate {
 
   @@unique([linkId, day])
   @@index([day])
+}
+
+// ============================================================================
+// ADMIN GOVERNANCE (Batch 09) — team invitations, password resets, settings
+// ============================================================================
+// Secure, no-email-required foundations: only token HASHes are stored (never raw
+// tokens), tokens are single-use + time-limited, and nothing here holds a secret or a
+// password. System settings are a typed key→JSON store (validated in the service).
+
+/// Single-use, time-limited staff invitation. The raw token is shown once to the
+/// inviting admin to share manually (no email is sent); only its SHA-256 hash is
+/// stored. Accepting it sets the staff password and activates the account.
+model StaffInvitation {
+  id             String    @id @default(uuid())
+  email          String
+  roleKey        String // one of the five approved role keys
+  tokenHash      String    @unique
+  status         String    @default("PENDING") // PENDING | ACCEPTED | REVOKED | EXPIRED
+  invitedById    String?
+  acceptedUserId String?
+  expiresAt      DateTime
+  usedAt         DateTime?
+  createdAt      DateTime  @default(now())
+
+  @@index([email])
+  @@index([status, expiresAt])
+}
+
+/// Single-use, short-lived password reset token (hashed). Administrator-assisted
+/// foundation — raw token is shown once for manual delivery; no email is sent.
+model PasswordResetToken {
+  id        String    @id @default(uuid())
+  userId    String
+  user      User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  tokenHash String    @unique
+  expiresAt DateTime
+  usedAt    DateTime?
+  createdById String?
+  createdAt DateTime  @default(now())
+
+  @@index([userId])
+  @@index([expiresAt])
+}
+
+/// Typed site-wide configuration (key → validated JSON). Domain-specific settings stay
+/// owned by their modules (SEO/Analytics/Monetization); this holds only site identity,
+/// editorial/rodeo display defaults and non-secret operational preferences (§16).
+model SystemSetting {
+  key         String   @id
+  value       Json
+  updatedById String?
+  updatedAt   DateTime @default(now()) @updatedAt
 }

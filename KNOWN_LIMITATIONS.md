@@ -268,3 +268,27 @@ addressed in `apps/web`:
   silent data-losing `DROP COLUMN`.
 - **Legal/consent review.** Disclosure defaults are generic and do not assert legal compliance
   in any jurisdiction; wording/prominence and consent requirements need owner/legal review.
+
+## Batch 09 — Team, Settings & Governance
+
+- **No email delivery.** Invitations and password resets produce a single-use, time-limited
+  link that an administrator shares **manually** — the app sends no email. Enabling
+  transactional email / external auth / MFA is owner-gated.
+- **In-memory login rate limiting.** `lib/auth/rateLimit.ts` is per-process (single-instance);
+  a multi-instance production deployment needs a shared backend (Redis/DB) for distributed
+  rate limiting. Not claimed as distributed.
+- **Account states.** "Disabled" is modeled as `SUSPENDED` (both deny access); a distinct enum
+  value was intentionally not added. Suspension and privilege removal revoke sessions; role
+  grants take effect on the next request (per-request role resolution).
+- **Last Super Admin protection** uses a SERIALIZABLE transaction; under extreme concurrency a
+  conflicting transaction fails and must retry (by design) rather than breaching the invariant.
+- **Migration replay needs CREATEDB.** The from-zero clean replay requires a `CREATEDB`-capable
+  role (`MIGRATION_REPLAY_ADMIN_URL`); the least-privilege dev/test roles lack it, so the gate
+  falls back to verifying the FTS artifacts on the fully-migrated test database. A Vitest FTS
+  regression runs in every suite regardless.
+- **`migrate diff` FTS drift persists.** Because Prisma cannot model the generated `tsvector`
+  column + GIN index, every future offline migration must be hand-reviewed to strip any
+  `searchVector` DROP/ALTER (see MIGRATION_STATUS.md / MIGRATION_REPLAY_VERIFICATION.md).
+- **System Settings scope.** Site identity / editorial / rodeo defaults persist and validate,
+  but are not yet deeply wired into public metadata rendering (future enhancement); they are a
+  typed source of truth ready for that wiring. Security-critical config stays code/env-only.

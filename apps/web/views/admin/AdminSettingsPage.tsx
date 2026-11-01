@@ -1,418 +1,162 @@
 'use client';
 
-import React, { useState } from 'react';
+import React, { useState, useTransition } from 'react';
+import { useRouter } from 'next/navigation';
+import Link from 'next/link';
 import { AdminPageHeader } from '../../components/admin/AdminPageHeader';
 import { AdminTabs } from '../../components/admin/AdminTabs';
-import { AdminStatCard } from '../../components/admin/AdminStatCard';
-import { BACKGROUND_JOBS } from '../../data/mockAdminData';
-import { BackgroundJob } from '../../types/admin';
+import type { SystemSettings, OperationalStatus, AuditResult } from '../../lib/cms/settingsService';
+import { updateSiteIdentityAction, updateEditorialDefaultsAction, updateRodeoDefaultsAction } from '../../app/admin/settings-actions';
 
-export const AdminSettingsPage: React.FC = () => {
-  const [activeTab, setActiveTab] = useState<'identity' | 'editorial' | 'jobs' | 'system'>('identity');
-  const [jobs, setJobs] = useState<BackgroundJob[]>(BACKGROUND_JOBS);
-  const [toastMessage, setToastMessage] = useState<string | null>(null);
+export interface AdminSettingsPageProps {
+  settings: SystemSettings;
+  operational: OperationalStatus;
+  audit: AuditResult;
+  auditFilters: { action?: string; actorId?: string; page: number };
+}
 
-  const showToast = (msg: string) => {
-    setToastMessage(msg);
-    setTimeout(() => setToastMessage(null), 3000);
-  };
+type Tab = 'identity' | 'editorial' | 'rodeo' | 'operational' | 'audit';
+const inputCls = 'w-full px-3 py-2 text-xs border border-stone-300 rounded-xs bg-white text-stone-900 focus:outline-none focus:border-[#D4A757]';
+const labelCls = 'block text-xs font-mono uppercase text-stone-500 font-medium mb-1';
 
-  const handleRunJob = (jobId: string) => {
-    setJobs(prev =>
-      prev.map(j => {
-        if (j.id === jobId) {
-          return {
-            ...j,
-            status: 'completed',
-            lastRun: 'Just now (Manual Trigger)',
-            itemsProcessed: j.itemsProcessed + 1,
-          };
-        }
-        return j;
-      })
-    );
-    showToast(`Background job executed successfully`);
-  };
+export const AdminSettingsPage: React.FC<AdminSettingsPageProps> = ({ settings, operational, audit, auditFilters }) => {
+  const router = useRouter();
+  const [tab, setTab] = useState<Tab>('identity');
+  const [toast, setToast] = useState<string | null>(null);
+  const [pending, start] = useTransition();
+  const notify = (m: string) => { setToast(m); setTimeout(() => setToast(null), 3500); };
+  const save = (p: Promise<{ ok: boolean; error?: string }>) => start(async () => { const r = await p; notify(r.ok ? 'Settings saved' : `Failed: ${r.error}`); if (r.ok) router.refresh(); });
 
-  const handleDownloadBackup = () => {
-    const backupData = {
-      timestamp: new Date().toISOString(),
-      publication: 'NFRGuide.com',
-      version: '0.3.0-demo',
-      systemHealth: '100% Nominal',
-      manifest: {
-        articles: 8,
-        mediaAssets: 4,
-        sources: 4,
-        hubs: 2,
-        recurringEvents: 2,
-        eventEditions: 2,
-        disciplines: 7,
-      },
-    };
-    const blob = new Blob([JSON.stringify(backupData, null, 2)], { type: 'application/json' });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement('a');
-    a.href = url;
-    a.download = `nfrguide-backup-${new Date().toISOString().slice(0, 10)}.json`;
-    document.body.appendChild(a);
-    a.click();
-    document.body.removeChild(a);
-    URL.revokeObjectURL(url);
-    showToast('Exported editorial database snapshot (JSON)');
-  };
+  const [identity, setIdentity] = useState(settings.siteIdentity);
+  const [editorial, setEditorial] = useState(settings.editorial);
+  const [rodeo, setRodeo] = useState(settings.rodeo);
 
   return (
     <div className="space-y-6">
-      {toastMessage && (
-        <div className="fixed bottom-6 right-6 z-50 bg-[#0F1115] text-[#D4A757] border border-[#D4A757]/40 px-4 py-2.5 rounded-xs shadow-xl text-xs font-mono animate-fade-in flex items-center gap-2">
-          <svg className="w-4 h-4 text-emerald-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
-          </svg>
-          {toastMessage}
-        </div>
-      )}
+      {toast && <div className="fixed bottom-6 right-6 z-50 bg-[#0F1115] text-[#D4A757] border border-[#D4A757]/40 px-4 py-2.5 rounded-xs shadow-xl text-xs font-mono">{toast}</div>}
 
-      <AdminPageHeader
-        title="System Settings & Maintenance"
-        description="Configure publication branding, editorial algorithms, automated background jobs, and migration parameters."
-        breadcrumbs={[
-          { label: 'Admin', path: '/admin/' },
-          { label: 'System Settings' },
-        ]}
-        actions={
-          <button
-            onClick={handleDownloadBackup}
-            className="px-3.5 py-1.5 text-xs font-sans font-medium text-stone-700 bg-white border border-stone-300 hover:bg-stone-50 rounded-xs transition-colors flex items-center gap-1.5"
-          >
-            <svg className="w-3.5 h-3.5 text-stone-500" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" />
-            </svg>
-            Export JSON Snapshot
-          </button>
-        }
-      />
-
-      {/* KPI Cards */}
-      <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
-        <AdminStatCard
-          title="Active Cron Tasks"
-          value={jobs.length.toString()}
-          change="All Systems Healthy"
-          trend="up"
-          description="SEO, sitemaps, link integrity"
-        />
-        <AdminStatCard
-          title="Publication Timezone"
-          value="PT (Vegas)"
-          change="America/Los_Angeles"
-          trend="neutral"
-          description="Aligned with Thomas & Mack"
-        />
-        <AdminStatCard
-          title="Canonical Base Domain"
-          value="nfrguide.com"
-          change="SSL Enforced"
-          trend="neutral"
-          description="Canonical HTTPS trailing-slash"
-        />
-        <AdminStatCard
-          title="App Architecture"
-          value="React 19"
-          change="Next.js App Router Ready"
-          trend="up"
-          description="Clean decoupled data contracts"
-        />
-      </div>
+      <AdminPageHeader title="System Settings" description="Typed, validated site configuration. Domain settings (SEO, Analytics, Monetization) stay owned by their modules; security-critical values are not editable here." breadcrumbs={[{ label: 'Admin', path: '/admin/' }, { label: 'System Settings' }]} />
 
       <AdminTabs
-        tabs={[
-          { id: 'identity', label: 'Site Identity & Canonical' },
-          { id: 'editorial', label: 'Editorial Rules & Standards' },
-          { id: 'jobs', label: 'Automated Background Jobs', count: jobs.length },
-          { id: 'system', label: 'System & Architecture' },
-        ]}
-        activeTab={activeTab}
-        onChange={(id) => setActiveTab(id as typeof activeTab)}
+        tabs={[{ id: 'identity', label: 'Site Identity' }, { id: 'editorial', label: 'Editorial Defaults' }, { id: 'rodeo', label: 'Rodeo Defaults' }, { id: 'operational', label: 'Operational' }, { id: 'audit', label: 'Audit Log', count: audit.total }]}
+        activeTab={tab}
+        onChange={(id) => setTab(id as Tab)}
       />
 
-      {/* TAB 1: IDENTITY */}
-      {activeTab === 'identity' && (
-        <div className="bg-white border border-stone-200 rounded-xs p-6 max-w-3xl space-y-4">
-          <div>
-            <h3 className="font-sans font-bold text-sm text-stone-900 mb-1">
-              Publication Identity & DNS Canonical Settings
-            </h3>
-            <p className="text-xs text-stone-600 leading-relaxed">
-              These properties define the global OpenGraph metadata, schema.org publisher node, and canonical URLs.
-            </p>
+      {tab === 'identity' && (
+        <div className="bg-white border border-stone-200 rounded-xs p-6 max-w-3xl space-y-3">
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+            <div><label className={labelCls}>Site name</label><input className={inputCls} value={identity.siteName} onChange={(e) => setIdentity({ ...identity, siteName: e.target.value })} /></div>
+            <div><label className={labelCls}>Contact email</label><input className={inputCls} value={identity.contactEmail ?? ''} onChange={(e) => setIdentity({ ...identity, contactEmail: e.target.value })} /></div>
+            <div className="md:col-span-2"><label className={labelCls}>Tagline</label><input className={inputCls} value={identity.tagline} onChange={(e) => setIdentity({ ...identity, tagline: e.target.value })} /></div>
+            <div className="md:col-span-2"><label className={labelCls}>Description</label><textarea rows={2} className={inputCls} value={identity.description} onChange={(e) => setIdentity({ ...identity, description: e.target.value })} /></div>
+            <div><label className={labelCls}>Editorial email</label><input className={inputCls} value={identity.editorialEmail ?? ''} onChange={(e) => setIdentity({ ...identity, editorialEmail: e.target.value })} /></div>
+            <div><label className={labelCls}>Twitter/X URL</label><input className={inputCls} value={identity.twitterUrl ?? ''} onChange={(e) => setIdentity({ ...identity, twitterUrl: e.target.value })} /></div>
+            <div><label className={labelCls}>Facebook URL</label><input className={inputCls} value={identity.facebookUrl ?? ''} onChange={(e) => setIdentity({ ...identity, facebookUrl: e.target.value })} /></div>
+            <div><label className={labelCls}>Instagram URL</label><input className={inputCls} value={identity.instagramUrl ?? ''} onChange={(e) => setIdentity({ ...identity, instagramUrl: e.target.value })} /></div>
           </div>
-
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-4 pt-2">
-            <div>
-              <label className="block text-xs font-mono uppercase text-stone-500 font-medium mb-1">
-                Publication Brand Name
-              </label>
-              <input
-                type="text"
-                defaultValue="NFRGuide"
-                className="w-full px-3 py-2 text-xs border border-stone-300 rounded-xs bg-white text-stone-900 focus:outline-none focus:border-[#D4A757]"
-              />
-            </div>
-
-            <div>
-              <label className="block text-xs font-mono uppercase text-stone-500 font-medium mb-1">
-                Canonical Base URL
-              </label>
-              <input
-                type="text"
-                defaultValue="https://nfrguide.com"
-                className="w-full px-3 py-2 text-xs border border-stone-300 rounded-xs bg-white text-stone-900 focus:outline-none focus:border-[#D4A757]"
-              />
-            </div>
-
-            <div className="md:col-span-2">
-              <label className="block text-xs font-mono uppercase text-stone-500 font-medium mb-1">
-                Institutional Editorial Tagline
-              </label>
-              <input
-                type="text"
-                defaultValue="The Premier Independent Editorial Publication for Championship Rodeo"
-                className="w-full px-3 py-2 text-xs border border-stone-300 rounded-xs bg-white text-stone-900 focus:outline-none focus:border-[#D4A757]"
-              />
-            </div>
-
-            <div>
-              <label className="block text-xs font-mono uppercase text-stone-500 font-medium mb-1">
-                Editorial Desk Email
-              </label>
-              <input
-                type="email"
-                defaultValue="editorial@nfrguide.com"
-                className="w-full px-3 py-2 text-xs border border-stone-300 rounded-xs bg-white text-stone-900 focus:outline-none focus:border-[#D4A757]"
-              />
-            </div>
-
-            <div>
-              <label className="block text-xs font-mono uppercase text-stone-500 font-medium mb-1">
-                Default Editorial Timezone
-              </label>
-              <select
-                defaultValue="America/Los_Angeles"
-                className="w-full px-3 py-2 text-xs border border-stone-300 rounded-xs bg-white text-stone-900 focus:outline-none focus:border-[#D4A757]"
-              >
-                <option value="America/Los_Angeles">Pacific Time (America/Los_Angeles) [Vegas Event Local]</option>
-                <option value="America/Denver">Mountain Time (America/Denver) [PRCA Colorado Springs HQ]</option>
-                <option value="America/Chicago">Central Time (America/Chicago) [Texas Rodeos]</option>
-                <option value="America/New_York">Eastern Time (America/New_York)</option>
-              </select>
-            </div>
-          </div>
-
-          <div className="pt-4 border-t border-stone-200">
-            <button
-              onClick={() => showToast('Identity parameters saved')}
-              className="px-4 py-2 bg-[#0F1115] text-[#D4A757] text-xs font-sans font-semibold rounded-xs hover:bg-stone-800 transition-colors"
-            >
-              Save Brand Settings
-            </button>
-          </div>
+          <p className="text-[11px] text-stone-400">URLs/emails are validated; HTML is rejected. Branding/logo changes remain owner-approved.</p>
+          <button disabled={pending} onClick={() => save(updateSiteIdentityAction(identity))} className="px-4 py-2 bg-[#0F1115] text-[#D4A757] text-xs font-semibold rounded-xs disabled:opacity-50">Save Site Identity</button>
         </div>
       )}
 
-      {/* TAB 2: EDITORIAL STANDARDS */}
-      {activeTab === 'editorial' && (
-        <div className="bg-white border border-stone-200 rounded-xs p-6 max-w-3xl space-y-4">
-          <div>
-            <h3 className="font-sans font-bold text-sm text-stone-900 mb-1">
-              Editorial Quality & Publishing Gatekeepers
-            </h3>
-            <p className="text-xs text-stone-600 leading-relaxed">
-              Enforce strict journalism standards before articles can be marked as published.
-            </p>
+      {tab === 'editorial' && (
+        <div className="bg-white border border-stone-200 rounded-xs p-6 max-w-3xl space-y-3">
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+            <div><label className={labelCls}>Default article status</label><select className={inputCls} value={editorial.defaultArticleStatus} onChange={(e) => setEditorial({ ...editorial, defaultArticleStatus: e.target.value as typeof editorial.defaultArticleStatus })}><option value="DRAFT">Draft</option><option value="IN_REVIEW">In Review</option></select></div>
+            <div><label className={labelCls}>Editorial time zone</label><input className={inputCls} value={editorial.editorialTimeZone} onChange={(e) => setEditorial({ ...editorial, editorialTimeZone: e.target.value })} /></div>
+            <div><label className={labelCls}>Words per minute</label><input type="number" className={inputCls} value={editorial.wordsPerMinute} onChange={(e) => setEditorial({ ...editorial, wordsPerMinute: Number(e.target.value) })} /></div>
+            <div><label className={labelCls}>In-depth word count</label><input type="number" className={inputCls} value={editorial.inDepthWordCount} onChange={(e) => setEditorial({ ...editorial, inDepthWordCount: Number(e.target.value) })} /></div>
+            <div className="md:col-span-2"><label className={labelCls}>Excerpt guidance</label><input className={inputCls} value={editorial.excerptGuidance} onChange={(e) => setEditorial({ ...editorial, excerptGuidance: e.target.value })} /></div>
+            <div className="md:col-span-2"><label className={labelCls}>Attribution guidance</label><input className={inputCls} value={editorial.attributionGuidance} onChange={(e) => setEditorial({ ...editorial, attributionGuidance: e.target.value })} /></div>
           </div>
-
-          <div className="space-y-4 pt-2">
-            <div className="flex items-start gap-3">
-              <input type="checkbox" id="chkAnswer" defaultChecked className="mt-1 rounded-xs text-[#D4A757]" />
-              <div>
-                <label htmlFor="chkAnswer" className="text-xs font-semibold text-stone-900">
-                  Enforce Direct Answer Capsule on All Explainer Articles
-                </label>
-                <p className="text-[11px] text-stone-500">
-                  Ensures high visibility in Google AI Overviews and featured snippet blocks.
-                </p>
-              </div>
-            </div>
-
-            <div className="flex items-start gap-3">
-              <input type="checkbox" id="chkSources" defaultChecked className="mt-1 rounded-xs text-[#D4A757]" />
-              <div>
-                <label htmlFor="chkSources" className="text-xs font-semibold text-stone-900">
-                  Require Verified Source Provenance on Rule & Scoring Guides
-                </label>
-                <p className="text-[11px] text-stone-500">
-                  Prevents publishing unverified scoring rules without citing the official PRCA or WPRA rulebook.
-                </p>
-              </div>
-            </div>
-
-            <div className="flex items-start gap-3">
-              <input type="checkbox" id="chkRel" defaultChecked className="mt-1 rounded-xs text-[#D4A757]" />
-              <div>
-                <label htmlFor="chkRel" className="text-xs font-semibold text-stone-900">
-                  Automated Enforcement of rel="sponsored" on Commercial External Links
-                </label>
-                <p className="text-[11px] text-stone-500">
-                  Automatically rewrites any link to an approved affiliate partner domain to include rel="sponsored".
-                </p>
-              </div>
-            </div>
-
-            <div className="grid grid-cols-2 gap-4 pt-3">
-              <div>
-                <label className="block text-xs font-mono uppercase text-stone-500 font-medium mb-1">
-                  Words-Per-Minute Read Speed Benchmark
-                </label>
-                <input
-                  type="number"
-                  defaultValue={225}
-                  className="w-full px-3 py-2 text-xs border border-stone-300 rounded-xs bg-white text-stone-900 focus:outline-none focus:border-[#D4A757]"
-                />
-              </div>
-              <div>
-                <label className="block text-xs font-mono uppercase text-stone-500 font-medium mb-1">
-                  Minimum Words for "In-Depth Feature" Flag
-                </label>
-                <input
-                  type="number"
-                  defaultValue={1000}
-                  className="w-full px-3 py-2 text-xs border border-stone-300 rounded-xs bg-white text-stone-900 focus:outline-none focus:border-[#D4A757]"
-                />
-              </div>
-            </div>
-
-            <div className="pt-4 border-t border-stone-200">
-              <button
-                onClick={() => showToast('Editorial standards saved')}
-                className="px-4 py-2 bg-[#0F1115] text-[#D4A757] text-xs font-sans font-semibold rounded-xs hover:bg-stone-800 transition-colors"
-              >
-                Save Editorial Rules
-              </button>
-            </div>
-          </div>
+          <label className="flex items-center gap-2 text-xs"><input type="checkbox" className="accent-[#0F1115]" checked={editorial.sourceVerificationReminder} onChange={(e) => setEditorial({ ...editorial, sourceVerificationReminder: e.target.checked })} /><span>Show source-verification reminder in the editor</span></label>
+          <p className="text-[11px] text-stone-400">These are defaults/guidance only; they do not bypass editorial review or publishing permissions, and the eight-field editor is unchanged.</p>
+          <button disabled={pending} onClick={() => save(updateEditorialDefaultsAction(editorial))} className="px-4 py-2 bg-[#0F1115] text-[#D4A757] text-xs font-semibold rounded-xs disabled:opacity-50">Save Editorial Defaults</button>
         </div>
       )}
 
-      {/* TAB 3: BACKGROUND JOBS */}
-      {activeTab === 'jobs' && (
-        <div className="bg-white border border-stone-200 rounded-xs shadow-2xs overflow-hidden">
-          <div className="px-4 py-3 bg-stone-50/50 border-b border-stone-200 flex items-center justify-between">
-            <span className="text-xs font-mono uppercase tracking-wider text-stone-500 font-semibold">
-              Automated Background & Cron Jobs ({jobs.length})
-            </span>
-            <span className="text-[11px] text-stone-500 font-mono">
-              Monitors SEO health, link integrity, and structured sitemaps
-            </span>
+      {tab === 'rodeo' && (
+        <div className="bg-white border border-stone-200 rounded-xs p-6 max-w-3xl space-y-3">
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+            <div><label className={labelCls}>Date display</label><select className={inputCls} value={rodeo.dateDisplay} onChange={(e) => setRodeo({ ...rodeo, dateDisplay: e.target.value as typeof rodeo.dateDisplay })}><option value="absolute">Absolute</option><option value="relative">Relative</option></select></div>
+            <div><label className={labelCls}>Event status presentation</label><select className={inputCls} value={rodeo.eventStatusPresentation} onChange={(e) => setRodeo({ ...rodeo, eventStatusPresentation: e.target.value as typeof rodeo.eventStatusPresentation })}><option value="badge">Badge</option><option value="text">Text</option></select></div>
           </div>
-
-          <div className="divide-y divide-stone-200">
-            {jobs.map((job) => (
-              <div key={job.id} className="p-4 flex flex-col sm:flex-row sm:items-center justify-between gap-4 hover:bg-stone-50/50">
-                <div>
-                  <div className="flex items-center gap-2">
-                    <h4 className="font-sans font-bold text-sm text-stone-900">
-                      {job.name}
-                    </h4>
-                    <span className="text-[10px] font-mono px-2 py-0.5 rounded-xs font-semibold bg-emerald-100 text-emerald-800">
-                      {job.status.toUpperCase()}
-                    </span>
-                  </div>
-                  <div className="flex flex-wrap items-center gap-3 mt-1 text-xs text-stone-500 font-mono">
-                    <span>Schedule: {job.schedule}</span>
-                    <span>•</span>
-                    <span>Last Run: {job.lastRun}</span>
-                    <span>•</span>
-                    <span>Duration: {job.duration}</span>
-                    <span>•</span>
-                    <span className="text-[#8B5E3C] font-semibold">Items Processed: {job.itemsProcessed}</span>
-                  </div>
-                </div>
-
-                <div className="flex items-center gap-2 self-end sm:self-center">
-                  <button
-                    onClick={() => handleRunJob(job.id)}
-                    className="px-3 py-1.5 text-xs font-medium text-stone-700 bg-white border border-stone-300 hover:bg-stone-50 rounded-xs transition-colors flex items-center gap-1.5"
-                  >
-                    <svg className="w-3.5 h-3.5 text-[#D4A757]" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M14.752 11.168l-3.197-2.132A1 1 0 0010 9.87v4.263a1 1 0 001.555.832l3.197-2.132a1 1 0 000-1.664z" />
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
-                    </svg>
-                    Run Job Now
-                  </button>
-                </div>
-              </div>
-            ))}
-          </div>
+          <label className="flex items-center gap-2 text-xs"><input type="checkbox" className="accent-[#0F1115]" checked={rodeo.showVenue} onChange={(e) => setRodeo({ ...rodeo, showVenue: e.target.checked })} /><span>Show venue on event/edition cards</span></label>
+          <label className="flex items-center gap-2 text-xs"><input type="checkbox" className="accent-[#0F1115]" checked={rodeo.editionSourceReminder} onChange={(e) => setRodeo({ ...rodeo, editionSourceReminder: e.target.checked })} /><span>Remind editors to re-verify edition sources each year</span></label>
+          <p className="text-[11px] text-stone-400">Display preferences only. Event-vs-edition separation is preserved; edition-specific data is never auto-carried to future editions.</p>
+          <button disabled={pending} onClick={() => save(updateRodeoDefaultsAction(rodeo))} className="px-4 py-2 bg-[#0F1115] text-[#D4A757] text-xs font-semibold rounded-xs disabled:opacity-50">Save Rodeo Defaults</button>
         </div>
       )}
 
-      {/* TAB 4: SYSTEM & ARCHITECTURE */}
-      {activeTab === 'system' && (
+      {tab === 'operational' && (
         <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-          <div className="bg-white border border-stone-200 rounded-xs p-5 space-y-3">
-            <h4 className="font-sans font-bold text-sm text-stone-900">
-              Frontend & Routing Stack
-            </h4>
-            <div className="text-xs text-stone-600 space-y-2">
-              <div className="flex justify-between py-1 border-b border-stone-100 font-mono">
-                <span className="text-stone-500">Framework</span>
-                <span className="font-bold text-stone-800">React 19.0.1</span>
-              </div>
-              <div className="flex justify-between py-1 border-b border-stone-100 font-mono">
-                <span className="text-stone-500">Bundler / Dev</span>
-                <span className="font-bold text-stone-800">Vite 8.3.0</span>
-              </div>
-              <div className="flex justify-between py-1 border-b border-stone-100 font-mono">
-                <span className="text-stone-500">Client Router</span>
-                <span className="font-bold text-stone-800">React Router 7</span>
-              </div>
-              <div className="flex justify-between py-1 border-b border-stone-100 font-mono">
-                <span className="text-stone-500">Styling</span>
-                <span className="font-bold text-stone-800">Tailwind CSS v4</span>
-              </div>
-              <div className="flex justify-between py-1 font-mono">
-                <span className="text-stone-500">Next.js App Router Target</span>
-                <span className="font-bold text-emerald-700">100% Migration Ready</span>
-              </div>
-            </div>
+          <div className="bg-white border border-stone-200 rounded-xs p-5 space-y-2 text-xs">
+            <h4 className="font-sans font-bold text-sm text-stone-900 mb-1">Application</h4>
+            <Row k="Environment" v={operational.environment} />
+            <Row k="Version" v={operational.appVersion} />
+            <Row k="Commit" v={operational.commit} />
+            <Row k="Database" v={operational.database.connected ? 'connected' : 'unreachable'} ok={operational.database.connected} />
+            <Row k="Migrations applied" v={operational.database.migrationsApplied?.toString() ?? '—'} />
           </div>
+          <div className="bg-white border border-stone-200 rounded-xs p-5 space-y-2 text-xs">
+            <h4 className="font-sans font-bold text-sm text-stone-900 mb-1">Module status</h4>
+            <Row k="Media storage" v={operational.mediaStorageProvider} />
+            <Row k="Analytics collection" v={operational.analyticsCollection ? 'enabled' : 'disabled'} />
+            <Row k="Ad serving" v={operational.adServing ? 'enabled' : 'disabled'} />
+            <Row k="Click tracking" v={operational.clickTracking ? 'enabled' : 'disabled'} />
+            <div className="pt-2 flex gap-3 text-[11px]"><Link href="/admin/analytics/" className="text-[#8B5E3C] underline">Analytics</Link><Link href="/admin/monetization/" className="text-[#8B5E3C] underline">Monetization</Link><Link href="/admin/seo/" className="text-[#8B5E3C] underline">SEO</Link></div>
+          </div>
+          <div className="md:col-span-2 bg-stone-900 text-stone-300 border border-stone-800 rounded-xs p-4 text-xs">{operational.securityNote}</div>
+        </div>
+      )}
 
-          <div className="bg-white border border-stone-200 rounded-xs p-5 space-y-3">
-            <h4 className="font-sans font-bold text-sm text-stone-900">
-              Data Store & Persistence Layer
-            </h4>
-            <div className="text-xs text-stone-600 space-y-2">
-              <div className="flex justify-between py-1 border-b border-stone-100 font-mono">
-                <span className="text-stone-500">Current Storage</span>
-                <span className="font-bold text-stone-800">Typed In-Memory Data Store</span>
-              </div>
-              <div className="flex justify-between py-1 border-b border-stone-100 font-mono">
-                <span className="text-stone-500">Data Contracts</span>
-                <span className="font-bold text-stone-800">TypeScript Strict Types</span>
-              </div>
-              <div className="flex justify-between py-1 border-b border-stone-100 font-mono">
-                <span className="text-stone-500">Database Ready</span>
-                <span className="font-bold text-stone-800">PostgreSQL / Cloud SQL</span>
-              </div>
-              <div className="flex justify-between py-1 font-mono">
-                <span className="text-stone-500">Auth Mechanism</span>
-                <span className="font-bold text-amber-700">Phase 0 Demo (Non-Persistent)</span>
-              </div>
+      {tab === 'audit' && (
+        <div className="space-y-3">
+          <form method="get" className="flex flex-wrap gap-2 text-xs">
+            <input name="action" defaultValue={auditFilters.action ?? ''} placeholder="Filter action (e.g. team.roles)…" className="px-3 py-1.5 border border-stone-300 rounded-xs bg-white w-64" />
+            <input name="actorId" defaultValue={auditFilters.actorId ?? ''} placeholder="Actor id…" className="px-3 py-1.5 border border-stone-300 rounded-xs bg-white w-48" />
+            <button type="submit" className="px-3 py-1.5 bg-stone-800 text-white rounded-xs font-mono">Filter</button>
+          </form>
+          <div className="bg-white border border-stone-200 rounded-xs overflow-x-auto">
+            {audit.rows.length === 0 ? <div className="px-4 py-10 text-center text-xs text-stone-400">No audit entries match.</div> : (
+              <table className="w-full text-left text-xs font-sans">
+                <thead className="bg-stone-50 border-b border-stone-200 text-stone-500 font-mono text-[11px] uppercase"><tr><th className="px-4 py-2.5">Time (UTC)</th><th className="px-4 py-2.5">Actor</th><th className="px-4 py-2.5">Action</th><th className="px-4 py-2.5">Entity</th><th className="px-4 py-2.5">Detail</th></tr></thead>
+                <tbody className="divide-y divide-stone-200">
+                  {audit.rows.map((r) => (
+                    <tr key={r.id} className="hover:bg-stone-50/50">
+                      <td className="px-4 py-2.5 font-mono text-[11px] text-stone-500">{r.createdAt.slice(0, 19).replace('T', ' ')}</td>
+                      <td className="px-4 py-2.5">{r.actorName ?? <span className="text-stone-400">system</span>}</td>
+                      <td className="px-4 py-2.5 font-mono text-[11px]">{r.action}</td>
+                      <td className="px-4 py-2.5 text-stone-500">{r.entityType}</td>
+                      <td className="px-4 py-2.5 text-stone-500 font-mono text-[11px] max-w-[260px] truncate">{r.detail}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            )}
+          </div>
+          <div className="flex items-center justify-between text-xs font-mono">
+            <span className="text-stone-500">Page {audit.page} of {audit.totalPages} · {audit.total} entries</span>
+            <div className="flex gap-2">
+              {audit.page > 1 && <Link href={`/admin/settings/?action=${encodeURIComponent(auditFilters.action ?? '')}&page=${audit.page - 1}`} className="px-3 py-1.5 border border-stone-300 rounded-xs bg-white">← Prev</Link>}
+              {audit.page < audit.totalPages && <Link href={`/admin/settings/?action=${encodeURIComponent(auditFilters.action ?? '')}&page=${audit.page + 1}`} className="px-3 py-1.5 border border-stone-300 rounded-xs bg-white">Next →</Link>}
             </div>
           </div>
+          <p className="text-[11px] text-stone-400">Audit history is read-only and cannot be edited or deleted from the UI.</p>
         </div>
       )}
     </div>
   );
 };
+
+function Row({ k, v, ok }: { k: string; v: string; ok?: boolean }) {
+  return (
+    <div className="flex justify-between py-1 border-b border-stone-100 font-mono">
+      <span className="text-stone-500">{k}</span>
+      <span className={`font-bold ${ok === false ? 'text-rose-700' : ok === true ? 'text-emerald-700' : 'text-stone-800'}`}>{v}</span>
+    </div>
+  );
+}
+
+export default AdminSettingsPage;

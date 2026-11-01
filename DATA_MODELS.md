@@ -420,3 +420,15 @@ New enums `AffiliateCategory`, `PartnerVerificationStatus`, `MonetizationStatus`
 `AffiliateRelAttribute`, `AdPlacementSlot`, `CommercialEntityType`. `Article` gains two
 back-relations (`affiliatePlacements`, `sponsorships`) and declares `searchVector
 Unsupported("tsvector")?`. No revenue/commission/price is ever stored; no secrets stored.
+
+## Batch 09 additions
+Migration `20261031300000_batch09_admin_governance` (additive). New models:
+- **StaffInvitation** — `email`, `roleKey`, `tokenHash`(unique), `status`
+  (PENDING/ACCEPTED/REVOKED/EXPIRED), `invitedById`, `acceptedUserId?`, `expiresAt`, `usedAt?`.
+- **PasswordResetToken** — `userId`→User(cascade), `tokenHash`(unique), `expiresAt`, `usedAt?`,
+  `createdById?`.
+- **SystemSetting** — `key`(id) → validated JSON (site identity / editorial defaults / rodeo
+  defaults). Security-critical values are never stored here.
+
+`User` gains a `passwordResets` back-relation. No new enums; account status reuses
+`UserAccountStatus`. Only token HASHes are stored (never raw tokens); no passwords/secrets.

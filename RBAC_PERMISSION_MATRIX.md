@@ -124,3 +124,21 @@ Seven permissions (full grid in MONETIZATION_RBAC_MATRIX.md): `monetization.view
 server-side in `lib/cms/monetizationService.ts`, audited, mirrored via `roleSync`. Placement
 **activation** always requires `monetization.placement.manage` even when a proposal was
 created with article-edit rights.
+
+## Batch 09 — Governance (no new permissions)
+
+Batch 09 added **no new permission strings and changed no roles**. Team & Permissions and
+System Settings are gated by the EXISTING permissions, and a centralized registry
+(`lib/auth/permissions.ts`) now maps the 12 CMS modules to the permission that gates each view
+and drives sidebar visibility + the real (generated) permission matrix. See `RBAC_GOVERNANCE.md`.
+
+| Module | View permission | Visible to |
+|---|---|---|
+| Team & Permissions | `user.manage` | Super Admin, Administrator |
+| System Settings | `system.config` | **Super Admin only** |
+| (all other 10 modules) | `cms.access` / `media.view` / `seo.audit.view` / `analytics.view` / `monetization.view` | per existing matrix |
+
+Assignment boundaries (enforced in `teamService`, serializable): only a Super Admin may
+grant/remove `super_admin`; no self role/status change; the last active Super Admin is
+protected; `role.assign` required for role changes; all changes audited + session-revoking.
+The `/admin/account/` page (own password + sessions) is available to any authenticated staff.

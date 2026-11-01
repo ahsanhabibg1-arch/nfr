@@ -24,6 +24,10 @@ interface AdminSidebarProps {
   onToggleCollapse: () => void;
   mobileOpen: boolean;
   onCloseMobile: () => void;
+  /** Module ids the signed-in user may view (server-derived from the permission
+   * registry). When provided, modules not in the set are hidden. Hiding is cosmetic;
+   * routes + services enforce server-side. */
+  visibleModules?: string[];
 }
 
 const MODULE_GROUPS: NavGroup[] = [
@@ -49,7 +53,6 @@ const MODULE_GROUPS: NavGroup[] = [
         id: 'articles',
         name: 'Articles',
         path: ROUTES.ADMIN_ARTICLES,
-        badge: '8',
         icon: (p) => (
           <svg {...p} fill="none" viewBox="0 0 24 24" stroke="currentColor">
             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.8} d="M19 20H5a2 2 0 01-2-2V6a2 2 0 012-2h10a2 2 0 012 2v1m2 13a2 2 0 01-2-2V7m2 13a2 2 0 002-2V9.5a2.5 2.5 0 00-2.5-2.5H15" />
@@ -105,7 +108,6 @@ const MODULE_GROUPS: NavGroup[] = [
         id: 'seo',
         name: 'SEO Intelligence',
         path: ROUTES.ADMIN_SEO,
-        badge: '1 Alert',
         icon: (p) => (
           <svg {...p} fill="none" viewBox="0 0 24 24" stroke="currentColor">
             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.8} d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z" />
@@ -177,8 +179,13 @@ export const AdminSidebar: React.FC<AdminSidebarProps> = ({
   onToggleCollapse,
   mobileOpen,
   onCloseMobile,
+  visibleModules,
 }) => {
   const pathname = usePathname() ?? '';
+  const canSee = (id: string) => !visibleModules || visibleModules.includes(id);
+  const groups = MODULE_GROUPS
+    .map((g) => ({ ...g, items: g.items.filter((i) => canSee(i.id)) }))
+    .filter((g) => g.items.length > 0);
 
   const sidebarContent = (
     <div className="h-full flex flex-col justify-between bg-[#0F1115] text-stone-300 border-r border-white/10 select-none">
@@ -193,11 +200,6 @@ export const AdminSidebar: React.FC<AdminSidebarProps> = ({
             <span className="font-serif text-xl font-black text-white tracking-tight uppercase">
               NFR<span className="text-[#D4A757]">CMS</span>
             </span>
-            {!collapsed && (
-              <span className="text-[9px] font-mono uppercase tracking-widest text-[#D4A757] bg-white/5 border border-[#D4A757]/30 px-1 py-0.5 rounded-xs">
-                DEMO
-              </span>
-            )}
           </Link>
 
           <button
@@ -217,7 +219,7 @@ export const AdminSidebar: React.FC<AdminSidebarProps> = ({
 
         {/* Navigation Group Items */}
         <nav className="p-3 space-y-5 overflow-y-auto max-h-[calc(100vh-140px)] scrollbar-none font-sans">
-          {MODULE_GROUPS.map((group) => (
+          {groups.map((group) => (
             <div key={group.groupTitle} className="space-y-1">
               {!collapsed && (
                 <div className="px-3 text-[10px] uppercase font-mono tracking-widest text-stone-500 font-semibold mb-1">

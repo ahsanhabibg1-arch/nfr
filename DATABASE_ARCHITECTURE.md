@@ -149,3 +149,13 @@ Reference-safe deletion is service-enforced (partner↔links Restrict; placement
 cascade with their Article). Migration `20261031200000_batch08_monetization` (dev + test);
 additive, no data reset. `Article.searchVector` is now declared `Unsupported("tsvector")` so
 `migrate diff` no longer tries to drop the FTS column (see MIGRATION_STATUS.md).
+
+## Batch 09 (2026-10-31)
+Admin governance. New tables: `StaffInvitation` (single-use, time-limited invite; stores only
+the token SHA-256 hash), `PasswordResetToken` (hashed, short-lived, single-use; FK → User,
+cascade), `SystemSetting` (typed key→JSON site/editorial/rodeo config). Identity tables
+(User/Role/UserRole/Session/AuditLog) are otherwise unchanged — account status reuses the
+existing `UserAccountStatus` (INVITED/ACTIVE/SUSPENDED). All governance mutations are audited
+via `AuditLog`. Migration `20261031300000_batch09_admin_governance` (dev + test); additive, no
+data reset; the FTS `searchVector` column + GIN index are preserved and now protected by the
+`npm run test:migration` replay gate.

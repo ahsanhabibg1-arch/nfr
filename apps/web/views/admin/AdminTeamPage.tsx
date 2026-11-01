@@ -1,377 +1,209 @@
 'use client';
 
-import React, { useState } from 'react';
+import React, { useState, useTransition } from 'react';
+import { useRouter } from 'next/navigation';
 import { AdminPageHeader } from '../../components/admin/AdminPageHeader';
 import { AdminStatCard } from '../../components/admin/AdminStatCard';
 import { AdminTabs } from '../../components/admin/AdminTabs';
 import { AdminModal } from '../../components/admin/AdminModal';
-import { ADMIN_USERS } from '../../data/mockAdminData';
-import { AdminUser, AdminRole } from '../../types/admin';
+import type { StaffRow } from '../../lib/cms/teamService';
+import type { PermissionMatrixGroup, RoleKey } from '../../lib/auth/permissions';
+import { ALL_ROLES, ROLE_LABELS } from '../../lib/auth/permissions';
+import * as actions from '../../app/admin/team-actions';
 
-const PERMISSION_MATRIX = [
-  { action: 'Publish Articles Directly to Live Site', superAdmin: true, admin: true, editor: true, author: false, seo: false },
-  { action: 'Edit and Review Any Author Content', superAdmin: true, admin: true, editor: true, author: false, seo: false },
-  { action: 'Draft & Submit Own Articles', superAdmin: true, admin: true, editor: true, author: true, seo: false },
-  { action: 'Permanently Delete Articles or Media', superAdmin: true, admin: true, editor: false, author: false, seo: false },
-  { action: 'Manage Rodeo Hubs & Event Editions', superAdmin: true, admin: true, editor: true, author: false, seo: false },
-  { action: 'Configure 12-Group SEO & Structured Data', superAdmin: true, admin: true, editor: false, author: false, seo: true },
-  { action: 'Manage Affiliate Links & Ad Slots', superAdmin: true, admin: true, editor: false, author: false, seo: false },
-  { action: 'Invite Team Members & Assign Roles', superAdmin: true, admin: true, editor: false, author: false, seo: false },
-  { action: 'Modify System Settings & Domain DNS', superAdmin: true, admin: false, editor: false, author: false, seo: false },
-];
+interface InvitationRow { id: string; email: string; roleKey: string; status: string; expiresAt: string }
 
-export const AdminTeamPage: React.FC = () => {
-  const [activeTab, setActiveTab] = useState<'members' | 'matrix'>('members');
-  const [users, setUsers] = useState<AdminUser[]>(ADMIN_USERS);
-  const [inviteModalOpen, setInviteModalOpen] = useState(false);
-  
-  // New user form state
-  const [newName, setNewName] = useState('');
-  const [newEmail, setNewEmail] = useState('');
-  const [newRole, setNewRole] = useState<AdminRole>('Author');
+export interface AdminTeamPageProps {
+  staff: StaffRow[];
+  invitations: InvitationRow[];
+  matrix: PermissionMatrixGroup[];
+  filters: { q?: string; role?: string; status?: string };
+  currentUserId: string;
+  caps: { canAssign: boolean; isSuperAdmin: boolean };
+}
 
-  const [toastMessage, setToastMessage] = useState<string | null>(null);
+type Tab = 'members' | 'invitations' | 'matrix';
 
-  const showToast = (msg: string) => {
-    setToastMessage(msg);
-    setTimeout(() => setToastMessage(null), 3000);
-  };
+export const AdminTeamPage: React.FC<AdminTeamPageProps> = ({ staff, invitations, matrix, filters, currentUserId, caps }) => {
+  const router = useRouter();
+  const [tab, setTab] = useState<Tab>('members');
+  const [toast, setToast] = useState<string | null>(null);
+  const [pending, start] = useTransition();
+  const [inviteOpen, setInviteOpen] = useState(false);
+  const [inviteLink, setInviteLink] = useState<string | null>(null);
+  const notify = (m: string) => { setToast(m); setTimeout(() => setToast(null), 4000); };
+  const act = (p: Promise<{ ok: boolean; error?: string }>, okMsg: string) =>
+    start(async () => { const r = await p; notify(r.ok ? okMsg : `Failed: ${r.error}`); if (r.ok) router.refresh(); });
 
-  const handleRoleChange = (userId: string, updatedRole: AdminRole) => {
-    setUsers(prev =>
-      prev.map(u => (u.id === userId ? { ...u, role: updatedRole } : u))
-    );
-    showToast(`Updated role to ${updatedRole}`);
-  };
-
-  const handleInviteUser = (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!newName.trim() || !newEmail.trim()) return;
-
-    const newUser: AdminUser = {
-      id: `usr-${Date.now()}`,
-      name: newName.trim(),
-      email: newEmail.trim(),
-      role: newRole,
-      status: 'invited',
-      lastActive: 'Invited just now',
-      articlesCount: 0,
-    };
-
-    setUsers(prev => [...prev, newUser]);
-    setNewName('');
-    setNewEmail('');
-    setNewRole('Author');
-    setInviteModalOpen(false);
-    showToast(`Invitation dispatched to ${newUser.email}`);
-  };
-
-  const handleToggleStatus = (userId: string) => {
-    setUsers(prev =>
-      prev.map(u => {
-        if (u.id === userId) {
-          const nextStatus = u.status === 'active' ? 'suspended' : 'active';
-          return { ...u, status: nextStatus };
-        }
-        return u;
-      })
-    );
-    showToast('User account status toggled');
-  };
+  const assignable: RoleKey[] = caps.isSuperAdmin ? ALL_ROLES : ALL_ROLES.filter((r) => r !== 'super_admin');
+  const active = staff.filter((s) => s.status === 'ACTIVE').length;
 
   return (
     <div className="space-y-6">
-      {toastMessage && (
-        <div className="fixed bottom-6 right-6 z-50 bg-[#0F1115] text-[#D4A757] border border-[#D4A757]/40 px-4 py-2.5 rounded-xs shadow-xl text-xs font-mono animate-fade-in flex items-center gap-2">
-          <svg className="w-4 h-4 text-emerald-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
-          </svg>
-          {toastMessage}
-        </div>
-      )}
+      {toast && <div className="fixed bottom-6 right-6 z-50 bg-[#0F1115] text-[#D4A757] border border-[#D4A757]/40 px-4 py-2.5 rounded-xs shadow-xl text-xs font-mono">{toast}</div>}
 
       <AdminPageHeader
-        title="Team & Access Permissions"
-        description="Oversee editorial staff, assign publishing privileges, and review role-based access control matrices."
-        breadcrumbs={[
-          { label: 'Admin', path: '/admin/' },
-          { label: 'Team & Permissions' },
-        ]}
-        actions={
-          <button
-            onClick={() => setInviteModalOpen(true)}
-            className="px-3.5 py-1.5 text-xs font-sans font-semibold text-white bg-[#0F1115] hover:bg-stone-800 rounded-xs transition-colors flex items-center gap-1.5"
-          >
-            <svg className="w-3.5 h-3.5 text-[#D4A757]" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M18 9v3m0 0v3m0-3h3m-3 0h-3m-2-5a4 4 0 11-8 0 4 4 0 018 0zM3 20a6 6 0 0112 0v1H3v-1z" />
-            </svg>
-            Invite Staff Member
-          </button>
-        }
+        title="Team & Permissions"
+        description="Database-backed staff accounts, server-authorized role assignment, session control, and the real role-permission matrix."
+        breadcrumbs={[{ label: 'Admin', path: '/admin/' }, { label: 'Team & Permissions' }]}
+        actions={<button onClick={() => { setInviteLink(null); setInviteOpen(true); }} className="px-3.5 py-1.5 text-xs font-sans font-semibold text-white bg-[#0F1115] hover:bg-stone-800 rounded-xs">Invite Staff</button>}
       />
 
-      {/* Role Demonstration Disclaimer Banner */}
-      <div className="p-4 bg-amber-50/80 border border-amber-200 rounded-xs text-xs text-amber-900 flex items-start gap-3">
-        <svg className="w-5 h-5 text-amber-700 shrink-0 mt-0.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
-        </svg>
-        <div>
-          <span className="font-semibold block mb-0.5">Prototype RBAC Demonstration Notice</span>
-          Role switching and invitation actions in this interface are client-side UX simulations. Real server-side authorization enforcement, secure passwordless or OAuth credentials, and database-backed permission guards will be integrated in Phase 1.
-        </div>
-      </div>
-
-      {/* KPI Cards */}
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
-        <AdminStatCard
-          title="Total Staff Users"
-          value={users.length.toString()}
-          change="5 Active Team Members"
-          trend="neutral"
-          description="Editorial, Tech & Operations"
-        />
-        <AdminStatCard
-          title="Publishing Editors"
-          value={users.filter(u => u.role === 'Editor' || u.role === 'Administrator').length.toString()}
-          change="Authorized to publish live"
-          trend="up"
-          description="Can clear editorial review queue"
-        />
-        <AdminStatCard
-          title="Contributing Authors"
-          value={users.filter(u => u.role === 'Author').length.toString()}
-          change="Draft submissions enabled"
-          trend="neutral"
-          description="Can create & edit own stories"
-        />
-        <AdminStatCard
-          title="SEO Intelligence Team"
-          value={users.filter(u => u.role === 'SEO Manager').length.toString()}
-          change="Full audit controls"
-          trend="neutral"
-          description="Monitors 12-group compliance"
-        />
+        <AdminStatCard title="Total Staff" value={staff.length.toString()} description={`${active} active`} trend="neutral" />
+        <AdminStatCard title="Super Admins" value={staff.filter((s) => s.roles.some((r) => r.key === 'super_admin')).length.toString()} description="Protected: ≥1 active required" trend="neutral" />
+        <AdminStatCard title="Pending Invitations" value={invitations.filter((i) => i.status === 'PENDING').length.toString()} description="Single-use, time-limited" trend="neutral" />
+        <AdminStatCard title="Suspended" value={staff.filter((s) => s.status === 'SUSPENDED').length.toString()} description="Sessions revoked" trend="neutral" />
       </div>
 
       <AdminTabs
-        tabs={[
-          { id: 'members', label: 'Staff Directory', count: users.length },
-          { id: 'matrix', label: 'Role Permission Matrix' },
-        ]}
-        activeTab={activeTab}
-        onChange={(id) => setActiveTab(id as typeof activeTab)}
+        tabs={[{ id: 'members', label: 'Staff Directory', count: staff.length }, { id: 'invitations', label: 'Invitations', count: invitations.length }, { id: 'matrix', label: 'Permission Matrix' }]}
+        activeTab={tab}
+        onChange={(id) => setTab(id as Tab)}
       />
 
-      {/* TAB 1: MEMBERS */}
-      {activeTab === 'members' && (
-        <div className="bg-white border border-stone-200 rounded-xs shadow-2xs overflow-hidden">
-          <div className="px-4 py-3 bg-stone-50/50 border-b border-stone-200 flex items-center justify-between">
-            <span className="text-xs font-mono uppercase tracking-wider text-stone-500 font-semibold">
-              Editorial Staff & Contributors ({users.length})
-            </span>
-            <span className="text-[11px] text-stone-500 font-mono">
-              Role switches take effect immediately in this session
-            </span>
-          </div>
-
-          <div className="overflow-x-auto">
-            <table className="w-full text-left text-xs font-sans">
-              <thead className="bg-stone-50 border-b border-stone-200 text-stone-500 font-mono text-[11px] uppercase tracking-wider">
-                <tr>
-                  <th className="px-4 py-2.5">Staff Member</th>
-                  <th className="px-4 py-2.5">Assigned Role</th>
-                  <th className="px-4 py-2.5 text-center">Status</th>
-                  <th className="px-4 py-2.5 text-right">Articles Authored</th>
-                  <th className="px-4 py-2.5">Last Active</th>
-                  <th className="px-4 py-2.5 text-right">Actions</th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-stone-200">
-                {users.map((user) => (
-                  <tr key={user.id} className="hover:bg-stone-50/50">
-                    <td className="px-4 py-3">
-                      <div className="flex items-center gap-3">
-                        <div className="w-8 h-8 rounded-full bg-[#1E293B] text-[#D4A757] flex items-center justify-center font-bold font-mono text-xs shrink-0">
-                          {user.name.split(' ').map(n => n[0]).join('')}
-                        </div>
-                        <div>
-                          <div className="font-semibold text-stone-900">{user.name}</div>
-                          <div className="text-[11px] text-stone-500 font-mono">{user.email}</div>
-                        </div>
-                      </div>
-                    </td>
-                    <td className="px-4 py-3">
-                      <select
-                        value={user.role}
-                        onChange={(e) => handleRoleChange(user.id, e.target.value as AdminRole)}
-                        className="px-2 py-1 text-xs border border-stone-300 rounded-xs bg-white text-stone-800 font-medium focus:outline-none focus:border-[#D4A757]"
-                      >
-                        <option value="Super Admin">Super Admin</option>
-                        <option value="Administrator">Administrator</option>
-                        <option value="Editor">Editor</option>
-                        <option value="Author">Author</option>
-                        <option value="SEO Manager">SEO Manager</option>
-                      </select>
-                    </td>
-                    <td className="px-4 py-3 text-center">
-                      <span className={`text-[10px] font-mono px-2 py-0.5 rounded-xs font-semibold ${
-                        user.status === 'active'
-                          ? 'bg-emerald-100 text-emerald-800'
-                          : user.status === 'invited'
-                          ? 'bg-amber-100 text-amber-800'
-                          : 'bg-rose-100 text-rose-800'
-                      }`}>
-                        {user.status.toUpperCase()}
-                      </span>
-                    </td>
-                    <td className="px-4 py-3 text-right font-mono font-bold text-stone-800">
-                      {user.articlesCount}
-                    </td>
-                    <td className="px-4 py-3 text-stone-500 font-mono text-[11px]">
-                      {user.lastActive}
-                    </td>
-                    <td className="px-4 py-3 text-right">
-                      <button
-                        onClick={() => handleToggleStatus(user.id)}
-                        className={`text-[11px] font-mono underline ${
-                          user.status === 'active' ? 'text-rose-600 hover:text-rose-900' : 'text-emerald-700 hover:text-emerald-900'
-                        }`}
-                      >
-                        {user.status === 'active' ? 'Suspend' : 'Activate'}
-                      </button>
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-        </div>
-      )}
-
-      {/* TAB 2: PERMISSION MATRIX */}
-      {activeTab === 'matrix' && (
-        <div className="bg-white border border-stone-200 rounded-xs shadow-2xs overflow-hidden">
-          <div className="px-4 py-3 bg-stone-50/50 border-b border-stone-200 flex items-center justify-between">
-            <span className="text-xs font-mono uppercase tracking-wider text-stone-500 font-semibold">
-              Editorial Role Capability Matrix
-            </span>
-            <span className="text-[11px] text-stone-500 font-mono">
-              Governs what operations each staff member can execute
-            </span>
-          </div>
-
-          <div className="overflow-x-auto">
-            <table className="w-full text-left text-xs font-sans">
-              <thead className="bg-stone-50 border-b border-stone-200 text-stone-500 font-mono text-[11px] uppercase tracking-wider">
-                <tr>
-                  <th className="px-4 py-2.5">System Capability</th>
-                  <th className="px-4 py-2.5 text-center">Super Admin</th>
-                  <th className="px-4 py-2.5 text-center">Admin</th>
-                  <th className="px-4 py-2.5 text-center">Editor</th>
-                  <th className="px-4 py-2.5 text-center">Author</th>
-                  <th className="px-4 py-2.5 text-center">SEO Manager</th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-stone-200">
-                {PERMISSION_MATRIX.map((perm, idx) => (
-                  <tr key={idx} className="hover:bg-stone-50/50">
-                    <td className="px-4 py-3 font-medium text-stone-900">
-                      {perm.action}
-                    </td>
-                    <td className="px-4 py-3 text-center">
-                      <span className="text-emerald-700 font-bold">✓</span>
-                    </td>
-                    <td className="px-4 py-3 text-center">
-                      {perm.admin ? <span className="text-emerald-700 font-bold">✓</span> : <span className="text-stone-300">—</span>}
-                    </td>
-                    <td className="px-4 py-3 text-center">
-                      {perm.editor ? <span className="text-emerald-700 font-bold">✓</span> : <span className="text-stone-300">—</span>}
-                    </td>
-                    <td className="px-4 py-3 text-center">
-                      {perm.author ? <span className="text-emerald-700 font-bold">✓</span> : <span className="text-stone-300">—</span>}
-                    </td>
-                    <td className="px-4 py-3 text-center">
-                      {perm.seo ? <span className="text-emerald-700 font-bold">✓</span> : <span className="text-stone-300">—</span>}
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-        </div>
-      )}
-
-      {/* INVITE USER MODAL */}
-      {inviteModalOpen && (
-        <AdminModal
-          isOpen={true}
-          title="Invite New Editorial Staff Member"
-          onClose={() => setInviteModalOpen(false)}
-        >
-          <form onSubmit={handleInviteUser} className="space-y-4">
-            <div>
-              <label className="block text-xs font-mono uppercase text-stone-500 font-medium mb-1">
-                Full Legal / Byline Name
-              </label>
-              <input
-                type="text"
-                placeholder="e.g. Wyatt Holloway"
-                value={newName}
-                onChange={(e) => setNewName(e.target.value)}
-                required
-                className="w-full px-3 py-2 text-xs border border-stone-300 rounded-xs bg-white text-stone-900 focus:outline-none focus:border-[#D4A757]"
-              />
-            </div>
-
-            <div>
-              <label className="block text-xs font-mono uppercase text-stone-500 font-medium mb-1">
-                Staff Corporate Email
-              </label>
-              <input
-                type="email"
-                placeholder="w.holloway@nfrguide.com"
-                value={newEmail}
-                onChange={(e) => setNewEmail(e.target.value)}
-                required
-                className="w-full px-3 py-2 text-xs border border-stone-300 rounded-xs bg-white text-stone-900 focus:outline-none focus:border-[#D4A757]"
-              />
-            </div>
-
-            <div>
-              <label className="block text-xs font-mono uppercase text-stone-500 font-medium mb-1">
-                Editorial Role Assignment
-              </label>
-              <select
-                value={newRole}
-                onChange={(e) => setNewRole(e.target.value as AdminRole)}
-                className="w-full px-3 py-2 text-xs border border-stone-300 rounded-xs bg-white text-stone-900 focus:outline-none focus:border-[#D4A757]"
-              >
-                <option value="Author">Author (Create & draft own stories)</option>
-                <option value="Editor">Editor (Review, approve, and publish)</option>
-                <option value="SEO Manager">SEO Manager (Audits & schemas)</option>
-                <option value="Administrator">Administrator (Content & user management)</option>
-                <option value="Super Admin">Super Admin (Unrestricted system access)</option>
-              </select>
-            </div>
-
-            <div className="flex justify-end gap-2 pt-4 border-t border-stone-200">
-              <button
-                type="button"
-                onClick={() => setInviteModalOpen(false)}
-                className="px-4 py-2 text-xs font-medium text-stone-600 hover:text-stone-900"
-              >
-                Cancel
-              </button>
-              <button
-                type="submit"
-                className="px-4 py-2 text-xs font-semibold text-white bg-[#0F1115] hover:bg-stone-800 rounded-xs transition-colors"
-              >
-                Send Staff Invitation
-              </button>
-            </div>
+      {/* MEMBERS */}
+      {tab === 'members' && (
+        <div className="space-y-3">
+          <form method="get" className="flex flex-wrap gap-2 text-xs">
+            <input name="q" defaultValue={filters.q ?? ''} placeholder="Search name/email…" className="px-3 py-1.5 border border-stone-300 rounded-xs bg-white" />
+            <select name="role" defaultValue={filters.role ?? ''} className="px-2 py-1.5 border border-stone-300 rounded-xs bg-white">
+              <option value="">Any role</option>
+              {ALL_ROLES.map((r) => <option key={r} value={r}>{ROLE_LABELS[r]}</option>)}
+            </select>
+            <select name="status" defaultValue={filters.status ?? ''} className="px-2 py-1.5 border border-stone-300 rounded-xs bg-white">
+              <option value="">Any status</option>
+              {['ACTIVE', 'INVITED', 'SUSPENDED'].map((s) => <option key={s}>{s}</option>)}
+            </select>
+            <button type="submit" className="px-3 py-1.5 bg-stone-800 text-white rounded-xs font-mono">Filter</button>
           </form>
+
+          <div className="bg-white border border-stone-200 rounded-xs overflow-x-auto">
+            <table className="w-full text-left text-xs font-sans">
+              <thead className="bg-stone-50 border-b border-stone-200 text-stone-500 font-mono text-[11px] uppercase tracking-wider">
+                <tr>
+                  <th className="px-4 py-2.5">Staff</th><th className="px-4 py-2.5">Role</th><th className="px-4 py-2.5 text-center">Status</th>
+                  <th className="px-4 py-2.5 text-center">Sessions</th><th className="px-4 py-2.5">Last Login</th><th className="px-4 py-2.5 text-right">Actions</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-stone-200">
+                {staff.map((u) => {
+                  const self = u.id === currentUserId;
+                  const primary = (u.roles[0]?.key as RoleKey) ?? 'author';
+                  return (
+                    <tr key={u.id} className="hover:bg-stone-50/50">
+                      <td className="px-4 py-3"><div className="font-semibold text-stone-900">{u.name}</div><div className="text-[11px] text-stone-500 font-mono">{u.email}</div></td>
+                      <td className="px-4 py-3">
+                        {caps.canAssign && !self ? (
+                          <select
+                            defaultValue={primary}
+                            disabled={pending}
+                            onChange={(e) => act(actions.assignRolesAction(u.id, [e.target.value as RoleKey]), 'Role updated (sessions revoked)')}
+                            className="px-2 py-1 text-xs border border-stone-300 rounded-xs bg-white"
+                          >
+                            {assignable.map((r) => <option key={r} value={r}>{ROLE_LABELS[r]}</option>)}
+                            {!assignable.includes(primary) && <option value={primary}>{ROLE_LABELS[primary]}</option>}
+                          </select>
+                        ) : (
+                          <span className="text-stone-700">{u.roleLabel}{self && <span className="text-[10px] text-stone-400 ml-1">(you)</span>}</span>
+                        )}
+                      </td>
+                      <td className="px-4 py-3 text-center"><span className={`text-[10px] font-mono px-2 py-0.5 rounded-xs font-semibold ${u.status === 'ACTIVE' ? 'bg-emerald-100 text-emerald-800' : u.status === 'INVITED' ? 'bg-amber-100 text-amber-800' : 'bg-rose-100 text-rose-800'}`}>{u.status}</span></td>
+                      <td className="px-4 py-3 text-center font-mono">{u.activeSessions}</td>
+                      <td className="px-4 py-3 text-stone-500 font-mono text-[11px]">{u.lastLoginAt ? new Date(u.lastLoginAt).toISOString().slice(0, 16).replace('T', ' ') : '—'}</td>
+                      <td className="px-4 py-3 text-right space-x-2 whitespace-nowrap">
+                        {!self && u.status !== 'INVITED' && (
+                          <button disabled={pending} onClick={() => act(actions.setStaffStatusAction(u.id, u.status === 'ACTIVE' ? 'SUSPENDED' : 'ACTIVE'), 'Status updated')} className={`text-[11px] font-mono underline disabled:opacity-40 ${u.status === 'ACTIVE' ? 'text-rose-600' : 'text-emerald-700'}`}>{u.status === 'ACTIVE' ? 'Suspend' : 'Activate'}</button>
+                        )}
+                        {!self && u.activeSessions > 0 && <button disabled={pending} onClick={() => act(actions.revokeStaffSessionsAction(u.id), 'Sessions revoked')} className="text-[11px] font-mono underline text-stone-500 disabled:opacity-40">Revoke sessions</button>}
+                        <button disabled={pending} onClick={() => start(async () => { const r = await actions.createPasswordResetAction(u.id); if (r.ok && 'data' in r) { const link = `${location.origin}/admin/reset-password/?token=${r.data.token}`; setInviteLink(link); setInviteOpen(true); } else notify(`Failed: ${(r as { error?: string }).error}`); })} className="text-[11px] font-mono underline text-stone-500 disabled:opacity-40">Reset link</button>
+                      </td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          </div>
+          <p className="text-[11px] text-stone-400">Role changes and suspensions revoke the member's sessions immediately. You cannot change your own role/status here. The last active Super Admin is protected.</p>
+        </div>
+      )}
+
+      {/* INVITATIONS */}
+      {tab === 'invitations' && (
+        <div className="bg-white border border-stone-200 rounded-xs overflow-x-auto">
+          {invitations.length === 0 ? <div className="px-4 py-10 text-center text-xs text-stone-400">No invitations yet.</div> : (
+            <table className="w-full text-left text-xs font-sans">
+              <thead className="bg-stone-50 border-b border-stone-200 text-stone-500 font-mono text-[11px] uppercase"><tr><th className="px-4 py-2.5">Email</th><th className="px-4 py-2.5">Role</th><th className="px-4 py-2.5">Status</th><th className="px-4 py-2.5">Expires</th><th className="px-4 py-2.5 text-right">Actions</th></tr></thead>
+              <tbody className="divide-y divide-stone-200">
+                {invitations.map((i) => (
+                  <tr key={i.id} className="hover:bg-stone-50/50">
+                    <td className="px-4 py-3 font-medium text-stone-900">{i.email}</td>
+                    <td className="px-4 py-3 font-mono">{i.roleKey}</td>
+                    <td className="px-4 py-3"><span className="text-[10px] font-mono px-2 py-0.5 rounded-xs bg-stone-100 text-stone-700 font-semibold">{i.status}</span></td>
+                    <td className="px-4 py-3 text-stone-500 font-mono text-[11px]">{new Date(i.expiresAt).toISOString().slice(0, 10)}</td>
+                    <td className="px-4 py-3 text-right">{i.status === 'PENDING' && <button disabled={pending} onClick={() => act(actions.revokeInvitationAction(i.id), 'Invitation revoked')} className="text-[11px] font-mono underline text-rose-600 disabled:opacity-40">Revoke</button>}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          )}
+        </div>
+      )}
+
+      {/* MATRIX (real) */}
+      {tab === 'matrix' && (
+        <div className="space-y-4">
+          {matrix.map((g) => (
+            <div key={g.module} className="bg-white border border-stone-200 rounded-xs overflow-x-auto">
+              <div className="px-4 py-2 bg-stone-50/50 border-b border-stone-200 text-xs font-mono uppercase tracking-wider text-stone-500 font-semibold">{g.module}</div>
+              <table className="w-full text-left text-xs font-sans">
+                <thead className="bg-stone-50 border-b border-stone-200 text-stone-500 font-mono text-[11px] uppercase"><tr><th className="px-4 py-2">Capability</th>{ALL_ROLES.map((r) => <th key={r} className="px-3 py-2 text-center">{ROLE_LABELS[r].replace(' Admin', '').replace('istrator', 'in')}</th>)}</tr></thead>
+                <tbody className="divide-y divide-stone-200">
+                  {g.rows.map((row) => (
+                    <tr key={row.key}><td className="px-4 py-2 text-stone-800">{row.label}</td>{ALL_ROLES.map((r) => <td key={r} className="px-3 py-2 text-center">{row.roles[r] ? <span className="text-emerald-700 font-bold">✓</span> : <span className="text-stone-300">—</span>}</td>)}</tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          ))}
+          <p className="text-[11px] text-stone-400">This matrix is generated from the enforced server-side RBAC source of truth (not hand-maintained).</p>
+        </div>
+      )}
+
+      {/* INVITE / LINK MODAL */}
+      {inviteOpen && (
+        <AdminModal isOpen title={inviteLink ? 'Secure Link (copy now)' : 'Invite Staff Member'} onClose={() => setInviteOpen(false)}>
+          {inviteLink ? (
+            <div className="space-y-3">
+              <p className="text-xs text-stone-600">This single-use, time-limited link is shown once. Share it with the staff member through a secure channel — the app does not send email.</p>
+              <textarea readOnly value={inviteLink} onFocus={(e) => e.currentTarget.select()} rows={3} className="w-full px-3 py-2 text-[11px] font-mono border border-stone-300 rounded-xs bg-stone-50" />
+              <div className="flex justify-end"><button onClick={() => setInviteOpen(false)} className="px-4 py-2 text-xs font-semibold text-white bg-[#0F1115] rounded-xs">Done</button></div>
+            </div>
+          ) : (
+            <InviteForm assignable={assignable} onDone={(link, msg) => { notify(msg); if (link) setInviteLink(link); else setInviteOpen(false); router.refresh(); }} />
+          )}
         </AdminModal>
       )}
     </div>
   );
 };
+
+function InviteForm({ assignable, onDone }: { assignable: RoleKey[]; onDone: (link: string | null, msg: string) => void }) {
+  const [f, setF] = useState({ name: '', email: '', roleKey: 'author' as RoleKey });
+  const [pending, start] = useTransition();
+  return (
+    <form onSubmit={(e) => { e.preventDefault(); start(async () => {
+      const r = await actions.createInvitationAction({ name: f.name, email: f.email, roleKey: f.roleKey });
+      if (r.ok && 'data' in r) onDone(`${location.origin}/admin/accept-invitation/?token=${r.data.token}`, 'Invitation created — copy the link');
+      else onDone(null, `Failed: ${(r as { error?: string }).error}`);
+    }); }} className="space-y-3">
+      <div><label className="block text-xs font-mono uppercase text-stone-500 mb-1">Name</label><input required value={f.name} onChange={(e) => setF({ ...f, name: e.target.value })} className="w-full px-3 py-2 text-xs border border-stone-300 rounded-xs" /></div>
+      <div><label className="block text-xs font-mono uppercase text-stone-500 mb-1">Email</label><input type="email" required value={f.email} onChange={(e) => setF({ ...f, email: e.target.value })} className="w-full px-3 py-2 text-xs border border-stone-300 rounded-xs" /></div>
+      <div><label className="block text-xs font-mono uppercase text-stone-500 mb-1">Role</label><select value={f.roleKey} onChange={(e) => setF({ ...f, roleKey: e.target.value as RoleKey })} className="w-full px-3 py-2 text-xs border border-stone-300 rounded-xs bg-white">{assignable.map((r) => <option key={r} value={r}>{ROLE_LABELS[r]}</option>)}</select></div>
+      <p className="text-[11px] text-stone-500 font-mono bg-stone-50 border border-stone-200 p-2 rounded-xs">No email is sent. You will receive a single-use link to share manually. The account stays INVITED until the link is used to set a password.</p>
+      <div className="flex justify-end gap-2 pt-2 border-t border-stone-200"><button type="submit" disabled={pending} className="px-4 py-2 text-xs font-semibold text-white bg-[#0F1115] rounded-xs disabled:opacity-50">Create Invitation</button></div>
+    </form>
+  );
+}
+
+export default AdminTeamPage;

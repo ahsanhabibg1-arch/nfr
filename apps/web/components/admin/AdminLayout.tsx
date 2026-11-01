@@ -13,7 +13,7 @@ export interface AdminUserInfo {
   roleLabel: string;
 }
 
-export const AdminLayout: React.FC<{ children: React.ReactNode; user: AdminUserInfo }> = ({ children, user }) => {
+export const AdminLayout: React.FC<{ children: React.ReactNode; user: AdminUserInfo; visibleModules?: string[] }> = ({ children, user, visibleModules }) => {
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
   const [mobileSidebarOpen, setMobileSidebarOpen] = useState(false);
   const [notificationsOpen, setNotificationsOpen] = useState(false);
@@ -50,6 +50,7 @@ export const AdminLayout: React.FC<{ children: React.ReactNode; user: AdminUserI
         onToggleCollapse={() => setSidebarCollapsed(!sidebarCollapsed)}
         mobileOpen={mobileSidebarOpen}
         onCloseMobile={() => setMobileSidebarOpen(false)}
+        visibleModules={visibleModules}
       />
       {/* user available for sidebar/topbar identity */}
 
