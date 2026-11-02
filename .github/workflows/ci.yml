@@ -1,0 +1,78 @@
+name: CI
+
+# Hosting-independent CI (Batch 13 §9). Runs typecheck, schema validation, the full
+# Vitest suite and a production build against a DISPOSABLE Postgres service only.
+# It NEVER connects to Aiven production or uses production R2 credentials, and never deploys.
+
+on:
+  push:
+    branches: ['**']
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: apps/web
+
+    services:
+      postgres:
+        image: postgres:17
+        env:
+          POSTGRES_USER: ci
+          POSTGRES_PASSWORD: ci
+          POSTGRES_DB: nfrguide_ci
+        ports: ['5432:5432']
+        options: >-
+          --health-cmd "pg_isready -U ci"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 10
+
+    env:
+      # Isolated, non-secret CI configuration. No production services, no real secrets.
+      APP_ENV: test
+      NODE_ENV: test
+      MEDIA_STORAGE_PROVIDER: local
+      NEXT_PUBLIC_SITE_URL: http://localhost:3000
+      DATABASE_URL: postgresql://ci:ci@localhost:5432/nfrguide_ci?schema=public
+      TEST_DATABASE_URL: postgresql://ci:ci@localhost:5432/nfrguide_ci?schema=public
+      # CI Postgres superuser can create databases, so the from-zero migration replay runs here.
+      MIGRATION_REPLAY_ADMIN_URL: postgresql://ci:ci@localhost:5432/postgres
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: apps/web/package-lock.json
+
+      - name: Install (locked)
+        run: npm ci
+
+      - name: Prisma generate
+        run: npx prisma generate
+
+      - name: Prisma schema validate
+        run: npx prisma validate
+
+      - name: Apply migrations to the disposable CI database
+        run: npx prisma migrate deploy
+
+      - name: TypeScript typecheck
+        run: npx tsc --noEmit
+
+      - name: Unit + integration tests (isolated DB, local storage)
+        run: npx vitest run
+
+      - name: Full-text search / migration replay gate
+        run: npm run test:migration
+
+      - name: Production build (isolated config)
+        run: npx next build

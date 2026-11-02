@@ -38,6 +38,25 @@ const nextConfig = {
     }
     return rules;
   },
+
+  // Baseline security headers (Batch 13 §12). Hosting-independent; HSTS is ignored over
+  // plain HTTP (local dev) and takes effect only under HTTPS in production. Admin routes
+  // additionally forbid shared/browser caching of private pages.
+  async headers() {
+    const security = [
+      { key: 'X-Content-Type-Options', value: 'nosniff' },
+      { key: 'X-Frame-Options', value: 'DENY' },
+      { key: 'Referrer-Policy', value: 'strict-origin-when-cross-origin' },
+      { key: 'X-DNS-Prefetch-Control', value: 'off' },
+      { key: 'Strict-Transport-Security', value: 'max-age=63072000; includeSubDomains' },
+      { key: 'Permissions-Policy', value: 'camera=(), microphone=(), geolocation=(), browsing-topics=()' },
+    ];
+    return [
+      { source: '/:path*', headers: security },
+      { source: '/admin/:path*', headers: [{ key: 'Cache-Control', value: 'private, no-store, max-age=0' }] },
+      { source: '/api/:path*', headers: [{ key: 'Cache-Control', value: 'no-store' }] },
+    ];
+  },
 };
 
 export default nextConfig;
