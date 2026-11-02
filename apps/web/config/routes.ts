@@ -23,6 +23,11 @@ export const ROUTES = {
   RODEO_HUB: (slug: string) => `/rodeo-events/${slug}/`,
   RODEO_EVENT: (slug: string) => `/rodeo-events/${slug}/`,
   RODEO_EDITION: (eventSlug: string, editionSlug: string) => `/rodeo-events/${eventSlug}/${editionSlug}/`,
+  // Public venue & competitor entity pages (Batch 12).
+  VENUE: (slug: string) => `/venues/${slug}/`,
+  VENUE_PATTERN: '/venues/:slug',
+  COMPETITOR: (slug: string) => `/competitors/${slug}/`,
+  COMPETITOR_PATTERN: '/competitors/:slug',
 
   // Admin CMS Routes (12 Modules)
   ADMIN: '/admin/',
@@ -40,6 +45,8 @@ export const ROUTES = {
   ADMIN_MONETIZATION: '/admin/monetization/',
   ADMIN_TEAM: '/admin/team/',
   ADMIN_SETTINGS: '/admin/settings/',
+  ADMIN_VENUES: '/admin/venues/',
+  ADMIN_COMPETITORS: '/admin/competitors/',
 } as const;
 
 export interface SectionMeta {

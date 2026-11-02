@@ -93,6 +93,31 @@ async function main() {
     check('GET unknown rodeo slug returns 404', res.status === 404, `status ${res.status}`);
   }
 
+  // Public venue & competitor entity pages (Batch 12). Unknown slugs 404 (routing is
+  // live). When entities exist, the sitemap-listed ones are fetched and must be 200 +
+  // canonical; empty data sets simply exercise the 404 path.
+  {
+    const { res } = await get('/venues/this-venue-does-not-exist-404/');
+    check('GET unknown venue slug returns 404', res.status === 404, `status ${res.status}`);
+  }
+  {
+    const { res } = await get('/competitors/this-competitor-does-not-exist-404/');
+    check('GET unknown competitor slug returns 404', res.status === 404, `status ${res.status}`);
+  }
+  {
+    const { body: sm } = await get('/sitemap.xml');
+    for (const seg of ['venues', 'competitors'] as const) {
+      const m = new RegExp(`https?://[^<]+/${seg}/([^/<]+)/`).exec(sm);
+      if (m) {
+        const { res, body } = await get(`/${seg}/${m[1]}/`);
+        check(`GET sitemap-listed ${seg} entity returns 200`, res.status === 200, `status ${res.status}`);
+        check(`${seg} entity has canonical`, /rel="canonical"/.test(body));
+      } else {
+        check(`no indexable ${seg} in sitemap yet (empty state — routing verified via 404)`, true);
+      }
+    }
+  }
+
   // Public internal search (Batch 07): 200, noindex, SSR results.
   {
     const { res, body } = await get('/search/?q=rodeo');

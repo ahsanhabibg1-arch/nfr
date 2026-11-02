@@ -6,7 +6,7 @@ import { listLandingEntities, getLandingDetail } from '@/lib/cms/landingAdminSer
 import { AdminLandingSeoPage } from '@/views/admin/AdminLandingSeoPage';
 
 const str = (v: string | string[] | undefined) => (Array.isArray(v) ? v[0] : v) || undefined;
-const TYPES: LandingEntityType[] = ['RODEO_HUB', 'RODEO_EVENT', 'RODEO_EDITION', 'DISCIPLINE', 'CATEGORY'];
+const TYPES: LandingEntityType[] = ['RODEO_HUB', 'RODEO_EVENT', 'RODEO_EDITION', 'DISCIPLINE', 'CATEGORY', 'VENUE', 'COMPETITOR'];
 
 export default async function Page({ searchParams }: { searchParams: Promise<Record<string, string | string[] | undefined>> }) {
   const user = await requireUser();

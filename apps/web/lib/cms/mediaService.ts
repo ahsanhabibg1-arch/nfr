@@ -290,7 +290,7 @@ export async function setArticleFeaturedImage(actor: Actor, articleId: string, m
   await audit(actor.id, 'media.article.featured.set', 'article', articleId, mediaId);
 }
 
-type RodeoKind = 'hub' | 'event' | 'edition' | 'discipline' | 'venue';
+type RodeoKind = 'hub' | 'event' | 'edition' | 'discipline' | 'venue' | 'competitor';
 export async function assignRodeoMedia(actor: Actor, kind: RodeoKind, entityId: string, mediaId: string, role = 'gallery'): Promise<void> {
   need(actor, 'media.assign');
   if (!roleHasPermission(actor.roles, 'rodeo.manage')) throw new ServiceError('forbidden', 'Not permitted to manage rodeo media.');
@@ -302,6 +302,7 @@ export async function assignRodeoMedia(actor: Actor, kind: RodeoKind, entityId: 
     case 'edition': await prisma.rodeoEventEditionMedia.upsert({ where: { editionId_mediaId: { editionId: entityId, mediaId } }, update: { role }, create: { editionId: entityId, ...data } }); break;
     case 'discipline': await prisma.disciplineMedia.upsert({ where: { disciplineId_mediaId: { disciplineId: entityId, mediaId } }, update: { role }, create: { disciplineId: entityId, ...data } }); break;
     case 'venue': await prisma.venueMedia.upsert({ where: { venueId_mediaId: { venueId: entityId, mediaId } }, update: { role }, create: { venueId: entityId, ...data } }); break;
+    case 'competitor': await prisma.competitorMedia.upsert({ where: { competitorId_mediaId: { competitorId: entityId, mediaId } }, update: { role }, create: { competitorId: entityId, ...data } }); break;
   }
   await audit(actor.id, 'media.rodeo.assign', `rodeo_${kind}`, entityId, mediaId);
 }
@@ -315,6 +316,7 @@ export async function unassignRodeoMedia(actor: Actor, kind: RodeoKind, entityId
     case 'edition': await prisma.rodeoEventEditionMedia.deleteMany({ where: { editionId: entityId, mediaId } }); break;
     case 'discipline': await prisma.disciplineMedia.deleteMany({ where: { disciplineId: entityId, mediaId } }); break;
     case 'venue': await prisma.venueMedia.deleteMany({ where: { venueId: entityId, mediaId } }); break;
+    case 'competitor': await prisma.competitorMedia.deleteMany({ where: { competitorId: entityId, mediaId } }); break;
   }
   await audit(actor.id, 'media.rodeo.unassign', `rodeo_${kind}`, entityId, mediaId);
 }

@@ -308,3 +308,22 @@ Additive migration `20261101100000_batch11_entity_seo_faq` (dev + test): enum `L
 
 The full fresh-from-zero replay remains the one explicit outstanding gate (local Postgres,
 `MIGRATION_REPLAY_ADMIN_URL`, no Docker).
+
+## Batch 12 (2026-11-01) — `20261101200000_batch12_venue_competitor`
+Additive migration (enum `LandingEntityType` +VENUE/+COMPETITOR; `Venue` +9 nullable/defaulted
+columns; new `Competitor` + `CompetitorDiscipline`/`CompetitorParticipation`/`ArticleCompetitor`/
+`CompetitorMedia`). Generated offline with `prisma migrate diff --from-schema-datasource … --to-schema-datamodel … --script`.
+**This time the generated SQL carried NO spurious searchVector drift** (the `Unsupported("tsvector")`
+declaration suppresses it), so no hand-stripping was needed — verified `grep` for `drop column|drop index|drop default`
+returned nothing. Applied to **test** via `migrate deploy`.
+
+**Dev baseline strategy (documented):** the dev DB had no `_prisma_migrations` (a prior session
+recreated its schema with `db push`). Rather than `migrate deploy` blindly, dev was **baselined** —
+migrations 01→11 marked `prisma migrate resolve --applied <name>` (creates the history table without
+re-running them; dev's schema already matched), then `migrate deploy` applied **only** batch12. A
+durable `pg_dump` backup was captured and validated first. FTS/GIN verified on dev + test after apply.
+
+**Fresh-from-zero replay: STILL OUTSTANDING.** The dev role lacks `CREATEDB`, so the disposable-DB
+replay could not run; the gate fell back to verifying FTS on the test DB (5/5). To clear it (owner-approved,
+no Docker, no reset): as a local admin, `CREATE ROLE nfrguide_replay LOGIN PASSWORD '***' CREATEDB;`
+then set `MIGRATION_REPLAY_ADMIN_URL` in `.env` and run `npm run test:migration`.

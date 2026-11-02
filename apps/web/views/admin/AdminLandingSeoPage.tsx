@@ -31,7 +31,7 @@ export const AdminLandingSeoPage: React.FC<AdminLandingSeoPageProps> = ({ groups
       {toast && <div className="fixed bottom-6 right-6 z-50 bg-[#0F1115] text-[#D4A757] border border-[#D4A757]/40 px-4 py-2.5 rounded-xs shadow-xl text-xs font-mono">{toast}</div>}
       <AdminPageHeader
         title="Landing-Page SEO & FAQ"
-        description="Editor-controlled SEO overrides, editorial intros and FAQs for rodeo hubs, events, editions, disciplines and categories. Empty fields fall back to the page's derived metadata."
+        description="Editor-controlled SEO overrides, editorial intros and FAQs for rodeo hubs, events, editions, disciplines, categories, venues and competitors. Empty fields fall back to the page's derived metadata."
         breadcrumbs={[{ label: 'Admin', path: '/admin/' }, { label: 'Landing SEO & FAQ' }]}
       />
       <div className="grid grid-cols-1 lg:grid-cols-[280px_1fr] gap-6">

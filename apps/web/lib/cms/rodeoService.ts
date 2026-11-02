@@ -7,8 +7,8 @@ import { ServiceError } from './articleService';
 import { deleteEntitySeoForEntity } from './entitySeoService';
 import { deleteFaqsForEntity } from './faqService';
 
-/** Remove polymorphic SEO/FAQ rows when an owning entity is deleted (Batch 11). */
-async function cleanupLandingRows(entityType: 'RODEO_HUB' | 'RODEO_EVENT' | 'RODEO_EDITION' | 'DISCIPLINE' | 'CATEGORY', id: string): Promise<void> {
+/** Remove polymorphic SEO/FAQ rows when an owning entity is deleted (Batch 11/12). */
+async function cleanupLandingRows(entityType: 'RODEO_HUB' | 'RODEO_EVENT' | 'RODEO_EDITION' | 'DISCIPLINE' | 'CATEGORY' | 'VENUE', id: string): Promise<void> {
   await deleteEntitySeoForEntity(entityType, id);
   await deleteFaqsForEntity(entityType, id);
 }
@@ -133,24 +133,64 @@ export async function listVenues(): Promise<VenueRow[]> {
   const rows = await prisma.venue.findMany({ orderBy: { name: 'asc' }, include: { _count: { select: { editions: true } } } });
   return rows.map((v) => ({ id: v.id, slug: v.slug, name: v.name, city: v.city, state: v.state, editionCount: v._count.editions }));
 }
-const VenueInput = z.object({ name: z.string().min(1).max(200), city: z.string().max(120).optional(), state: z.string().max(120).optional(), country: z.string().max(120).optional() });
+/// Full editable venue rows for the dedicated Batch 12 Venue CMS.
+export interface VenueFullRow {
+  id: string; slug: string; name: string; nickname: string | null; summary: string | null; description: string | null;
+  websiteUrl: string | null; capacity: number | null; openedYear: number | null; latitude: number | null; longitude: number | null;
+  city: string | null; state: string | null; country: string | null; editionCount: number;
+}
+export async function listVenuesFull(): Promise<VenueFullRow[]> {
+  const rows = await prisma.venue.findMany({ orderBy: { name: 'asc' }, include: { _count: { select: { editions: true } } } });
+  return rows.map((v) => ({
+    id: v.id, slug: v.slug, name: v.name, nickname: v.nickname, summary: v.summary, description: v.description,
+    websiteUrl: v.websiteUrl, capacity: v.capacity, openedYear: v.openedYear, latitude: v.latitude, longitude: v.longitude,
+    city: v.city, state: v.state, country: v.country, editionCount: v._count.editions,
+  }));
+}
+/// Batch 12: richer Venue fields (all optional; validated; never fabricated). Slug is
+/// derived from the name on create and immutable thereafter.
+const currentYear = new Date().getUTCFullYear();
+const VenueInput = z.object({
+  name: z.string().min(1).max(200),
+  nickname: z.string().max(160).optional(),
+  summary: z.string().max(600).optional(),
+  description: z.string().max(4000).regex(/^[^<>]*$/s, 'HTML is not allowed').optional(),
+  websiteUrl: z.string().url('Must be a valid URL').max(500).optional().or(z.literal('')),
+  capacity: z.number().int().min(0).max(1_000_000).optional(),
+  openedYear: z.number().int().min(1800).max(currentYear + 1).optional(),
+  latitude: z.number().min(-90).max(90).optional(),
+  longitude: z.number().min(-180).max(180).optional(),
+  city: z.string().max(120).optional(),
+  state: z.string().max(120).optional(),
+  country: z.string().max(120).optional(),
+});
 export type VenueInput = z.input<typeof VenueInput>;
+function venueData(v: z.infer<typeof VenueInput>) {
+  return {
+    name: v.name, nickname: v.nickname?.trim() || null, summary: v.summary?.trim() || null,
+    description: v.description?.trim() || null, websiteUrl: v.websiteUrl?.trim() || null,
+    capacity: v.capacity ?? null, openedYear: v.openedYear ?? null,
+    latitude: v.latitude ?? null, longitude: v.longitude ?? null,
+    city: v.city ?? null, state: v.state ?? null, country: v.country ?? null,
+  };
+}
 export async function createVenue(a: Actor, raw: VenueInput): Promise<{ id: string }> {
   req(a); const v = VenueInput.parse(raw); const id = `venue-${slugify(v.name)}`;
   if (await prisma.venue.findUnique({ where: { id } })) throw new ServiceError('conflict', 'A venue with that name exists.');
-  await prisma.venue.create({ data: { id, slug: slugify(v.name), name: v.name, city: v.city ?? null, state: v.state ?? null, country: v.country ?? null } });
+  await prisma.venue.create({ data: { id, slug: slugify(v.name), ...venueData(v) } });
   await audit(a.id, 'rodeo.venue.create', 'venue', id, v.name); return { id };
 }
 export async function updateVenue(a: Actor, id: string, raw: VenueInput): Promise<void> {
   req(a); const v = VenueInput.parse(raw);
   if (!(await prisma.venue.findUnique({ where: { id } }))) throw new ServiceError('not_found', 'Venue not found');
-  await prisma.venue.update({ where: { id }, data: { name: v.name, city: v.city ?? null, state: v.state ?? null, country: v.country ?? null } });
+  await prisma.venue.update({ where: { id }, data: venueData(v) });
   await audit(a.id, 'rodeo.venue.update', 'venue', id, v.name);
 }
 export async function deleteVenue(a: Actor, id: string): Promise<void> {
   req(a); const editions = await prisma.rodeoEventEdition.count({ where: { venueId: id } });
   if (editions > 0) throw new ServiceError('conflict', `Cannot delete: ${editions} edition(s) use this venue.`);
   await prisma.venue.delete({ where: { id } }).catch(() => { throw new ServiceError('not_found', 'Venue not found'); });
+  await cleanupLandingRows('VENUE', id);
   await audit(a.id, 'rodeo.venue.delete', 'venue', id);
 }
 

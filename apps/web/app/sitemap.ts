@@ -7,6 +7,7 @@ import {
   getSectionMeta,
 } from '@/lib/content';
 import { getAllRodeoSlugs } from '@/lib/rodeoContent';
+import { getIndexableVenueSlugs, getIndexableCompetitorSlugs } from '@/lib/batch12Content';
 
 /**
  * Central indexability policy (Master Requirements §8.2 / Batch 01 §12): the XML
@@ -66,6 +67,14 @@ export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
   }
   for (const e of rodeo.editions) {
     entries.push({ url: `${SITE_URL}/rodeo-events/${e.eventSlug}/${e.editionSlug}/`, lastModified: now, changeFrequency: 'weekly', priority: 0.6 });
+  }
+
+  // Public venue & competitor entity pages (Batch 12): only content-bearing, indexable entities.
+  for (const slug of await getIndexableVenueSlugs()) {
+    entries.push({ url: `${SITE_URL}/venues/${slug}/`, lastModified: now, changeFrequency: 'monthly', priority: 0.5 });
+  }
+  for (const slug of await getIndexableCompetitorSlugs()) {
+    entries.push({ url: `${SITE_URL}/competitors/${slug}/`, lastModified: now, changeFrequency: 'monthly', priority: 0.5 });
   }
 
   return entries;

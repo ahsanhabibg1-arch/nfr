@@ -72,6 +72,7 @@ model Article {
   version             Int                            @default(1)
   searchVector        Unsupported("tsvector")?       @default(dbgenerated("((((setweight(to_tsvector('english'::regconfig, COALESCE(title, ''::text)), 'A'::\"char\") || setweight(to_tsvector('english'::regconfig, COALESCE(deck, ''::text)), 'B'::\"char\")) || setweight(to_tsvector('english'::regconfig, COALESCE(excerpt, ''::text)), 'B'::\"char\")) || setweight(to_tsvector('english'::regconfig, COALESCE(subcategory, ''::text)), 'C'::\"char\")) || setweight(to_tsvector('english'::regconfig, COALESCE(\"articleType\", ''::text)), 'C'::\"char\"))"))
   affiliatePlacements AffiliatePlacement[]
+  competitors         ArticleCompetitor[]
   author              Author                         @relation(fields: [authorId], references: [id])
   category            Category                       @relation(fields: [categoryId], references: [id])
   createdBy           User?                          @relation("ArticleCreatedBy", fields: [createdById], references: [id])
@@ -244,6 +245,7 @@ model MediaAsset {
   width               Int?
   articles            ArticleMedia[]
   disciplines         DisciplineMedia[]
+  competitors         CompetitorMedia[]
   uploadedBy          User?                    @relation("MediaUploader", fields: [uploadedById], references: [id])
   editions            RodeoEventEditionMedia[]
   events              RodeoEventMedia[]
@@ -332,8 +334,8 @@ model ArticleMedia {
 /// The seven NFR disciplines. Rich evergreen guide body stored as JSON (`guide`)
 /// — a flexible nested structure that does not benefit from further tables yet.
 model Discipline {
-  id          String              @id @default(uuid())
-  slug        String              @unique
+  id          String                 @id @default(uuid())
+  slug        String                 @unique
   name        String
   shortName   String?
   category    String?
@@ -342,10 +344,11 @@ model Discipline {
   image       String?
   imageCredit String?
   guide       Json?
-  sortOrder   Int                 @default(0)
+  sortOrder   Int                    @default(0)
   articles    ArticleDiscipline[]
   media       DisciplineMedia[]
   events      EventDiscipline[]
+  competitors CompetitorDiscipline[]
 }
 
 model RodeoHub {
@@ -396,7 +399,7 @@ model RodeoHubEvent {
 
 /// Specific occurrence/year. Unique per (eventId, editionSlug) — Master Reqs §7.2.
 model RodeoEventEdition {
-  id             String                   @id @default(uuid())
+  id             String                    @id @default(uuid())
   eventId        String
   editionSlug    String
   label          String
@@ -407,22 +410,109 @@ model RodeoEventEdition {
   purseBenchmark String?
   venueId        String?
   articles       ArticleEdition[]
-  event          RodeoEvent               @relation(fields: [eventId], references: [id], onDelete: Cascade)
-  venue          Venue?                   @relation(fields: [venueId], references: [id])
+  event          RodeoEvent                @relation(fields: [eventId], references: [id], onDelete: Cascade)
+  venue          Venue?                    @relation(fields: [venueId], references: [id])
   media          RodeoEventEditionMedia[]
+  competitors    CompetitorParticipation[]
 
   @@unique([eventId, editionSlug])
 }
 
 model Venue {
-  id       String              @id @default(uuid())
-  slug     String              @unique
-  name     String
-  city     String?
-  state    String?
-  country  String?
-  editions RodeoEventEdition[]
-  media    VenueMedia[]
+  id          String              @id @default(uuid())
+  slug        String              @unique
+  name        String
+  nickname    String?
+  summary     String?
+  description String?
+  websiteUrl  String?
+  capacity    Int?
+  openedYear  Int?
+  latitude    Float?
+  longitude   Float?
+  city        String?
+  state       String?
+  country     String?
+  sortOrder   Int                 @default(0)
+  editions    RodeoEventEdition[]
+  media       VenueMedia[]
+}
+
+/// Rodeo athlete/contestant editorial identity (Batch 12). Distinct from editorial
+/// byline `Author` and auth `User`. Only verified, published facts — no fabricated
+/// bios, achievements, rankings or prize money. Rich evergreen body stored as `guide`
+/// JSON (mirrors `Discipline.guide`). Participation is edition-level only.
+model Competitor {
+  id           String                    @id @default(uuid())
+  slug         String                    @unique
+  fullName     String
+  knownAs      String?
+  summary      String?
+  guide        Json?
+  hometownCity String?
+  state        String?
+  country      String?
+  birthYear    Int?
+  status       String?
+  heroImage    String?
+  imageCredit  String?
+  sortOrder    Int                       @default(0)
+  disciplines  CompetitorDiscipline[]
+  editions     CompetitorParticipation[]
+  articles     ArticleCompetitor[]
+  media        CompetitorMedia[]
+}
+
+/// Competitor ↔ discipline (which events a competitor contests). Composite PK.
+model CompetitorDiscipline {
+  competitorId String
+  disciplineId String
+  competitor   Competitor @relation(fields: [competitorId], references: [id], onDelete: Cascade)
+  discipline   Discipline @relation(fields: [disciplineId], references: [id], onDelete: Cascade)
+
+  @@id([competitorId, disciplineId])
+  @@index([disciplineId])
+}
+
+/// Competitor ↔ specific edition participation (Master Reqs: authoritative at the
+/// edition grain, never the recurring event). `result`/`placement` are optional and
+/// only ever set from verified facts — defaults are empty, not invented.
+model CompetitorParticipation {
+  competitorId String
+  editionId    String
+  result       String?
+  placement    Int?
+  note         String?
+  sortOrder    Int               @default(0)
+  competitor   Competitor        @relation(fields: [competitorId], references: [id], onDelete: Cascade)
+  edition      RodeoEventEdition @relation(fields: [editionId], references: [id], onDelete: Cascade)
+
+  @@id([competitorId, editionId])
+  @@index([editionId])
+}
+
+/// Article ↔ competitor (mirrors ArticleDiscipline/ArticleEvent). Composite PK.
+model ArticleCompetitor {
+  articleId    String
+  competitorId String
+  article      Article    @relation(fields: [articleId], references: [id], onDelete: Cascade)
+  competitor   Competitor @relation(fields: [competitorId], references: [id], onDelete: Cascade)
+
+  @@id([articleId, competitorId])
+  @@index([competitorId])
+}
+
+/// Competitor media usage (mirrors VenueMedia/DisciplineMedia). Composite PK.
+model CompetitorMedia {
+  competitorId String
+  mediaId      String
+  role         String     @default("gallery")
+  sortOrder    Int        @default(0)
+  competitor   Competitor @relation(fields: [competitorId], references: [id], onDelete: Cascade)
+  media        MediaAsset @relation(fields: [mediaId], references: [id], onDelete: Cascade)
+
+  @@id([competitorId, mediaId])
+  @@index([mediaId])
 }
 
 model EventDiscipline {
@@ -1233,4 +1323,6 @@ enum LandingEntityType {
   RODEO_HUB
   RODEO_EVENT
   RODEO_EDITION
+  VENUE
+  COMPETITOR
 }

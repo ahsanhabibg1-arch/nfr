@@ -332,3 +332,23 @@ addressed in `apps/web`:
   remain future batches.
 - **`prisma db seed` server-only fix:** `analyticsSeed` no longer imports the `server-only`
   providers module (inlined), so the full seed runs under plain `tsx`.
+
+## Batch 12 — Venues & Competitors
+- **Venue & Competitor entities now exist** (public pages at `/venues/<slug>/` and
+  `/competitors/<slug>/`, dedicated CMS at `/admin/venues/` and `/admin/competitors/`), superseding
+  the Batch 11 note that they were future work.
+- **No seeded venue/competitor data.** Per owner decision D6, the CMS and model ship but no
+  fabricated profiles/results/rankings/prize money are created — empty states by design. Entities
+  with no real content are non-indexable (page emits `noindex`, excluded from the sitemap).
+- **View analytics do not yet track venues/competitors.** `AnalyticsEntityType` was intentionally
+  not extended (out of Batch 12 scope), so these pages omit the `ViewBeacon`. First-party view
+  counts for them are future work; all other analytics are unchanged.
+- **Competitor↔media and venue↔media** assignment reuses the Media Library's `assignRodeoMedia`
+  (`kind: 'competitor' | 'venue'`); a dedicated in-page media picker for these entities is future UX
+  (the public competitor page renders a `heroImage` URL today).
+- **Participation is edition-level only** (owner decision D2) and never auto-transfers between annual
+  editions; recurring events carry no participation or venue.
+- **Dev server restart required after this batch:** a long-running `next dev` started before the
+  Batch 12 Prisma client regeneration holds a stale client and will 500 on venue/competitor pages
+  until restarted (the Windows `prisma generate` engine-DLL EPERM is cosmetic — the on-disk client
+  is current, as the production build and a fresh process confirm).

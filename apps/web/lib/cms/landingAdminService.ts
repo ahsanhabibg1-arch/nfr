@@ -30,16 +30,19 @@ export interface LandingEntityGroup { type: LandingEntityType; label: string; it
 
 const GROUP_LABEL: Record<LandingEntityType, string> = {
   RODEO_HUB: 'Rodeo Hubs', RODEO_EVENT: 'Rodeo Events', RODEO_EDITION: 'Event Editions', DISCIPLINE: 'Disciplines', CATEGORY: 'Categories',
+  VENUE: 'Venues', COMPETITOR: 'Competitors',
 };
 
 export async function listLandingEntities(actor: Actor): Promise<LandingEntityGroup[]> {
   if (!canUseLandingManager(actor)) throw new ServiceError('forbidden', 'Not permitted to manage landing content.');
-  const [hubs, events, editions, disciplines, categories, seoRows, faqRows] = await Promise.all([
+  const [hubs, events, editions, disciplines, categories, venues, competitors, seoRows, faqRows] = await Promise.all([
     prisma.rodeoHub.findMany({ orderBy: { title: 'asc' }, select: { id: true, title: true, slug: true } }),
     prisma.rodeoEvent.findMany({ orderBy: { name: 'asc' }, select: { id: true, name: true, slug: true } }),
     prisma.rodeoEventEdition.findMany({ orderBy: [{ year: 'desc' }], select: { id: true, label: true, editionSlug: true, event: { select: { slug: true } } } }),
     prisma.discipline.findMany({ orderBy: { sortOrder: 'asc' }, select: { id: true, name: true, slug: true } }),
     prisma.category.findMany({ orderBy: { sortOrder: 'asc' }, select: { id: true, name: true, slug: true } }),
+    prisma.venue.findMany({ orderBy: { name: 'asc' }, select: { id: true, name: true, slug: true } }),
+    prisma.competitor.findMany({ orderBy: [{ sortOrder: 'asc' }, { fullName: 'asc' }], select: { id: true, fullName: true, slug: true } }),
     prisma.entitySeo.findMany({ select: { entityType: true, entityId: true, noindex: true } }),
     prisma.entityFaq.groupBy({ by: ['entityType', 'entityId'], _count: { _all: true } }),
   ]);
@@ -55,6 +58,8 @@ export async function listLandingEntities(actor: Actor): Promise<LandingEntityGr
     { type: 'RODEO_EDITION', label: GROUP_LABEL.RODEO_EDITION, items: editions.map((e) => row('RODEO_EDITION', e.id, e.label, `/rodeo-events/${e.event.slug}/${e.editionSlug}/`)) },
     { type: 'DISCIPLINE', label: GROUP_LABEL.DISCIPLINE, items: disciplines.map((d) => row('DISCIPLINE', d.id, d.name, `/disciplines/${d.slug}/`)) },
     { type: 'CATEGORY', label: GROUP_LABEL.CATEGORY, items: categories.map((c) => row('CATEGORY', c.id, c.name, `/categories/${c.slug}/`)) },
+    { type: 'VENUE', label: GROUP_LABEL.VENUE, items: venues.map((v) => row('VENUE', v.id, v.name, `/venues/${v.slug}/`)) },
+    { type: 'COMPETITOR', label: GROUP_LABEL.COMPETITOR, items: competitors.map((c) => row('COMPETITOR', c.id, c.fullName, `/competitors/${c.slug}/`)) },
   ];
 }
 
@@ -82,6 +87,8 @@ export async function getLandingDetail(actor: Actor, entityType: LandingEntityTy
   let disciplineFields: LandingDetail['disciplineFields'];
   if (entityType === 'DISCIPLINE') { const d = await prisma.discipline.findUniqueOrThrow({ where: { id: entityId }, select: { name: true, slug: true, shortName: true, category: true, tagline: true, summary: true } }); label = d.name; publicUrl = `/disciplines/${d.slug}/`; disciplineFields = { shortName: d.shortName, category: d.category, tagline: d.tagline, summary: d.summary }; }
   else if (entityType === 'CATEGORY') { const c = await prisma.category.findUniqueOrThrow({ where: { id: entityId }, select: { name: true, slug: true } }); label = c.name; publicUrl = `/categories/${c.slug}/`; }
+  else if (entityType === 'VENUE') { const v = await prisma.venue.findUniqueOrThrow({ where: { id: entityId }, select: { name: true, slug: true } }); label = v.name; publicUrl = `/venues/${v.slug}/`; }
+  else if (entityType === 'COMPETITOR') { const c = await prisma.competitor.findUniqueOrThrow({ where: { id: entityId }, select: { fullName: true, slug: true } }); label = c.fullName; publicUrl = `/competitors/${c.slug}/`; }
   // canEdit = holds the entity's owning permission.
   let canEdit = true;
   try { requireEntityPerm(actor, entityType); } catch { canEdit = false; }

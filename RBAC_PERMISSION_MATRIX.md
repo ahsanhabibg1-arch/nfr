@@ -143,6 +143,17 @@ grant/remove `super_admin`; no self role/status change; the last active Super Ad
 protected; `role.assign` required for role changes; all changes audited + session-revoking.
 The `/admin/account/` page (own password + sessions) is available to any authenticated staff.
 
+## Batch 12 — Venues & Competitors (no new permissions)
+
+Venue and Competitor management reuses the existing **`rodeo.manage`** permission — **no new
+permission strings and no change to the five roles**. All venue/competitor create/update/delete,
+discipline links, edition-level participation and article links are gated by `rodeo.manage`,
+enforced server-side in `rodeoService`/`competitorService`, and audited via `AuditLog`. Their
+landing SEO/FAQ routes through the Batch 11 `permForEntity` (VENUE/COMPETITOR → `rodeo.manage`).
+The `/admin/venues/` and `/admin/competitors/` views are visible to `cms.access` holders (view
+metadata added to the module registry: now **14 CMS modules**); every mutation re-checks
+`rodeo.manage`. Public pages surface only PUBLISHED articles; incomplete entities are non-indexable.
+
 ## Batch 11 — Landing SEO & FAQ (no new permissions)
 
 The landing SEO/FAQ layer reuses existing permissions — **no new permission strings**:

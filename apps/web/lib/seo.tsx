@@ -160,6 +160,48 @@ export function rodeoEditionJsonLd(input: {
   return data;
 }
 
+/**
+ * schema.org Place for a venue (Batch 12). Built ONLY from verified stored fields;
+ * optional address/geo/capacity are omitted when unknown rather than fabricated.
+ */
+export function venueJsonLd(input: {
+  name: string; url: string; description?: string | null;
+  city?: string | null; state?: string | null; country?: string | null;
+  latitude?: number | null; longitude?: number | null; capacity?: number | null;
+}): Record<string, unknown> {
+  const data: Record<string, unknown> = { '@context': 'https://schema.org', '@type': 'Place', name: input.name, url: input.url };
+  if (input.description) data.description = input.description;
+  if (input.city || input.state || input.country) {
+    data.address = {
+      '@type': 'PostalAddress',
+      ...(input.city ? { addressLocality: input.city } : {}),
+      ...(input.state ? { addressRegion: input.state } : {}),
+      ...(input.country ? { addressCountry: input.country } : {}),
+    };
+  }
+  if (typeof input.latitude === 'number' && typeof input.longitude === 'number') {
+    data.geo = { '@type': 'GeoCoordinates', latitude: input.latitude, longitude: input.longitude };
+  }
+  if (typeof input.capacity === 'number') data.maximumAttendeeCapacity = input.capacity;
+  return data;
+}
+
+/**
+ * schema.org Person for a competitor/athlete (Batch 12). Built ONLY from verified
+ * stored fields; no fabricated achievements, rankings or prize money are emitted.
+ */
+export function competitorJsonLd(input: {
+  name: string; url: string; description?: string | null; image?: string | null;
+  disciplines?: string[]; hometown?: string | null;
+}): Record<string, unknown> {
+  const data: Record<string, unknown> = { '@context': 'https://schema.org', '@type': 'Person', name: input.name, url: input.url };
+  if (input.description) data.description = input.description;
+  if (input.image) data.image = absolute(input.image);
+  if (input.hometown) data.homeLocation = { '@type': 'Place', name: input.hometown };
+  if (input.disciplines && input.disciplines.length) data.knowsAbout = input.disciplines;
+  return data;
+}
+
 export function breadcrumbJsonLd(
   items: { name: string; path: string }[],
 ): Record<string, unknown> {

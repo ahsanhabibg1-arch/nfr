@@ -178,3 +178,21 @@ deleted (wired into `rodeoService`/`taxonomyService`). Migration
 `20261101100000_batch11_entity_seo_faq` (dev + test); additive, FTS + GIN preserved. Note: the
 development database had been reset by a prior session and was restored via the idempotent seed
 (test DB untouched); dev user accounts require re-bootstrapping.
+
+## Batch 12 (2026-11-01)
+Venue & Competitor entities. **`Venue`** extended additively (nickname, summary, description,
+websiteUrl, capacity, openedYear, latitude, longitude, sortOrder — all nullable except
+`sortOrder` default 0). New model **`Competitor`** (rodeo athlete; slug unique; verified-facts
+fields + evergreen `guide` JSON). New junctions: **`CompetitorDiscipline`** (competitor↔discipline),
+**`CompetitorParticipation`** (competitor↔**edition** only — authoritative at the annual-occurrence
+grain, never the recurring event; optional `result`/`placement`), **`ArticleCompetitor`**
+(article↔competitor, mirrors `ArticleDiscipline`), **`CompetitorMedia`** (mirrors `VenueMedia`).
+Enum **`LandingEntityType`** extended with `VENUE` and `COMPETITOR` so the existing polymorphic
+`EntitySeo`/`EntityFaq` layer is reused (no competing SEO system). Edition↔venue relationship is
+unchanged (`RodeoEventEdition.venueId`); recurring `RodeoEvent` gets **no** permanent venue.
+Reference-safe deletion: a competitor with published-article links is blocked; junctions cascade
+via FK; polymorphic SEO/FAQ rows are cleaned up in the service delete paths (no orphans). Migration
+`20261101200000_batch12_venue_competitor` (dev + test); additive — zero DROP/column-type changes;
+`Article.searchVector` + GIN + FTS preserved. The dev DB (which lacked `_prisma_migrations` after a
+prior `db push` reset) was **baselined** by marking migrations 01–11 `--applied`, then batch12 was
+applied via `migrate deploy` (no re-run, no data loss). A durable `pg_dump` backup was taken first.
