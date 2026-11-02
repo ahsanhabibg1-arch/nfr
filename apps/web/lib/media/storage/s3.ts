@@ -21,16 +21,19 @@ interface S3Config {
   region: string;
   accessKeyId: string;
   secretAccessKey: string;
-  publicBaseUrl: string; // CDN / public bucket base, e.g. https://media.nfrguide.com
+  publicBaseUrl: string; // OPTIONAL future direct-CDN base; delivery uses the gated proxy by default.
 }
 
 function readConfig(): S3Config {
   const bucket = process.env.MEDIA_S3_BUCKET;
   const accessKeyId = process.env.MEDIA_S3_ACCESS_KEY_ID;
   const secretAccessKey = process.env.MEDIA_S3_SECRET_ACCESS_KEY;
-  const publicBaseUrl = process.env.MEDIA_S3_PUBLIC_BASE_URL;
-  if (!bucket || !accessKeyId || !secretAccessKey || !publicBaseUrl) {
-    throw new Error('S3/R2 storage selected but MEDIA_S3_* env vars are not fully configured.');
+  // MEDIA_S3_PUBLIC_BASE_URL is NOT required: media is served through the gated
+  // /api/media proxy (private bucket), so the bucket's own public URL is never used
+  // as the delivery base. The var is reserved for a future, separately-approved public
+  // CDN that serves ONLY published derivatives (see CLOUDFLARE_R2_STORAGE_SETUP.md §5).
+  if (!bucket || !accessKeyId || !secretAccessKey) {
+    throw new Error('S3/R2 storage selected but MEDIA_S3_BUCKET / MEDIA_S3_ACCESS_KEY_ID / MEDIA_S3_SECRET_ACCESS_KEY are not configured.');
   }
   return {
     bucket,
@@ -38,7 +41,7 @@ function readConfig(): S3Config {
     region: process.env.MEDIA_S3_REGION || 'auto',
     accessKeyId,
     secretAccessKey,
-    publicBaseUrl: publicBaseUrl.replace(/\/+$/, ''),
+    publicBaseUrl: (process.env.MEDIA_S3_PUBLIC_BASE_URL || '').replace(/\/+$/, ''),
   };
 }
 
@@ -104,9 +107,16 @@ export class S3StorageAdapter implements StorageAdapter {
     try { await this.send('HeadObjectCommand', { Bucket: this.cfg!.bucket, Key: key }); return true; } catch { return false; }
   }
 
+  /**
+   * Delivery URL for a stored object. Returns the visibility-GATED proxy path
+   * (`/api/media/<key>`), NOT a direct bucket URL — so draft/private originals are
+   * never exposed even when the R2 bucket has a public URL enabled. The bucket is kept
+   * private and the proxy (`app/api/media/[...key]/route.ts`) streams bytes server-side
+   * after enforcing the publication gate. A future public CDN for published derivatives
+   * is a separate, approved mechanism (see CLOUDFLARE_R2_STORAGE_SETUP.md §5), not this.
+   */
   publicUrl(key: string): string {
     assertSafeKey(key);
-    const base = this.cfg?.publicBaseUrl || process.env.MEDIA_S3_PUBLIC_BASE_URL || '';
-    return `${base.replace(/\/+$/, '')}/${key}`;
+    return `/api/media/${key}`;
   }
 }
