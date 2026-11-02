@@ -327,3 +327,9 @@ durable `pg_dump` backup was captured and validated first. FTS/GIN verified on d
 replay could not run; the gate fell back to verifying FTS on the test DB (5/5). To clear it (owner-approved,
 no Docker, no reset): as a local admin, `CREATE ROLE nfrguide_replay LOGIN PASSWORD '***' CREATEDB;`
 then set `MIGRATION_REPLAY_ADMIN_URL` in `.env` and run `npm run test:migration`.
+
+## Batch 14 (2026-11-02) — `20261102120000_batch14_competition_coverage`
+Additive: 3 CreateTable (CompetitionSession/Result/Standing) + 5 CreateEnum + indexes + FKs. Generated
+offline; **no searchVector drift** (no hand-strip needed); zero DROP/column-type change. Applied to local
+**dev + test**; FTS/GIN verified intact; `npm run test:migration` 5/5. **NOT applied to Aiven** (deferred —
+apply later via the guarded path + `cloud-db.mts verify`).

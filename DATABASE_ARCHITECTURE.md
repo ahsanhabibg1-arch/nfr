@@ -196,3 +196,13 @@ via FK; polymorphic SEO/FAQ rows are cleaned up in the service delete paths (no 
 `Article.searchVector` + GIN + FTS preserved. The dev DB (which lacked `_prisma_migrations` after a
 prior `db push` reset) was **baselined** by marking migrations 01–11 `--applied`, then batch12 was
 applied via `migrate deploy` (no re-run, no data loss). A durable `pg_dump` backup was taken first.
+
+## Batch 14 (2026-11-02)
+Edition-scoped competition coverage. New models `CompetitionSession` (schedule), `CompetitionResult`
+(Decimal score/time, self-ref corrections), `CompetitionStanding` (category snapshots) — all FK to
+`RodeoEventEdition` (+ optional discipline/venue/competitor/session). New enums `CoverageStatus`,
+`CoverageVerification`, `CompetitionSessionStatus`, `CompetitionResultType`, `StandingCategory`.
+Public visibility is service-gated to coverageStatus=PUBLISHED AND verification=VERIFIED with
+cross-edition integrity (competitor must participate in the edition; session must match edition).
+Authoritative numerics use `Decimal` (never float). Migration `20261102120000_batch14_competition_coverage`
+(local dev + test ONLY; additive; `Article.searchVector` + GIN + FTS preserved). NOT applied to Aiven.

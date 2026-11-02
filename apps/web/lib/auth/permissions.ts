@@ -23,6 +23,7 @@ export const CMS_MODULES: CmsModule[] = [
   { id: 'rodeo-coverage', label: 'Rodeo Coverage', path: '/admin/rodeo-coverage/', view: 'cms.access' },
   { id: 'venues', label: 'Venues', path: '/admin/venues/', view: 'cms.access' },
   { id: 'competitors', label: 'Competitors', path: '/admin/competitors/', view: 'cms.access' },
+  { id: 'competition', label: 'Competition Coverage', path: '/admin/competition/', view: 'cms.access' },
   { id: 'editorial-organization', label: 'Organization & Taxonomy', path: '/admin/editorial-organization/', view: 'cms.access' },
   { id: 'media', label: 'Media Library', path: '/admin/media/', view: 'media.view' },
   { id: 'sources', label: 'Sources & References', path: '/admin/sources/', view: 'cms.access' },

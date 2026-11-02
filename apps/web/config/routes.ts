@@ -23,6 +23,10 @@ export const ROUTES = {
   RODEO_HUB: (slug: string) => `/rodeo-events/${slug}/`,
   RODEO_EVENT: (slug: string) => `/rodeo-events/${slug}/`,
   RODEO_EDITION: (eventSlug: string, editionSlug: string) => `/rodeo-events/${eventSlug}/${editionSlug}/`,
+  // Edition competition coverage (Batch 14) — nested under the annual edition URL.
+  EDITION_SCHEDULE: (eventSlug: string, editionSlug: string) => `/rodeo-events/${eventSlug}/${editionSlug}/schedule/`,
+  EDITION_RESULTS: (eventSlug: string, editionSlug: string) => `/rodeo-events/${eventSlug}/${editionSlug}/results/`,
+  EDITION_STANDINGS: (eventSlug: string, editionSlug: string) => `/rodeo-events/${eventSlug}/${editionSlug}/standings/`,
   // Public venue & competitor entity pages (Batch 12).
   VENUE: (slug: string) => `/venues/${slug}/`,
   VENUE_PATTERN: '/venues/:slug',
@@ -47,6 +51,7 @@ export const ROUTES = {
   ADMIN_SETTINGS: '/admin/settings/',
   ADMIN_VENUES: '/admin/venues/',
   ADMIN_COMPETITORS: '/admin/competitors/',
+  ADMIN_COMPETITION: '/admin/competition/',
 } as const;
 
 export interface SectionMeta {

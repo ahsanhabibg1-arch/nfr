@@ -349,6 +349,9 @@ model Discipline {
   media       DisciplineMedia[]
   events      EventDiscipline[]
   competitors CompetitorDiscipline[]
+  compSessions CompetitionSession[]
+  compResults  CompetitionResult[]
+  compStandings CompetitionStanding[]
 }
 
 model RodeoHub {
@@ -414,6 +417,9 @@ model RodeoEventEdition {
   venue          Venue?                    @relation(fields: [venueId], references: [id])
   media          RodeoEventEditionMedia[]
   competitors    CompetitorParticipation[]
+  sessions       CompetitionSession[]
+  results        CompetitionResult[]
+  standings      CompetitionStanding[]
 
   @@unique([eventId, editionSlug])
 }
@@ -436,6 +442,7 @@ model Venue {
   sortOrder   Int                 @default(0)
   editions    RodeoEventEdition[]
   media       VenueMedia[]
+  compSessions CompetitionSession[]
 }
 
 /// Rodeo athlete/contestant editorial identity (Batch 12). Distinct from editorial
@@ -461,6 +468,8 @@ model Competitor {
   editions     CompetitorParticipation[]
   articles     ArticleCompetitor[]
   media        CompetitorMedia[]
+  results      CompetitionResult[]
+  standings    CompetitionStanding[]
 }
 
 /// Competitor ↔ discipline (which events a competitor contests). Composite PK.
@@ -1134,6 +1143,148 @@ model EntityFaq {
 
   @@unique([entityType, entityId, question])
   @@index([entityType, entityId, sortOrder])
+}
+
+/// Batch 14 — edition-scoped competition coverage. Generic + reusable across any rodeo
+/// event/edition (NOT NFR-specific). Every record belongs to an annual edition; public
+/// visibility requires coverageStatus=PUBLISHED AND verification=VERIFIED (service-gated).
+/// Authoritative numerics use `Decimal` (Postgres numeric), never floating point. No
+/// fabricated schedules/scores/standings — unknown times/scores stay null.
+model CompetitionSession {
+  id             String                   @id @default(uuid())
+  editionId      String
+  disciplineId   String?
+  venueId        String?
+  date           DateTime?
+  title          String
+  sessionType    String
+  roundNumber    Int?
+  startAt        DateTime?
+  endAt          DateTime?
+  timezone       String?
+  sortOrder      Int                      @default(0)
+  status         CompetitionSessionStatus @default(SCHEDULED)
+  coverageStatus CoverageStatus           @default(DRAFT)
+  verification   CoverageVerification     @default(UNVERIFIED)
+  sourceRef      String?
+  sourceUrl      String?
+  verifiedById   String?
+  verifiedAt     DateTime?
+  notes          String?
+  createdById    String?
+  createdAt      DateTime                 @default(now())
+  updatedAt      DateTime                 @updatedAt
+  edition        RodeoEventEdition        @relation(fields: [editionId], references: [id], onDelete: Cascade)
+  discipline     Discipline?              @relation(fields: [disciplineId], references: [id])
+  venue          Venue?                   @relation(fields: [venueId], references: [id])
+  results        CompetitionResult[]
+
+  @@index([editionId, sortOrder])
+  @@index([editionId, disciplineId])
+}
+
+model CompetitionResult {
+  id             String                @id @default(uuid())
+  editionId      String
+  disciplineId   String
+  sessionId      String?
+  competitorId   String
+  resultType     CompetitionResultType
+  scoreNumeric   Decimal?              @db.Decimal(10, 3)
+  timeSeconds    Decimal?              @db.Decimal(10, 3)
+  placement      Int?
+  isTie          Boolean               @default(false)
+  coverageStatus CoverageStatus        @default(DRAFT)
+  verification   CoverageVerification  @default(UNVERIFIED)
+  sourceRef      String?
+  sourceUrl      String?
+  publishedAt    DateTime?
+  verifiedById   String?
+  verifiedAt     DateTime?
+  notes          String?
+  correctionOfId String?
+  createdById    String?
+  createdAt      DateTime              @default(now())
+  updatedAt      DateTime              @updatedAt
+  edition        RodeoEventEdition     @relation(fields: [editionId], references: [id], onDelete: Cascade)
+  discipline     Discipline            @relation(fields: [disciplineId], references: [id])
+  session        CompetitionSession?   @relation(fields: [sessionId], references: [id])
+  competitor     Competitor            @relation(fields: [competitorId], references: [id], onDelete: Cascade)
+  correctionOf   CompetitionResult?    @relation("ResultCorrection", fields: [correctionOfId], references: [id])
+  corrections    CompetitionResult[]   @relation("ResultCorrection")
+
+  @@index([editionId, disciplineId])
+  @@index([competitorId])
+  @@index([sessionId])
+}
+
+model CompetitionStanding {
+  id             String               @id @default(uuid())
+  editionId      String
+  disciplineId   String?
+  competitorId   String
+  category       StandingCategory
+  rankPosition   Int?
+  aggregateValue Decimal?             @db.Decimal(12, 3)
+  earnings       Decimal?             @db.Decimal(14, 2)
+  points         Decimal?             @db.Decimal(12, 3)
+  coverageStatus CoverageStatus       @default(DRAFT)
+  verification   CoverageVerification @default(UNVERIFIED)
+  sourceRef      String?
+  sourceUrl      String?
+  verifiedById   String?
+  verifiedAt     DateTime?
+  lastUpdatedAt  DateTime             @default(now())
+  createdById    String?
+  createdAt      DateTime             @default(now())
+  updatedAt      DateTime             @updatedAt
+  edition        RodeoEventEdition    @relation(fields: [editionId], references: [id], onDelete: Cascade)
+  discipline     Discipline?          @relation(fields: [disciplineId], references: [id])
+  competitor     Competitor           @relation(fields: [competitorId], references: [id], onDelete: Cascade)
+
+  @@index([editionId, category, disciplineId])
+  @@index([competitorId])
+}
+
+/// Editorial state for coverage records (parallels article workflow; no SCHEDULED).
+enum CoverageStatus {
+  DRAFT
+  IN_REVIEW
+  APPROVED
+  PUBLISHED
+  ARCHIVED
+}
+
+/// Source-verification state (distinct from editorial state).
+enum CoverageVerification {
+  UNVERIFIED
+  VERIFIED
+  CORRECTION_REQUIRED
+}
+
+enum CompetitionSessionStatus {
+  SCHEDULED
+  RESCHEDULED
+  POSTPONED
+  CANCELLED
+  COMPLETED
+}
+
+enum CompetitionResultType {
+  TIME
+  SCORE
+  NO_TIME
+  NO_SCORE
+  DISQUALIFIED
+  WITHDRAWN
+}
+
+/// Standings categories must not be mixed (round vs aggregate vs championship vs season).
+enum StandingCategory {
+  ROUND
+  AGGREGATE
+  CHAMPIONSHIP
+  SEASON
 }
 
 enum WorkflowStatus {

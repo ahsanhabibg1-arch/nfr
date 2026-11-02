@@ -8,6 +8,8 @@ import { getEntitySeo, mergeSeoMeta } from '@/lib/cms/entitySeoService';
 import { listPublicFaqs } from '@/lib/cms/faqService';
 import { RodeoEditionView } from '@/views/RodeoViews';
 import { ViewBeacon } from '@/components/analytics/ViewBeacon';
+import { CoverageNav } from '@/components/editorial/CoverageNav';
+import { editionCoverageSummary } from '@/lib/cms/competitionService';
 
 type Params = { params: Promise<{ slug: string; edition: string }> };
 
@@ -31,10 +33,11 @@ export default async function Page({ params }: Params) {
   const { slug, edition } = await params;
   const ed = await getPublicEditionBySlug(slug, edition);
   if (!ed) notFound();
-  const [associations, seo, faqs] = await Promise.all([
+  const [associations, seo, faqs, coverage] = await Promise.all([
     getEntityCommercialAssociations('RODEO_EDITION', ed.id),
     getEntitySeo('RODEO_EDITION', ed.id),
     listPublicFaqs('RODEO_EDITION', ed.id),
+    editionCoverageSummary(ed.id),
   ]);
   const url = `${SITE_URL}${ROUTES.RODEO_EDITION(ed.event.slug, ed.editionSlug)}`;
   const eventLd = rodeoEditionJsonLd({ name: `${ed.event.name}: ${ed.label}`, startAt: ed.startAt, endAt: ed.endAt, url, venue: ed.venue });
@@ -49,6 +52,12 @@ export default async function Page({ params }: Params) {
   return (
     <>
       <JsonLd data={ld} />
+      {coverage.hasAny && (
+        <div className="max-w-3xl mx-auto px-4 sm:px-6 pt-8">
+          <CoverageNav eventSlug={ed.event.slug} editionSlug={ed.editionSlug} active="overview" />
+          <p className="text-xs text-stone-500 -mt-4 mb-2">Published coverage: {coverage.sessions} schedule · {coverage.results} results · {coverage.standings} standings.</p>
+        </div>
+      )}
       <RodeoEditionView edition={ed} associations={associations} extras={{ intro: seo?.intro, faqs }} />
       <ViewBeacon entityType="RODEO_EDITION" entityId={ed.id} path={ROUTES.RODEO_EDITION(ed.event.slug, ed.editionSlug)} />
     </>

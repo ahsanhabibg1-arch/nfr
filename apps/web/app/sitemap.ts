@@ -8,6 +8,7 @@ import {
 } from '@/lib/content';
 import { getAllRodeoSlugs } from '@/lib/rodeoContent';
 import { getIndexableVenueSlugs, getIndexableCompetitorSlugs } from '@/lib/batch12Content';
+import { listPublicCoverageEditions } from '@/lib/cms/competitionService';
 
 /**
  * Central indexability policy (Master Requirements §8.2 / Batch 01 §12): the XML
@@ -75,6 +76,14 @@ export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
   }
   for (const slug of await getIndexableCompetitorSlugs()) {
     entries.push({ url: `${SITE_URL}/competitors/${slug}/`, lastModified: now, changeFrequency: 'monthly', priority: 0.5 });
+  }
+
+  // Edition competition coverage (Batch 14): only sections with published+verified data.
+  for (const c of await listPublicCoverageEditions()) {
+    const base = `${SITE_URL}/rodeo-events/${c.eventSlug}/${c.editionSlug}`;
+    if (c.schedule) entries.push({ url: `${base}/schedule/`, lastModified: now, changeFrequency: 'weekly', priority: 0.6 });
+    if (c.results) entries.push({ url: `${base}/results/`, lastModified: now, changeFrequency: 'weekly', priority: 0.6 });
+    if (c.standings) entries.push({ url: `${base}/standings/`, lastModified: now, changeFrequency: 'weekly', priority: 0.6 });
   }
 
   return entries;
