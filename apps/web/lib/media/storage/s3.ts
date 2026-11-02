@@ -35,9 +35,14 @@ function readConfig(): S3Config {
   if (!bucket || !accessKeyId || !secretAccessKey) {
     throw new Error('S3/R2 storage selected but MEDIA_S3_BUCKET / MEDIA_S3_ACCESS_KEY_ID / MEDIA_S3_SECRET_ACCESS_KEY are not configured.');
   }
+  // R2/S3 custom endpoints are ORIGIN-only (bucket is addressed separately via `Bucket`).
+  // Normalize to the origin so a mistakenly appended path like `…/nfr` cannot double the
+  // bucket or break signing.
+  let endpoint = process.env.MEDIA_S3_ENDPOINT || undefined;
+  if (endpoint) { try { endpoint = new URL(endpoint).origin; } catch { /* leave as-is; SDK will error clearly */ } }
   return {
     bucket,
-    endpoint: process.env.MEDIA_S3_ENDPOINT || undefined,
+    endpoint,
     region: process.env.MEDIA_S3_REGION || 'auto',
     accessKeyId,
     secretAccessKey,

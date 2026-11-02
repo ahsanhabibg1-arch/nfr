@@ -3,11 +3,11 @@
 **Type:** infrastructure integration (not Batch 13; no website deploy). **Baseline:** `a3fa9b9`.
 **Date:** 2026-11-02. **Written for:** the project owner.
 
-> **Status (updated):** delivery architecture **approved + implemented** (private bucket + gated proxy);
-> the media-URL gate-bypass risk is **fixed in code** and covered by tests. **Credential rotation is
-> deferred by the owner** ("will rotate later") — so **no authenticated R2 access was attempted** and the
-> compromised token was **never used**. Activating R2 in production still requires the rotated creds and
-> the actions in §12.
+> **Status (verified 2026-11-02):** delivery architecture implemented (private bucket + gated proxy);
+> the media-URL gate-bypass risk is fixed and tested. Owner rotated to a bucket-scoped token; the AWS SDK
+> is installed; and a **live R2 round-trip on bucket `nfr` PASSED 7/7** (auth, upload, download + SHA-256
+> integrity, delete) using a single disposable object under `__verify/`. The compromised token was never
+> used; no unrelated bucket object was touched; local storage remains the default.
 
 ## 1. Bucket configuration (non-secret, owner-provided)
 - Provider: Cloudflare R2 · Bucket: `nfr` · Location: APAC · Region (SDK): `auto`.
@@ -90,14 +90,19 @@ R2 must **not** weaken these — hence the private-bucket + proxy design in §5.
 - Cloud production: `MEDIA_STORAGE_PROVIDER=r2` + `MEDIA_S3_*` set in the host's secrets (server-side).
 - Local media is **not** auto-copied to R2; R2 is used only by the deployed environment.
 
-## 9. Testing results (actual — local backend; no R2 network)
-- **Prisma validate:** ✅ valid. **TypeScript `tsc --noEmit`:** ✅ clean. **`next build`:** ✅ success.
-- **Vitest:** ✅ **212/212** (incl. new `tests/r2-storage.test.ts`): R2 `publicUrl` returns the gated
-  `/api/media/<key>` path (never a direct/absolute bucket URL), delivery-URL generation needs no
-  credentials (credential isolation), R2 and local share the same gated path shape, provider id recorded,
-  object-key/traversal validation. Existing media + RBAC + publication-rights suites still green.
-- **Authenticated R2 round-trip (connectivity/upload/read/delete on an isolated temp prefix):** **NOT
-  run** — deferred until the owner rotates credentials (the compromised token was never used).
+## 9. Testing results (actual)
+- **Live R2 round-trip** (`scripts/r2-verify.mts`, bucket `nfr`): ✅ **7/7** — config present; bucket
+  access + credentials valid (HeadBucket); upload (PutObject) of one `__verify/<uuid>.txt`; download +
+  **byte-for-byte SHA-256 integrity** (GetObject); exists (HeadObject); authorized delete (DeleteObject);
+  object gone after delete. No unrelated object was listed, read, overwritten or deleted.
+- **`@aws-sdk/client-s3`** installed (v3). Endpoint is normalized to origin in the adapter, so a
+  mistakenly path-suffixed `MEDIA_S3_ENDPOINT` (e.g. `…/nfr`) cannot break signing/addressing.
+- **Prisma validate:** ✅ valid. **`tsc --noEmit`:** ✅ clean. **`next build`:** ✅ success.
+- **Vitest (storage forced `local`):** ✅ **212/212** (incl. `tests/r2-storage.test.ts`): R2 `publicUrl`
+  returns the gated `/api/media/<key>` path (never a direct bucket URL), delivery-URL needs no credentials,
+  R2/local share the same gated path, provider id recorded, object-key/traversal validation; existing
+  media + RBAC + publication-rights suites green.
+- **Databases unchanged:** no DB operation was performed against Aiven or the local databases.
 
 ## 10. Backup & recovery considerations
 R2 has no automatic cross-region backup on its own; consider versioning and/or periodic sync for the
@@ -108,15 +113,17 @@ production bucket. Originals are the system of record for media bytes (Postgres 
 approved private/public split. Not configured now; do not enable a public custom domain until approved.
 
 ## 12. Remaining owner decisions / actions
-1. ✅ **Gate 2 — delivery architecture:** approved + implemented (private bucket + gated proxy).
-2. ⛔ **Gate 1 — rotate creds (owner, deferred):** revoke the exposed token; create a **bucket-scoped**
-   R2 token (Object R/W on `nfr` only); put new `MEDIA_S3_*` in local `apps/web/.env`. Until done, R2
-   cannot be activated and no authenticated access runs. **Still the top security action.**
-3. **R2 public dev URL:** disable it (or confirm nothing depends on it) so private originals are not
-   exposed — the app no longer needs it (delivery is via the gated proxy).
-4. **Activate R2 when ready:** `npm i @aws-sdk/client-s3`, set `MEDIA_STORAGE_PROVIDER=r2` + `MEDIA_S3_*`
-   (rotated creds), then run the connectivity/round-trip check on an isolated temp prefix.
-5. (Later) custom domain + CDN for published derivatives (separate approval).
+1. ✅ **Gate 2 — delivery architecture:** implemented (private bucket + gated proxy).
+2. ✅ **Gate 1 — creds rotated + verified:** bucket-scoped token works against `nfr` (round-trip 7/7).
+3. ✅ **AWS SDK installed**, endpoint hardened (origin-normalized).
+4. ⚠️ **Keep local dev on local storage:** set `MEDIA_STORAGE_PROVIDER="local"` in your local
+   `apps/web/.env` (verification used an explicit override; local dev must not default to R2). The
+   `MEDIA_S3_*` values can remain for when the deployed environment uses them.
+5. **R2 public dev URL:** confirm it is **disabled** (the app never needs it — delivery is via the gated
+   proxy; leaving it on would expose objects by key).
+6. **Confirm the token is bucket-scoped** (Object R/W on `nfr` only, not account-global).
+7. (Later) custom domain + CDN for **published derivatives only** (separate approval); bucket backup/
+   versioning strategy before production traffic.
 
 ---
 *No R2 object was created, read, overwritten or deleted. No Aiven/production DB write. Local storage

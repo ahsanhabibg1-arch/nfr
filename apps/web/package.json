@@ -25,6 +25,7 @@
     "bootstrap:admin": "tsx prisma/bootstrap-admin.ts"
   },
   "dependencies": {
+    "@aws-sdk/client-s3": "^3.1161.0",
     "@prisma/client": "6.19.3",
     "bcryptjs": "^3.0.3",
     "lucide-react": "^0.546.0",
