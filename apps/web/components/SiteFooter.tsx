@@ -17,11 +17,11 @@ const SECTIONS_FALLBACK: NavLink[] = [
   { label: 'More Rodeo (Hubs & Major Events)', url: ROUTES.MORE_RODEO, isExternal: false },
 ];
 const ACADEMY_FALLBACK: NavLink[] = [
+  { label: 'Competitors Directory', url: '/competitors/', isExternal: false },
+  { label: 'Venues Directory', url: '/venues/', isExternal: false },
   { label: 'The 8-Second Rule Explainer', url: ROUTES.ARTICLE('inside-the-chutes-nfr-roughstock-intensity'), isExternal: false },
   { label: '50/50 Scoring Mechanics', url: ROUTES.DISCIPLINE('saddle-bronc-riding'), isExternal: false },
   { label: 'The 10-Round Average Formula', url: ROUTES.ARTICLE('the-anatomy-of-the-10-round-average'), isExternal: false },
-  { label: 'TV & Streaming Directory', url: ROUTES.ARTICLE('how-to-watch-nfr-streaming-cable-cord-cutters'), isExternal: false },
-  { label: 'Thomas & Mack Venue Tips', url: ROUTES.ARTICLE('navigating-thomas-and-mack-center-guide'), isExternal: false },
 ];
 
 const FooterLinks: React.FC<{ links: NavLink[] }> = ({ links }) => (

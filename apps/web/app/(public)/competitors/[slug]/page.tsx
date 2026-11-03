@@ -54,7 +54,8 @@ export default async function CompetitorPage({ params }: Params) {
       />
       <article className="max-w-3xl mx-auto px-4 sm:px-6 py-10">
         <header className="mb-6">
-          <p className="text-[11px] font-mono uppercase tracking-wider text-stone-500">Rodeo Competitor{c.status ? ` · ${c.status}` : ''}</p>
+          <Link href="/competitors/" className="text-[11px] font-mono text-[#8B5E3C] hover:underline">← All competitors</Link>
+          <p className="text-[11px] font-mono uppercase tracking-wider text-stone-500 mt-2">Rodeo Competitor{c.status ? ` · ${c.status}` : ''}</p>
           <h1 className="font-serif text-3xl sm:text-4xl font-bold text-stone-900 mt-1">{c.fullName}</h1>
           {c.knownAs && <p className="text-stone-500 italic mt-1">“{c.knownAs}”</p>}
           {hometown && <p className="text-sm text-stone-600 mt-2">{hometown}</p>}

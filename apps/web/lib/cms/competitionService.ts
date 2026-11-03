@@ -248,21 +248,29 @@ export async function setCoverageStatus(a: Actor, kind: CoverageKind, id: string
   await audit(a.id, `competition.${kind}.status`, `competition_${kind}`, id, status);
 }
 
-// ======================= ADMIN reads =======================
-export async function listSessionsAdmin(a: Actor, editionId: string) {
+// ======================= ADMIN reads (with optional filters) =======================
+export interface CoverageFilters { disciplineId?: string; competitorId?: string; coverageStatus?: CoverageStatus; verification?: CoverageVerification; category?: StandingCategory }
+const f = (flt?: CoverageFilters) => ({
+  ...(flt?.disciplineId ? { disciplineId: flt.disciplineId } : {}),
+  ...(flt?.competitorId ? { competitorId: flt.competitorId } : {}),
+  ...(flt?.coverageStatus ? { coverageStatus: flt.coverageStatus } : {}),
+  ...(flt?.verification ? { verification: flt.verification } : {}),
+});
+
+export async function listSessionsAdmin(a: Actor, editionId: string, flt?: CoverageFilters) {
   req(a);
-  const rows = await prisma.competitionSession.findMany({ where: { editionId }, orderBy: [{ sortOrder: 'asc' }, { startAt: 'asc' }], include: { discipline: { select: { name: true } }, venue: { select: { name: true } } } });
-  return rows.map((s) => ({ id: s.id, title: s.title, sessionType: s.sessionType, date: s.date?.toISOString() ?? null, startAt: s.startAt?.toISOString() ?? null, endAt: s.endAt?.toISOString() ?? null, timezone: s.timezone, roundNumber: s.roundNumber, status: s.status, coverageStatus: s.coverageStatus, verification: s.verification, discipline: s.discipline?.name ?? null, venue: s.venue?.name ?? null, sortOrder: s.sortOrder }));
+  const rows = await prisma.competitionSession.findMany({ where: { editionId, ...f(flt) }, orderBy: [{ sortOrder: 'asc' }, { startAt: 'asc' }], include: { discipline: { select: { name: true } }, venue: { select: { name: true } } } });
+  return rows.map((s) => ({ id: s.id, title: s.title, sessionType: s.sessionType, disciplineId: s.disciplineId, date: s.date?.toISOString() ?? null, startAt: s.startAt?.toISOString() ?? null, endAt: s.endAt?.toISOString() ?? null, timezone: s.timezone, roundNumber: s.roundNumber, status: s.status, coverageStatus: s.coverageStatus, verification: s.verification, discipline: s.discipline?.name ?? null, venue: s.venue?.name ?? null, sortOrder: s.sortOrder, sourceRef: s.sourceRef, sourceUrl: s.sourceUrl, notes: s.notes }));
 }
-export async function listResultsAdmin(a: Actor, editionId: string) {
+export async function listResultsAdmin(a: Actor, editionId: string, flt?: CoverageFilters) {
   req(a);
-  const rows = await prisma.competitionResult.findMany({ where: { editionId }, orderBy: [{ disciplineId: 'asc' }, { placement: 'asc' }], include: { discipline: { select: { name: true } }, competitor: { select: { fullName: true } } } });
-  return rows.map((r) => ({ id: r.id, discipline: r.discipline.name, competitor: r.competitor.fullName, resultType: r.resultType, scoreNumeric: decStr(r.scoreNumeric), timeSeconds: decStr(r.timeSeconds), placement: r.placement, isTie: r.isTie, coverageStatus: r.coverageStatus, verification: r.verification, correctionOfId: r.correctionOfId }));
+  const rows = await prisma.competitionResult.findMany({ where: { editionId, ...f(flt) }, orderBy: [{ disciplineId: 'asc' }, { placement: 'asc' }], include: { discipline: { select: { name: true } }, competitor: { select: { fullName: true } } } });
+  return rows.map((r) => ({ id: r.id, disciplineId: r.disciplineId, discipline: r.discipline.name, competitorId: r.competitorId, competitor: r.competitor.fullName, resultType: r.resultType, scoreNumeric: decStr(r.scoreNumeric), timeSeconds: decStr(r.timeSeconds), placement: r.placement, isTie: r.isTie, coverageStatus: r.coverageStatus, verification: r.verification, correctionOfId: r.correctionOfId, sourceRef: r.sourceRef, sourceUrl: r.sourceUrl, notes: r.notes }));
 }
-export async function listStandingsAdmin(a: Actor, editionId: string) {
+export async function listStandingsAdmin(a: Actor, editionId: string, flt?: CoverageFilters) {
   req(a);
-  const rows = await prisma.competitionStanding.findMany({ where: { editionId }, orderBy: [{ category: 'asc' }, { rankPosition: 'asc' }], include: { discipline: { select: { name: true } }, competitor: { select: { fullName: true } } } });
-  return rows.map((s) => ({ id: s.id, category: s.category, discipline: s.discipline?.name ?? null, competitor: s.competitor.fullName, rankPosition: s.rankPosition, aggregateValue: decStr(s.aggregateValue), earnings: decStr(s.earnings), points: decStr(s.points), coverageStatus: s.coverageStatus, verification: s.verification }));
+  const rows = await prisma.competitionStanding.findMany({ where: { editionId, ...f(flt), ...(flt?.category ? { category: flt.category } : {}) }, orderBy: [{ category: 'asc' }, { rankPosition: 'asc' }], include: { discipline: { select: { name: true } }, competitor: { select: { fullName: true } } } });
+  return rows.map((s) => ({ id: s.id, category: s.category, disciplineId: s.disciplineId, discipline: s.discipline?.name ?? null, competitorId: s.competitorId, competitor: s.competitor.fullName, rankPosition: s.rankPosition, aggregateValue: decStr(s.aggregateValue), earnings: decStr(s.earnings), points: decStr(s.points), coverageStatus: s.coverageStatus, verification: s.verification, sourceRef: s.sourceRef, sourceUrl: s.sourceUrl }));
 }
 
 // ======================= PUBLIC reads (PUBLISHED + VERIFIED only) =======================

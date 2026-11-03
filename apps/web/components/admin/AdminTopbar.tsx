@@ -67,14 +67,8 @@ export const AdminTopbar: React.FC<AdminTopbarProps> = ({
         </div>
       </form>
 
-      {/* Right: Actions, Environment Pill, Notifications, User Profile */}
+      {/* Right: Actions, Notifications, User Profile */}
       <div className="flex items-center gap-3 shrink-0">
-        {/* Environment Label */}
-        <span className="hidden sm:inline-flex items-center gap-1 text-[10px] font-mono font-bold uppercase tracking-wider text-amber-800 bg-amber-50 border border-amber-200 px-2 py-0.5 rounded-xs">
-          <span className="w-1.5 h-1.5 rounded-full bg-amber-500 animate-pulse" aria-hidden="true" />
-          Demo Stage
-        </span>
-
         {/* Quick New Article Button */}
         <Link
           href={ROUTES.ADMIN_ARTICLE_NEW}

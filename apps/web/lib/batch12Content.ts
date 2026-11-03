@@ -128,3 +128,46 @@ export function competitorHometown(c: Pick<PublicCompetitor, 'hometownCity' | 's
   const parts = [c.hometownCity, c.state, c.country].filter(Boolean);
   return parts.length ? parts.join(', ') : null;
 }
+
+// ---- Public directories (Batch 15) ----
+const PAGE_SIZE = 24;
+function clampPage(p: unknown): number { const n = Math.floor(Number(p) || 1); return n < 1 ? 1 : n > 10000 ? 10000 : n; }
+function cleanQuery(q: unknown): string { return typeof q === 'string' ? q.trim().slice(0, 80) : ''; }
+
+export interface CompetitorCard { slug: string; fullName: string; knownAs: string | null; hometown: string | null; status: string | null; disciplines: string[]; heroImage: string | null }
+export interface DirectoryResult<T> { items: T[]; total: number; page: number; pageSize: number; totalPages: number }
+
+export async function listPublicCompetitors(opts: { q?: string; disciplineSlug?: string; page?: number }): Promise<DirectoryResult<CompetitorCard> & { disciplineOptions: { slug: string; name: string }[] }> {
+  const q = cleanQuery(opts.q); const page = clampPage(opts.page); const disciplineSlug = cleanQuery(opts.disciplineSlug) || undefined;
+  const where = {
+    ...(q ? { fullName: { contains: q, mode: 'insensitive' as const } } : {}),
+    ...(disciplineSlug ? { disciplines: { some: { discipline: { slug: disciplineSlug } } } } : {}),
+  };
+  const [total, rows, disciplineOptions] = await Promise.all([
+    prisma.competitor.count({ where }),
+    prisma.competitor.findMany({
+      where, orderBy: [{ sortOrder: 'asc' }, { fullName: 'asc' }], skip: (page - 1) * PAGE_SIZE, take: PAGE_SIZE,
+      select: { slug: true, fullName: true, knownAs: true, hometownCity: true, state: true, country: true, status: true, heroImage: true, disciplines: { select: { discipline: { select: { name: true } } } } },
+    }),
+    prisma.discipline.findMany({ orderBy: { sortOrder: 'asc' }, select: { slug: true, name: true } }),
+  ]);
+  const items: CompetitorCard[] = rows.map((c) => ({ slug: c.slug, fullName: c.fullName, knownAs: c.knownAs, hometown: competitorHometown(c), status: c.status, disciplines: c.disciplines.map((d) => d.discipline.name), heroImage: c.heroImage }));
+  return { items, total, page, pageSize: PAGE_SIZE, totalPages: Math.max(1, Math.ceil(total / PAGE_SIZE)), disciplineOptions };
+}
+
+export interface VenueCard { slug: string; name: string; nickname: string | null; location: string | null; capacity: number | null; editionCount: number }
+export async function listPublicVenues(opts: { q?: string; country?: string; page?: number }): Promise<DirectoryResult<VenueCard> & { countryOptions: string[] }> {
+  const q = cleanQuery(opts.q); const page = clampPage(opts.page); const country = cleanQuery(opts.country) || undefined;
+  const where = {
+    ...(q ? { name: { contains: q, mode: 'insensitive' as const } } : {}),
+    ...(country ? { country: { equals: country, mode: 'insensitive' as const } } : {}),
+  };
+  const [total, rows, countryRows] = await Promise.all([
+    prisma.venue.count({ where }),
+    prisma.venue.findMany({ where, orderBy: [{ sortOrder: 'asc' }, { name: 'asc' }], skip: (page - 1) * PAGE_SIZE, take: PAGE_SIZE,
+      select: { slug: true, name: true, nickname: true, city: true, state: true, country: true, capacity: true, _count: { select: { editions: true } } } }),
+    prisma.venue.findMany({ where: { country: { not: null } }, distinct: ['country'], select: { country: true }, orderBy: { country: 'asc' } }),
+  ]);
+  const items: VenueCard[] = rows.map((v) => ({ slug: v.slug, name: v.name, nickname: v.nickname, location: [v.city, v.state, v.country].filter(Boolean).join(', ') || null, capacity: v.capacity, editionCount: v._count.editions }));
+  return { items, total, page, pageSize: PAGE_SIZE, totalPages: Math.max(1, Math.ceil(total / PAGE_SIZE)), countryOptions: countryRows.map((c) => c.country!).filter(Boolean) };
+}

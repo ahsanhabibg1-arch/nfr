@@ -70,6 +70,10 @@ export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
     entries.push({ url: `${SITE_URL}/rodeo-events/${e.eventSlug}/${e.editionSlug}/`, lastModified: now, changeFrequency: 'weekly', priority: 0.6 });
   }
 
+  // Public directories (Batch 15): the canonical index pages.
+  entries.push({ url: `${SITE_URL}/competitors/`, lastModified: now, changeFrequency: 'weekly', priority: 0.6 });
+  entries.push({ url: `${SITE_URL}/venues/`, lastModified: now, changeFrequency: 'weekly', priority: 0.6 });
+
   // Public venue & competitor entity pages (Batch 12): only content-bearing, indexable entities.
   for (const slug of await getIndexableVenueSlugs()) {
     entries.push({ url: `${SITE_URL}/venues/${slug}/`, lastModified: now, changeFrequency: 'monthly', priority: 0.5 });

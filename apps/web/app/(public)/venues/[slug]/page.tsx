@@ -53,7 +53,8 @@ export default async function VenuePage({ params }: Params) {
       />
       <article className="max-w-3xl mx-auto px-4 sm:px-6 py-10">
         <header className="mb-6">
-          <p className="text-[11px] font-mono uppercase tracking-wider text-stone-500">Rodeo Venue</p>
+          <Link href="/venues/" className="text-[11px] font-mono text-[#8B5E3C] hover:underline">← All venues</Link>
+          <p className="text-[11px] font-mono uppercase tracking-wider text-stone-500 mt-2">Rodeo Venue</p>
           <h1 className="font-serif text-3xl sm:text-4xl font-bold text-stone-900 mt-1">{v.name}</h1>
           {v.nickname && <p className="text-stone-500 italic mt-1">“{v.nickname}”</p>}
           {place && <p className="text-sm text-stone-600 mt-2">{place}</p>}
