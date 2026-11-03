@@ -70,9 +70,9 @@ export const AdminLayout: React.FC<{ children: React.ReactNode; user: AdminUserI
         </main>
 
         {/* Admin Footer */}
-        <footer className="h-12 border-t border-stone-200 bg-white px-6 flex items-center justify-between text-xs text-stone-500 font-sans">
+        <footer className="h-12 border-t border-stone-200 bg-white px-6 flex items-center justify-between text-xs text-ink-muted font-sans">
           <span>NFRGuide Custom Editorial CMS</span>
-          <span className="font-mono text-[11px] text-stone-400">
+          <span className="font-mono text-[11px] text-ink-muted">
             Signed in as {user.email} &middot; {user.roleLabel}
           </span>
         </footer>

@@ -3,6 +3,9 @@ import { SEOGroup } from '../types/admin';
 
 export type ValidationSeverity = 'blocker' | 'compliance' | 'warning' | 'notice';
 
+/** Image rights statuses that clear the publish gate. Anything else (incl. unknown values) blocks. */
+export const RESOLVED_IMAGE_RIGHTS = ['Staff Photo', 'Editorial Pool', 'PRCA Archive', 'Licensed Creative'] as const;
+
 export interface ValidationFinding {
   id: string;
   group: SEOGroup;
@@ -95,8 +98,9 @@ export function validateArticle(article: Partial<Article>): ArticleValidationRep
   // ==========================================
 
   // Check 5: Featured Image Usage Rights
+  // Fail closed: only an explicitly recognised, resolved rights status passes.
   const imageRights = article.imageRightsStatus || 'Unresolved';
-  const hasRightsResolved = imageRights !== 'Unresolved';
+  const hasRightsResolved = (RESOLVED_IMAGE_RIGHTS as readonly string[]).includes(imageRights);
   findings.push({
     id: 'val-image-rights',
     group: 'Image SEO',

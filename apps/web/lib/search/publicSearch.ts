@@ -1,5 +1,7 @@
 import 'server-only';
 import { Prisma } from '@prisma/client';
+import { excludeFixturesFromPublic, publicSlugWhere } from '../fixturePolicy';
+import { FIXTURE_PREFIX } from '../../prisma/fixtures';
 import { prisma } from '../db';
 import { PRIMARY_SECTIONS } from '../../config/routes';
 import { normalizeQuery, highlightTokens, buildExcerpt } from './query';
@@ -108,7 +110,9 @@ export async function runPublicSearch(input: Partial<SearchFilters> & { q?: stri
     const discCond = discipline
       ? Prisma.sql`AND EXISTS (SELECT 1 FROM "ArticleDiscipline" ad JOIN "Discipline" d ON d.id = ad."disciplineId" WHERE ad."articleId" = a.id AND d.slug = ${discipline})`
       : Prisma.empty;
-    const where = Prisma.sql`a."workflowStatus"::text = 'PUBLISHED' AND a."searchVector" @@ ${tsq} ${catCond} ${discCond}`;
+    // Fixtures never surface as real content in production (lib/fixturePolicy.ts).
+    const fixtureCond = excludeFixturesFromPublic() ? Prisma.sql`AND a.slug NOT LIKE ${FIXTURE_PREFIX + '%'}` : Prisma.empty;
+    const where = Prisma.sql`a."workflowStatus"::text = 'PUBLISHED' AND a."searchVector" @@ ${tsq} ${catCond} ${discCond} ${fixtureCond}`;
     const orderBy = sort === 'newest'
       ? Prisma.sql`ORDER BY a."publishedAt" DESC NULLS LAST, a.id DESC`
       : Prisma.sql`ORDER BY rank DESC, a."publishedAt" DESC NULLS LAST, a.id DESC`;
@@ -210,9 +214,9 @@ export async function runPublicSearch(input: Partial<SearchFilters> & { q?: stri
   let rodeo: PublicSearchResult[] = [];
   if (wantRodeo) {
     const [hubs, events, editions] = await Promise.all([
-      prisma.rodeoHub.findMany({ select: { id: true, slug: true, title: true, region: true, description: true } }),
-      prisma.rodeoEvent.findMany({ select: { id: true, slug: true, name: true, location: true, description: true } }),
-      prisma.rodeoEventEdition.findMany({ select: { id: true, editionSlug: true, label: true, event: { select: { slug: true, name: true } } } }),
+      prisma.rodeoHub.findMany({ where: publicSlugWhere(), select: { id: true, slug: true, title: true, region: true, description: true } }),
+      prisma.rodeoEvent.findMany({ where: publicSlugWhere(), select: { id: true, slug: true, name: true, location: true, description: true } }),
+      prisma.rodeoEventEdition.findMany({ where: { event: publicSlugWhere() }, select: { id: true, editionSlug: true, label: true, event: { select: { slug: true, name: true } } } }),
     ]);
     const scored: (PublicSearchResult & { _s: number })[] = [];
     for (const h of hubs) {

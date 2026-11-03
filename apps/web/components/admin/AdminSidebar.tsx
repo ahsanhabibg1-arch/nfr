@@ -253,7 +253,7 @@ export const AdminSidebar: React.FC<AdminSidebarProps> = ({
           {groups.map((group) => (
             <div key={group.groupTitle} className="space-y-1">
               {!collapsed && (
-                <div className="px-3 text-[10px] uppercase font-mono tracking-widest text-stone-500 font-semibold mb-1">
+                <div className="px-3 text-[10px] uppercase font-mono tracking-widest text-ink-inverse-muted font-semibold mb-1">
                   {group.groupTitle}
                 </div>
               )}

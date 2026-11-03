@@ -23,13 +23,6 @@ export const EditorialHero: React.FC<EditorialHeroProps> = ({
             <span className="font-semibold uppercase tracking-widest text-[#D4A757]">
               Lead Editorial Feature
             </span>
-            <span aria-hidden="true">&middot;</span>
-            <span>Championship Preview Analysis</span>
-          </div>
-          <div className="hidden sm:flex items-center gap-2 font-mono text-[11px] text-stone-400">
-            <span>Visual Specimen</span>
-            <span aria-hidden="true">&middot;</span>
-            <span className="italic">NFR Championship Window</span>
           </div>
         </div>
 

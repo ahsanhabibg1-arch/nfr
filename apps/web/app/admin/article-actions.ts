@@ -34,6 +34,8 @@ export async function saveArticleAction(input: ArticleInput): Promise<ActionResu
   try {
     const res = await svc.saveArticle(actor, input);
     revalidatePath(`/articles/${res.slug}/`); // refresh if it happens to be public
+    // A live slug change: the old URL now redirects, and listings/sitemap show the new URL.
+    if (res.previousSlug) revalidatePublic(res.previousSlug);
     return { ok: true, ...res };
   } catch (e) {
     return fail(e) as ActionResult<{ id: string; slug: string; version: number }>;
@@ -79,6 +81,8 @@ export async function restoreRevisionAction(articleId: string, revisionId: strin
   try {
     const res = await svc.restoreRevision(actor, articleId, revisionId);
     revalidatePath(`/articles/${res.slug}/`);
+    if (res.previousSlug) revalidatePublic(res.previousSlug);
+    revalidatePath(`/admin/articles/${articleId}/edit/`);
     return { ok: true, version: res.version };
   } catch (e) {
     return fail(e) as ActionResult<{ version: number }>;

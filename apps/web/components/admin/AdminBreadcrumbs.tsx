@@ -14,12 +14,12 @@ interface AdminBreadcrumbsProps {
 
 export const AdminBreadcrumbs: React.FC<AdminBreadcrumbsProps> = ({ items, className = '' }) => {
   return (
-    <nav aria-label="Admin Breadcrumb" className={`text-xs font-sans text-stone-500 ${className}`}>
+    <nav aria-label="Admin Breadcrumb" className={`text-xs font-sans text-ink-muted ${className}`}>
       <ol className="flex items-center flex-wrap gap-1.5 list-none p-0 m-0">
         <li>
           <Link
             href={ROUTES.ADMIN}
-            className="hover:text-stone-900 transition-colors uppercase tracking-wider font-semibold text-stone-500"
+            className="hover:text-stone-900 transition-colors uppercase tracking-wider font-semibold text-ink-muted"
           >
             CMS Dashboard
           </Link>

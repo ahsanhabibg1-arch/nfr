@@ -18,6 +18,7 @@ import { RodeoRelationshipsPanel, RodeoRelationshipsData } from '../../component
 import { ArticleSourcesPanel } from '../../components/admin/editor/ArticleSourcesPanel';
 import { MediaPickerModal, SelectedMediaData } from '../../components/admin/editor/MediaPickerModal';
 import { ArticleDraftPreview } from '../../components/admin/editor/ArticleDraftPreview';
+import { EMPTY_RELATIONSHIP_OPTIONS, NEW_SOURCE_ID_PREFIX, type ArticleRelationshipOptions, type SourceDirectoryOption } from '../../lib/cms/relationshipTypes';
 
 const ALL_ARTICLE_TYPES: ArticleType[] = [
   'News',
@@ -65,6 +66,10 @@ interface AdminArticleEditorShellProps {
   permissions: EditorPermissions;
   actorName: string;
   authors?: AuthorOption[];
+  /** Database-backed discipline / hub / event / edition choices (loaded server-side). */
+  relationshipOptions?: ArticleRelationshipOptions;
+  /** The real Source directory (DB) for "attach existing source". */
+  sourceDirectory?: SourceDirectoryOption[];
 }
 
 export const AdminArticleEditorShell: React.FC<AdminArticleEditorShellProps> = ({
@@ -74,6 +79,8 @@ export const AdminArticleEditorShell: React.FC<AdminArticleEditorShellProps> = (
   permissions,
   actorName,
   authors = [],
+  relationshipOptions = EMPTY_RELATIONSHIP_OPTIONS,
+  sourceDirectory = [],
 }) => {
   const params = useParams<{ id: string }>();
   const id = params?.id;
@@ -121,7 +128,8 @@ export const AdminArticleEditorShell: React.FC<AdminArticleEditorShellProps> = (
   // as an editorial review warning rather than silently reassigned.
   const legacyBylineName = existingArticle?.author?.name && !authors.some((a) => a.name === existingArticle.author?.name) ? existingArticle.author?.name : null;
   const [reviewerName, setReviewerName] = useState(existingArticle?.reviewerName || '');
-  const [scheduledAt, setScheduledAt] = useState(existingArticle?.scheduledAt || '');
+  // Read-only: scheduling is unavailable (Batch A, D8); kept to label legacy SCHEDULED rows.
+  const [scheduledAt] = useState(existingArticle?.scheduledAt || '');
   // No preselected featured image / caption / credit for new articles.
   const [heroImage, setHeroImage] = useState(existingArticle?.heroImage || '');
   const [imageCredit, setImageCredit] = useState(existingArticle?.imageCredit || '');
@@ -334,7 +342,12 @@ export const AdminArticleEditorShell: React.FC<AdminArticleEditorShellProps> = (
     disclosureNote,
     tags,
     takeaways: existingArticle?.takeaways ?? [],
-    sources: sources.map((s) => ({ title: s.title, url: s.url || '', publisher: s.publisher, note: s.note })),
+    // Directory sources (and ones already linked) carry their DB id so the server links the
+    // existing row instead of creating or overwriting one; `new-` ids are typed-in sources.
+    sources: sources.map((s) => ({
+      ...(s.id.startsWith(NEW_SOURCE_ID_PREFIX) ? {} : { sourceId: s.id }),
+      title: s.title, url: s.url || '', publisher: s.publisher, note: s.note,
+    })),
     disciplineIds: relationships.disciplineIds,
     hubIds: relationships.hubIds,
     eventIds: relationships.eventIds,
@@ -425,7 +438,7 @@ export const AdminArticleEditorShell: React.FC<AdminArticleEditorShellProps> = (
             Articles Directory
           </Link>
           <span className="text-stone-300">|</span>
-          <span className="text-xs font-mono uppercase tracking-wider text-stone-500">
+          <span className="text-xs font-mono uppercase tracking-wider text-ink-muted">
             {isNew ? 'New Article Composer' : `Document ID: ${id}`}
           </span>
           {isDirty && (
@@ -438,7 +451,7 @@ export const AdminArticleEditorShell: React.FC<AdminArticleEditorShellProps> = (
         {/* Right: Role Switcher & Primary Action Buttons */}
         <div className="flex flex-wrap items-center gap-2">
           {/* Authenticated acting user — real server-enforced permissions, not a simulator */}
-          <div className="flex items-center gap-1.5 bg-stone-50 border border-stone-200 px-2 py-1 rounded-xs text-[11px] font-sans text-stone-500">
+          <div className="flex items-center gap-1.5 bg-stone-50 border border-stone-200 px-2 py-1 rounded-xs text-[11px] font-sans text-ink-muted">
             <span>Editing as</span>
             <span className="font-semibold text-stone-900">{actorName}</span>
           </div>
@@ -449,7 +462,7 @@ export const AdminArticleEditorShell: React.FC<AdminArticleEditorShellProps> = (
             onClick={() => setHistoryOpen(true)}
             className="px-3 py-1.5 bg-white border border-stone-300 hover:bg-stone-50 text-stone-700 text-xs font-semibold rounded-xs transition-colors flex items-center gap-1"
           >
-            <svg className="w-3.5 h-3.5 text-stone-500" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+            <svg className="w-3.5 h-3.5 text-ink-muted" fill="none" viewBox="0 0 24 24" stroke="currentColor">
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
             </svg>
             Revisions
@@ -513,14 +526,7 @@ export const AdminArticleEditorShell: React.FC<AdminArticleEditorShellProps> = (
 
           {workflowStatus === 'approved' && (
             <div className="flex items-center gap-1.5">
-              <button
-                type="button"
-                onClick={() => handleWorkflowTransition('scheduled')}
-                disabled={!permissions.canSchedule || saving}
-                className="px-3 py-1.5 bg-white border border-stone-300 text-stone-800 hover:bg-stone-50 text-xs font-bold rounded-xs disabled:opacity-50"
-              >
-                Schedule
-              </button>
+              {/* No Schedule action: scheduled publishing is not available yet (Batch A, D8). */}
               <button
                 type="button"
                 onClick={() => handleWorkflowTransition('published')}
@@ -534,6 +540,9 @@ export const AdminArticleEditorShell: React.FC<AdminArticleEditorShellProps> = (
 
           {workflowStatus === 'scheduled' && (
             <div className="flex items-center gap-1.5">
+              <span className="text-[11px] font-semibold text-amber-800" data-testid="manual-publish-required">
+                Manual publish required
+              </span>
               <button
                 type="button"
                 onClick={() => handleWorkflowTransition('approved')}
@@ -600,7 +609,7 @@ export const AdminArticleEditorShell: React.FC<AdminArticleEditorShellProps> = (
             <button
               type="button"
               onClick={() => setValidationGateOpen(false)}
-              className="text-stone-500 hover:text-stone-900"
+              className="text-ink-muted hover:text-stone-900"
             >
               &times;
             </button>
@@ -631,10 +640,10 @@ export const AdminArticleEditorShell: React.FC<AdminArticleEditorShellProps> = (
         <div className="lg:col-span-8 space-y-6">
           <div className="bg-white border border-stone-200 rounded-sm p-6 shadow-2xs space-y-6">
             <div className="flex items-center justify-between pb-3 border-b border-stone-100">
-              <span className="text-xs font-mono uppercase tracking-wider text-stone-500 font-bold">
+              <span className="text-xs font-mono uppercase tracking-wider text-ink-muted font-bold">
                 Primary Editorial Fields (01 &ndash; 08)
               </span>
-              <span className="text-[11px] font-mono text-stone-400">
+              <span className="text-[11px] font-mono text-ink-muted">
                 Exact Editorial Sequence Preserved
               </span>
             </div>
@@ -644,10 +653,10 @@ export const AdminArticleEditorShell: React.FC<AdminArticleEditorShellProps> = (
               <div className="flex items-center justify-between text-xs font-sans text-stone-600 mb-1">
                 <label htmlFor="field-01-headline" className="font-bold text-stone-900 uppercase tracking-wider text-[11px] flex items-center gap-1.5">
                   <span>Field 01 &mdash; Main Headline (H1)</span>
-                  <span className="text-rose-500 font-mono">*Required</span>
+                  <span className="text-required font-mono">*Required</span>
                 </label>
                 <span className={`font-mono text-[11px] ${
-                  title.length > 70 ? 'text-amber-600 font-semibold' : 'text-stone-500'
+                  title.length > 70 ? 'text-amber-600 font-semibold' : 'text-ink-muted'
                 }`}>
                   {title.length} chars &bull; {title.length >= 35 && title.length <= 70 ? 'Optimal' : title.length > 70 ? 'Approaching SERP truncation' : 'Too short'}
                 </span>
@@ -676,7 +685,7 @@ export const AdminArticleEditorShell: React.FC<AdminArticleEditorShellProps> = (
                 <label htmlFor="field-02-deck" className="font-semibold text-stone-800 uppercase tracking-wider text-[11px]">
                   Field 02 &mdash; Secondary Editorial Deck
                 </label>
-                <span className="text-[11px] font-mono text-stone-400">Optional Context</span>
+                <span className="text-[11px] font-mono text-ink-muted">Optional Context</span>
               </div>
               <textarea
                 id="field-02-deck"
@@ -696,10 +705,10 @@ export const AdminArticleEditorShell: React.FC<AdminArticleEditorShellProps> = (
               <div className="flex items-center justify-between text-xs font-sans text-stone-600 mb-1">
                 <label htmlFor="field-03-excerpt" className="font-bold text-stone-900 uppercase tracking-wider text-[11px] flex items-center gap-1.5">
                   <span>Field 03 &mdash; Editorial Excerpt / Summary</span>
-                  <span className="text-rose-500 font-mono">*Required</span>
+                  <span className="text-required font-mono">*Required</span>
                 </label>
                 <span className={`font-mono text-[11px] ${
-                  excerpt.length >= 100 && excerpt.length <= 220 ? 'text-emerald-700 font-semibold' : 'text-stone-500'
+                  excerpt.length >= 100 && excerpt.length <= 220 ? 'text-emerald-700 font-semibold' : 'text-ink-muted'
                 }`}>
                   {excerpt.length} chars (Target: 100&ndash;220)
                 </span>
@@ -727,7 +736,7 @@ export const AdminArticleEditorShell: React.FC<AdminArticleEditorShellProps> = (
               <div className="flex items-center justify-between">
                 <label className="font-bold text-stone-900 uppercase tracking-wider text-[11px] flex items-center gap-1.5 font-sans">
                   <span>Field 04 &mdash; Article Body</span>
-                  <span className="text-rose-500 font-mono">*Required</span>
+                  <span className="text-required font-mono">*Required</span>
                 </label>
                 <span className="text-[10px] font-mono text-[#8B5E3C] bg-[#F7F3EA] border border-[#8B5E3C]/30 px-2 py-0.5 rounded-xs">
                   Structured JSON Model
@@ -750,7 +759,7 @@ export const AdminArticleEditorShell: React.FC<AdminArticleEditorShellProps> = (
                   Field 05 &mdash; SEO Title
                 </label>
                 <div className="flex items-center gap-2">
-                  <span className="font-mono text-[11px] text-stone-500">
+                  <span className="font-mono text-[11px] text-ink-muted">
                     {seoTitle.length} chars (Target: 35&ndash;65)
                   </span>
                   {isSeoTitleCustom && (
@@ -761,7 +770,7 @@ export const AdminArticleEditorShell: React.FC<AdminArticleEditorShellProps> = (
                         setSeoTitle(title);
                         markDirty();
                       }}
-                      className="text-[10px] font-mono text-[#8B5E3C] hover:underline"
+                      className="inline-flex items-center min-h-6 px-1 text-[10px] font-mono text-[#8B5E3C] hover:underline"
                     >
                       Reset to Headline
                     </button>
@@ -780,7 +789,7 @@ export const AdminArticleEditorShell: React.FC<AdminArticleEditorShellProps> = (
                 placeholder="Google SERP display title..."
                 className="w-full text-xs sm:text-sm font-sans text-stone-800 p-2.5 bg-stone-50 border border-stone-200 rounded-xs focus:bg-white focus:outline-none focus:border-[#D4A757] transition-all"
               />
-              <p className="text-[11px] text-stone-500 font-sans">
+              <p className="text-[11px] text-ink-muted font-sans">
                 Independently editable title tag. Editing this field does not overwrite the H1 headline.
               </p>
             </div>
@@ -792,7 +801,7 @@ export const AdminArticleEditorShell: React.FC<AdminArticleEditorShellProps> = (
                   Field 06 &mdash; Meta Description
                 </label>
                 <span className={`font-mono text-[11px] ${
-                  metaDescription.length >= 110 && metaDescription.length <= 165 ? 'text-emerald-700 font-semibold' : 'text-stone-500'
+                  metaDescription.length >= 110 && metaDescription.length <= 165 ? 'text-emerald-700 font-semibold' : 'text-ink-muted'
                 }`}>
                   {metaDescription.length} chars (Target: 110&ndash;165)
                 </span>
@@ -816,7 +825,7 @@ export const AdminArticleEditorShell: React.FC<AdminArticleEditorShellProps> = (
                 <label htmlFor="field-07-imageseotitle" className="font-bold text-stone-900 uppercase tracking-wider text-[11px]">
                   Field 07 &mdash; Image SEO Title
                 </label>
-                <span className="text-[11px] font-mono text-stone-400">Media Indexing</span>
+                <span className="text-[11px] font-mono text-ink-muted">Media Indexing</span>
               </div>
               <input
                 id="field-07-imageseotitle"
@@ -836,9 +845,9 @@ export const AdminArticleEditorShell: React.FC<AdminArticleEditorShellProps> = (
               <div className="flex items-center justify-between text-xs font-sans text-stone-600 mb-1">
                 <label htmlFor="field-08-imagealt" className="font-bold text-stone-900 uppercase tracking-wider text-[11px] flex items-center gap-1.5">
                   <span>Field 08 &mdash; Image ALT Text</span>
-                  <span className="text-rose-500 font-mono">*Required</span>
+                  <span className="text-required font-mono">*Required</span>
                 </label>
-                <span className="text-[11px] font-mono text-stone-400">Accessibility &bull; No Keyword Stuffing</span>
+                <span className="text-[11px] font-mono text-ink-muted">Accessibility &bull; No Keyword Stuffing</span>
               </div>
               <textarea
                 id="field-08-imagealt"
@@ -887,45 +896,41 @@ export const AdminArticleEditorShell: React.FC<AdminArticleEditorShellProps> = (
 
             <div className="space-y-3">
               <div>
-                <label className="block text-[11px] font-semibold text-stone-600 uppercase tracking-wider mb-1">
+                <label htmlFor="editor-workflow-state" className="block text-[11px] font-semibold text-stone-600 uppercase tracking-wider mb-1">
                   Change Workflow State
                 </label>
-                <select
+                <select id="editor-workflow-state"
                   value={workflowStatus}
                   onChange={(e) => handleWorkflowTransition(e.target.value as ArticleWorkflowStatus)}
                   className="w-full p-2 bg-stone-50 border border-stone-200 rounded-xs text-xs font-sans text-stone-800 focus:outline-none focus:border-[#D4A757]"
                 >
                   <option value="draft">Draft (Working State)</option>
                   <option value="in_review">In Review (Editorial Desk)</option>
-                  <option value="approved">Approved (Ready to Schedule/Publish)</option>
-                  <option value="scheduled">Scheduled (Embargo Date)</option>
+                  <option value="approved">Approved (Ready to Publish)</option>
+                  {/* Not selectable: scheduled publishing is unavailable. Shown only to label legacy rows. */}
+                  {workflowStatus === 'scheduled' && (
+                    <option value="scheduled" disabled>Scheduled — manual publish required</option>
+                  )}
                   <option value="published">Published (Live Distribution)</option>
                   <option value="archived">Archived (Deprecate)</option>
                 </select>
               </div>
 
               {workflowStatus === 'scheduled' && (
-                <div className="p-3 bg-purple-50 border border-purple-200 rounded-xs space-y-1">
-                  <label className="block text-[10px] font-mono uppercase tracking-wider text-purple-900 font-bold">
-                    Embargo Date &amp; Time
-                  </label>
-                  <input
-                    type="datetime-local"
-                    value={scheduledAt}
-                    onChange={(e) => {
-                      setScheduledAt(e.target.value);
-                      markDirty();
-                    }}
-                    className="w-full text-xs font-mono p-1.5 bg-white border border-purple-300 rounded-xs text-purple-950"
-                  />
+                <div className="p-3 bg-amber-50 border border-amber-300 rounded-xs space-y-1 text-[11px] text-amber-950" role="note">
+                  <strong className="block font-bold">Manual publish required</strong>
+                  <p>
+                    Scheduled publishing is not available yet, so this article will not publish automatically
+                    {scheduledAt ? ` at its recorded time (${scheduledAt})` : ''}. Publish it manually when ready, or unschedule it.
+                  </p>
                 </div>
               )}
 
               <div>
-                <label className="block text-[11px] font-semibold text-stone-600 uppercase tracking-wider mb-1">
+                <label htmlFor="editor-reviewer" className="block text-[11px] font-semibold text-stone-600 uppercase tracking-wider mb-1">
                   Assigned Reviewer
                 </label>
-                <input
+                <input id="editor-reviewer"
                   type="text"
                   value={reviewerName}
                   onChange={(e) => {
@@ -961,7 +966,7 @@ export const AdminArticleEditorShell: React.FC<AdminArticleEditorShellProps> = (
                   </button>
                 </div>
                 <div className="flex items-center bg-stone-50 border border-stone-200 rounded-xs px-2 py-1 focus-within:border-[#D4A757] focus-within:bg-white transition-all">
-                  <span className="text-stone-400 font-mono text-[11px] select-none">/articles/</span>
+                  <span className="text-ink-muted font-mono text-[11px] select-none">/articles/</span>
                   <input
                     type="text"
                     value={slug}
@@ -976,14 +981,14 @@ export const AdminArticleEditorShell: React.FC<AdminArticleEditorShellProps> = (
                     className="w-full text-xs font-mono text-stone-900 bg-transparent focus:outline-none px-1"
                     placeholder="clean-article-slug"
                   />
-                  <span className="text-stone-400 font-mono text-[11px] select-none">/</span>
+                  <span className="text-ink-muted font-mono text-[11px] select-none">/</span>
                 </div>
                 {slug && !/^[a-z0-9]+(?:-[a-z0-9]+)*$/.test(slug) && (
                   <p className="text-[10px] text-rose-600 font-mono">
                     Slug must use lowercase letters, numbers, and hyphens without trailing/leading dashes.
                   </p>
                 )}
-                <div className="text-[10px] font-mono text-stone-400 truncate pt-0.5">
+                <div className="text-[10px] font-mono text-ink-muted truncate pt-0.5">
                   Canonical: https://nfrguide.com/articles/{slug}/
                 </div>
               </div>
@@ -999,13 +1004,14 @@ export const AdminArticleEditorShell: React.FC<AdminArticleEditorShellProps> = (
               <span className={`text-[10px] font-mono px-2 py-0.5 rounded-xs font-bold ${
                 validationReport.score >= 80 ? 'bg-emerald-100 text-emerald-800' : 'bg-amber-100 text-amber-800'
               }`}>
-                {validationReport.score}% Score
+                {/* A checklist pass count, not an SEO score (Requirements §8.1). */}
+                {validationReport.passedChecks} of {validationReport.totalChecks} checks passed
               </span>
             </div>
 
             <div className="space-y-2">
               <div className="flex justify-between text-xs py-1 border-b border-stone-100">
-                <span className="text-stone-500">Category A &mdash; Editorial Blockers:</span>
+                <span className="text-ink-muted">Category A &mdash; Editorial Blockers:</span>
                 <span className={`font-mono font-bold ${
                   validationReport.blockers.length === 0 ? 'text-emerald-700' : 'text-rose-700'
                 }`}>
@@ -1014,7 +1020,7 @@ export const AdminArticleEditorShell: React.FC<AdminArticleEditorShellProps> = (
               </div>
 
               <div className="flex justify-between text-xs py-1 border-b border-stone-100">
-                <span className="text-stone-500">Category B &mdash; Rights &amp; Safety:</span>
+                <span className="text-ink-muted">Category B &mdash; Rights &amp; Safety:</span>
                 <span className={`font-mono font-bold ${
                   validationReport.compliance.length === 0 ? 'text-emerald-700' : 'text-rose-700'
                 }`}>
@@ -1023,14 +1029,14 @@ export const AdminArticleEditorShell: React.FC<AdminArticleEditorShellProps> = (
               </div>
 
               <div className="flex justify-between text-xs py-1 border-b border-stone-100">
-                <span className="text-stone-500">Category C &mdash; SEO Warnings:</span>
+                <span className="text-ink-muted">Category C &mdash; SEO Warnings:</span>
                 <span className="font-mono text-amber-700 font-bold">
                   {validationReport.warnings.length} Warning(s)
                 </span>
               </div>
 
               <div className="flex justify-between text-xs py-1">
-                <span className="text-stone-500">Ready for Live Publication:</span>
+                <span className="text-ink-muted">Ready for Live Publication:</span>
                 <span className={`font-mono font-bold ${
                   validationReport.canPublish ? 'text-emerald-700' : 'text-rose-700'
                 }`}>
@@ -1058,10 +1064,10 @@ export const AdminArticleEditorShell: React.FC<AdminArticleEditorShellProps> = (
 
             <div className="space-y-3">
               <div>
-                <label className="block text-[11px] font-semibold text-stone-600 uppercase tracking-wider mb-1">
+                <label htmlFor="editor-article-type" className="block text-[11px] font-semibold text-stone-600 uppercase tracking-wider mb-1">
                   Article Type (18 Typologies)
                 </label>
-                <select
+                <select id="editor-article-type"
                   value={articleType}
                   onChange={(e) => {
                     setArticleType(e.target.value as ArticleType | '');
@@ -1079,10 +1085,10 @@ export const AdminArticleEditorShell: React.FC<AdminArticleEditorShellProps> = (
               </div>
 
               <div>
-                <label className="block text-[11px] font-semibold text-stone-600 uppercase tracking-wider mb-1">
+                <label htmlFor="editor-primary-section" className="block text-[11px] font-semibold text-stone-600 uppercase tracking-wider mb-1">
                   Primary Section
                 </label>
-                <select
+                <select id="editor-primary-section"
                   value={category}
                   onChange={(e) => {
                     setCategory(e.target.value as PrimarySection | '');
@@ -1100,10 +1106,10 @@ export const AdminArticleEditorShell: React.FC<AdminArticleEditorShellProps> = (
               </div>
 
               <div>
-                <label className="block text-[11px] font-semibold text-stone-600 uppercase tracking-wider mb-1">
+                <label htmlFor="editor-subcategory" className="block text-[11px] font-semibold text-stone-600 uppercase tracking-wider mb-1">
                   Subcategory
                 </label>
-                <input
+                <input id="editor-subcategory"
                   type="text"
                   value={subcategory}
                   onChange={(e) => {
@@ -1116,10 +1122,10 @@ export const AdminArticleEditorShell: React.FC<AdminArticleEditorShellProps> = (
               </div>
 
               <div>
-                <label className="block text-[11px] font-semibold text-stone-600 uppercase tracking-wider mb-1">
+                <label htmlFor="editor-author-byline" className="block text-[11px] font-semibold text-stone-600 uppercase tracking-wider mb-1">
                   Author Byline
                 </label>
-                <select
+                <select id="editor-author-byline"
                   value={authorKey}
                   onChange={(e) => {
                     setAuthorKey(e.target.value);
@@ -1152,7 +1158,7 @@ export const AdminArticleEditorShell: React.FC<AdminArticleEditorShellProps> = (
                       <button
                         type="button"
                         onClick={() => handleRemoveTag(t)}
-                        className="text-stone-400 hover:text-rose-600"
+                        className="text-ink-muted hover:text-rose-600"
                       >
                         &times;
                       </button>
@@ -1171,10 +1177,10 @@ export const AdminArticleEditorShell: React.FC<AdminArticleEditorShellProps> = (
 
               {/* Commercial Disclosures */}
               <div className="pt-2 border-t border-stone-100">
-                <label className="block text-[11px] font-semibold text-stone-600 uppercase tracking-wider mb-1">
+                <label htmlFor="editor-disclosure" className="block text-[11px] font-semibold text-stone-600 uppercase tracking-wider mb-1">
                   Monetization Disclosure
                 </label>
-                <select
+                <select id="editor-disclosure"
                   value={disclosure}
                   onChange={(e) => {
                     setDisclosure(e.target.value as DisclosureType);
@@ -1228,7 +1234,7 @@ export const AdminArticleEditorShell: React.FC<AdminArticleEditorShellProps> = (
                     <span className="absolute bottom-1 right-1 text-[9px] font-mono px-1.5 py-0.5 bg-black/70 text-white rounded-xs">Rights: {imageRightsStatus}</span>
                   </>
                 ) : (
-                  <button type="button" onClick={() => setMediaPickerOpen(true)} className="w-full h-full flex flex-col items-center justify-center gap-2 text-stone-400 hover:text-stone-200 bg-stone-800/60">
+                  <button type="button" onClick={() => setMediaPickerOpen(true)} className="w-full h-full flex flex-col items-center justify-center gap-2 text-ink-inverse-muted hover:text-stone-200 bg-stone-800/60">
                     <svg className="w-8 h-8" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z" /></svg>
                     <span className="text-[11px] font-mono">No featured image — click to choose</span>
                   </button>
@@ -1236,10 +1242,10 @@ export const AdminArticleEditorShell: React.FC<AdminArticleEditorShellProps> = (
               </div>
 
               <div>
-                <label className="block text-[11px] font-semibold text-stone-600 uppercase tracking-wider mb-1">
+                <label htmlFor="editor-rights-status" className="block text-[11px] font-semibold text-stone-600 uppercase tracking-wider mb-1">
                   Usage Rights Status
                 </label>
-                <select
+                <select id="editor-rights-status"
                   value={imageRightsStatus}
                   onChange={(e) => {
                     setImageRightsStatus(e.target.value as any);
@@ -1265,10 +1271,10 @@ export const AdminArticleEditorShell: React.FC<AdminArticleEditorShellProps> = (
               </div>
 
               <div>
-                <label className="block text-[11px] font-semibold text-stone-600 uppercase tracking-wider mb-1">
+                <label htmlFor="editor-image-credit" className="block text-[11px] font-semibold text-stone-600 uppercase tracking-wider mb-1">
                   Photographer / Agency Credit
                 </label>
-                <input
+                <input id="editor-image-credit"
                   type="text"
                   value={imageCredit}
                   onChange={(e) => {
@@ -1280,10 +1286,10 @@ export const AdminArticleEditorShell: React.FC<AdminArticleEditorShellProps> = (
               </div>
 
               <div>
-                <label className="block text-[11px] font-semibold text-stone-600 uppercase tracking-wider mb-1">
+                <label htmlFor="editor-image-caption" className="block text-[11px] font-semibold text-stone-600 uppercase tracking-wider mb-1">
                   Caption
                 </label>
-                <input
+                <input id="editor-image-caption"
                   type="text"
                   value={imageCaption}
                   onChange={(e) => {
@@ -1299,6 +1305,7 @@ export const AdminArticleEditorShell: React.FC<AdminArticleEditorShellProps> = (
           {/* PANEL 5: RODEO ENTITY RELATIONSHIPS */}
           <RodeoRelationshipsPanel
             relationships={relationships}
+            options={relationshipOptions}
             onChange={(nextRel) => {
               setRelationships(nextRel);
               markDirty();
@@ -1308,6 +1315,7 @@ export const AdminArticleEditorShell: React.FC<AdminArticleEditorShellProps> = (
           {/* PANEL 6: SOURCES & EVIDENCE CITATIONS */}
           <ArticleSourcesPanel
             sources={sources}
+            directory={sourceDirectory}
             onChange={(nextSources) => {
               setSources(nextSources);
               markDirty();

@@ -154,7 +154,7 @@ export async function DisciplineGuideView({ slug }: { slug: string }) {
                   href={ROUTES.DISCIPLINE(other.slug)}
                   className="p-3 bg-white border border-stone-200 hover:border-[#8B5E3C] text-center rounded-sm transition-colors group"
                 >
-                  <span className="text-[10px] uppercase font-mono text-stone-400 block mb-0.5">{other.category.split(' ')[0]}</span>
+                  <span className="text-[10px] uppercase font-mono text-ink-muted block mb-0.5">{other.category.split(' ')[0]}</span>
                   <span className="text-xs font-serif font-bold text-stone-900 group-hover:text-[#8B5E3C] block leading-tight">
                     {other.shortName}
                   </span>

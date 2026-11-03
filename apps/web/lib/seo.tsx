@@ -82,10 +82,20 @@ export function buildMetadata({
   };
 }
 
+/**
+ * Article types that are time-bound news reporting and therefore NewsArticle (owner
+ * decision D2, Batch A). Every other editorial type is a general Article.
+ */
+export const NEWS_ARTICLE_TYPES: ReadonlySet<string> = new Set(['news', 'event update']);
+
+export function isNewsArticleType(articleType: string | null | undefined): boolean {
+  return NEWS_ARTICLE_TYPES.has((articleType ?? '').trim().toLowerCase());
+}
+
 export function articleJsonLd(article: Article): Record<string, unknown> {
   return {
     '@context': 'https://schema.org',
-    '@type': article.articleType === 'news' ? 'NewsArticle' : 'Article',
+    '@type': isNewsArticleType(article.articleType) ? 'NewsArticle' : 'Article',
     headline: article.title,
     description: article.deck || article.excerpt,
     image: absolute(article.heroImage),
@@ -110,7 +120,7 @@ export function disciplineJsonLd(discipline: Discipline): Record<string, unknown
   return {
     '@context': 'https://schema.org',
     '@type': 'Article',
-    headline: `${discipline.name} — Official NFR Championship Guide`,
+    headline: `${discipline.name} Guide`,
     description: discipline.summary,
     image: absolute(discipline.image),
     publisher: {
@@ -236,13 +246,35 @@ export function faqPageJsonLd(faqs: { question: string; answer: string }[]): Rec
   };
 }
 
-/** Small helper to render a JSON-LD <script> in server components. */
+/**
+ * Serialize structured data for embedding in a <script type="application/ld+json">.
+ *
+ * Values include CMS-editable text (titles, decks, author names, FAQ answers, venue and
+ * event names), so a raw JSON.stringify could contain `</script>` (any casing) or `<!--`
+ * and break out of the element. `<`, `>` and `&` only ever occur inside JSON string
+ * literals, so replacing them with \uXXXX escapes keeps the output valid, equivalent JSON
+ * while making it impossible to close the script element. U+2028/U+2029 are escaped too
+ * (legal in JSON, but line terminators in older JS parsers).
+ */
+// Built from char codes so the source file never contains the raw separator characters.
+const LINE_SEPARATOR = new RegExp(String.fromCharCode(0x2028), 'g');
+const PARAGRAPH_SEPARATOR = new RegExp(String.fromCharCode(0x2029), 'g');
+
+export function serializeJsonLd(data: unknown): string {
+  return JSON.stringify(data)
+    .replace(/</g, '\\u003c')
+    .replace(/>/g, '\\u003e')
+    .replace(/&/g, '\\u0026')
+    .replace(LINE_SEPARATOR, '\\u2028')
+    .replace(PARAGRAPH_SEPARATOR, '\\u2029');
+}
+
+/** Render JSON-LD in server components. All structured data goes through serializeJsonLd. */
 export function JsonLd({ data }: { data: Record<string, unknown> | Record<string, unknown>[] }) {
   return (
     <script
       type="application/ld+json"
-      // Content is built from internal typed data, not user input.
-      dangerouslySetInnerHTML={{ __html: JSON.stringify(data) }}
+      dangerouslySetInnerHTML={{ __html: serializeJsonLd(data) }}
     />
   );
 }

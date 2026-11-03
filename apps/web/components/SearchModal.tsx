@@ -1,7 +1,6 @@
 'use client';
 
 import React, { useState, useEffect, useMemo } from 'react';
-import { PLAN_AND_WATCH_GUIDES } from '../data/mockEditorialData';
 import { Discipline, SearchIndexItem } from '../types';
 
 interface SearchModalProps {
@@ -26,7 +25,7 @@ export const SearchModal: React.FC<SearchModalProps> = ({
   searchDisciplines,
 }) => {
   const [query, setQuery] = useState('');
-  const [activeFilter, setActiveFilter] = useState<'all' | 'articles' | 'disciplines' | 'guides'>('all');
+  const [activeFilter, setActiveFilter] = useState<'all' | 'articles' | 'disciplines'>('all');
 
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
@@ -42,7 +41,6 @@ export const SearchModal: React.FC<SearchModalProps> = ({
       return {
         articles: searchArticles.slice(0, 4),
         disciplines: searchDisciplines.slice(0, 3),
-        guides: PLAN_AND_WATCH_GUIDES.slice(0, 2),
       };
     }
     return {
@@ -51,9 +49,6 @@ export const SearchModal: React.FC<SearchModalProps> = ({
       ),
       disciplines: searchDisciplines.filter(
         (d) => d.name.toLowerCase().includes(q) || d.summary.toLowerCase().includes(q) || d.tagline.toLowerCase().includes(q),
-      ),
-      guides: PLAN_AND_WATCH_GUIDES.filter(
-        (g) => g.title.toLowerCase().includes(q) || g.summary.toLowerCase().includes(q) || g.subtopic.toLowerCase().includes(q),
       ),
     };
   }, [query, searchArticles, searchDisciplines]);
@@ -104,7 +99,7 @@ export const SearchModal: React.FC<SearchModalProps> = ({
 
         <div className="flex items-center gap-2 px-4 py-2 border-b border-stone-200 bg-[#EDE6D6]/40 text-xs font-sans">
           <span className="text-stone-500 text-[11px] uppercase tracking-wider font-semibold">Filter:</span>
-          {(['all', 'articles', 'disciplines', 'guides'] as const).map((filter) => (
+          {(['all', 'articles', 'disciplines'] as const).map((filter) => (
             <button
               key={filter}
               onClick={() => setActiveFilter(filter)}
@@ -173,38 +168,8 @@ export const SearchModal: React.FC<SearchModalProps> = ({
             </div>
           )}
 
-          {(activeFilter === 'all' || activeFilter === 'guides') && filteredResults.guides.length > 0 && (
-            <div>
-              <div className="text-[11px] uppercase tracking-widest font-sans font-bold text-[#8B5E3C] mb-2 px-2">
-                Plan &amp; Watch Guides ({filteredResults.guides.length})
-              </div>
-              <div className="space-y-1">
-                {filteredResults.guides.map((g) => (
-                  <div
-                    key={g.id}
-                    onClick={() => {
-                      const matched = searchArticles.find((a) => a.slug === g.articleSlug);
-                      if (matched) onSelectArticle(matched);
-                      onClose();
-                    }}
-                    className="p-3 hover:bg-white rounded-sm cursor-pointer transition-colors border border-transparent hover:border-stone-200"
-                  >
-                    <div className="flex items-center gap-2 text-[11px] text-stone-500 font-sans">
-                      <span className="font-semibold text-stone-700">{g.subtopic}</span>
-                      <span>&middot;</span>
-                      <span>{g.readTime}</span>
-                    </div>
-                    <h4 className="text-sm font-serif font-semibold text-stone-900 mt-0.5">{g.title}</h4>
-                    <p className="text-xs text-stone-600 line-clamp-1 mt-1 font-sans">{g.summary}</p>
-                  </div>
-                ))}
-              </div>
-            </div>
-          )}
-
           {filteredResults.articles.length === 0 &&
-            filteredResults.disciplines.length === 0 &&
-            filteredResults.guides.length === 0 && (
+            filteredResults.disciplines.length === 0 && (
               <div className="text-center py-10 text-stone-500 font-sans">
                 <p className="text-sm">No editorial match found for &ldquo;{query}&rdquo;.</p>
                 <p className="text-xs text-stone-400 mt-1">Try searching for &ldquo;bull riding&rdquo;, &ldquo;streaming&rdquo;, or &ldquo;tickets&rdquo;.</p>

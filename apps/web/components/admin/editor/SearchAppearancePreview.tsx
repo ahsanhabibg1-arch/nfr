@@ -25,7 +25,7 @@ export const SearchAppearancePreview: React.FC<SearchAppearancePreviewProps> = (
           <h4 className="font-serif font-bold text-stone-900 text-sm">
             Search Appearance &amp; Social Card Preview
           </h4>
-          <p className="text-[11px] text-stone-500 font-sans">
+          <p className="text-[11px] text-ink-muted font-sans">
             Visual simulation of Google SERP indexing and OpenGraph social shares.
           </p>
         </div>
@@ -36,7 +36,7 @@ export const SearchAppearancePreview: React.FC<SearchAppearancePreviewProps> = (
               type="button"
               onClick={() => setPreviewTab('google')}
               className={`px-2 py-1 rounded-xs transition-colors ${
-                previewTab === 'google' ? 'bg-white text-stone-900 font-bold shadow-2xs' : 'text-stone-500 hover:text-stone-900'
+                previewTab === 'google' ? 'bg-white text-stone-900 font-bold shadow-2xs' : 'text-ink-muted hover:text-stone-900'
               }`}
             >
               Google SERP
@@ -45,7 +45,7 @@ export const SearchAppearancePreview: React.FC<SearchAppearancePreviewProps> = (
               type="button"
               onClick={() => setPreviewTab('social')}
               className={`px-2 py-1 rounded-xs transition-colors ${
-                previewTab === 'social' ? 'bg-white text-stone-900 font-bold shadow-2xs' : 'text-stone-500 hover:text-stone-900'
+                previewTab === 'social' ? 'bg-white text-stone-900 font-bold shadow-2xs' : 'text-ink-muted hover:text-stone-900'
               }`}
             >
               Social (OG)
@@ -58,7 +58,7 @@ export const SearchAppearancePreview: React.FC<SearchAppearancePreviewProps> = (
                 type="button"
                 onClick={() => setDeviceView('desktop')}
                 className={`px-2 py-1 rounded-xs transition-colors ${
-                  deviceView === 'desktop' ? 'bg-white text-stone-900 font-bold shadow-2xs' : 'text-stone-500'
+                  deviceView === 'desktop' ? 'bg-white text-stone-900 font-bold shadow-2xs' : 'text-ink-muted'
                 }`}
               >
                 Desktop
@@ -67,7 +67,7 @@ export const SearchAppearancePreview: React.FC<SearchAppearancePreviewProps> = (
                 type="button"
                 onClick={() => setDeviceView('mobile')}
                 className={`px-2 py-1 rounded-xs transition-colors ${
-                  deviceView === 'mobile' ? 'bg-white text-stone-900 font-bold shadow-2xs' : 'text-stone-500'
+                  deviceView === 'mobile' ? 'bg-white text-stone-900 font-bold shadow-2xs' : 'text-ink-muted'
                 }`}
               >
                 Mobile
@@ -87,9 +87,9 @@ export const SearchAppearancePreview: React.FC<SearchAppearancePreviewProps> = (
             </div>
             <div className="flex items-center gap-1 text-[12px] text-[#4d5156] font-normal leading-none truncate">
               <span>nfrguide.com</span>
-              <span className="text-stone-400">&rsaquo;</span>
+              <span className="text-ink-muted">&rsaquo;</span>
               <span>articles</span>
-              <span className="text-stone-400">&rsaquo;</span>
+              <span className="text-ink-muted">&rsaquo;</span>
               <span className="truncate">{slug || 'article-slug'}</span>
             </div>
           </div>
@@ -104,7 +104,7 @@ export const SearchAppearancePreview: React.FC<SearchAppearancePreviewProps> = (
             {displayDesc}
           </p>
 
-          <div className="mt-3 pt-2 border-t border-stone-200/60 flex items-center justify-between text-[10px] font-mono text-stone-500">
+          <div className="mt-3 pt-2 border-t border-stone-200/60 flex items-center justify-between text-[10px] font-mono text-ink-muted">
             <span>Title: {displayTitle.length} chars (Target: 35–65)</span>
             <span>Desc: {displayDesc.length} chars (Target: 110–165)</span>
           </div>
@@ -125,7 +125,7 @@ export const SearchAppearancePreview: React.FC<SearchAppearancePreviewProps> = (
             </div>
           </div>
           <div className="p-3 bg-stone-50 border-t border-stone-200">
-            <span className="text-[10px] font-mono uppercase tracking-wider text-stone-400 block mb-0.5">
+            <span className="text-[10px] font-mono uppercase tracking-wider text-ink-muted block mb-0.5">
               NFRGUIDE.COM &bull; INDEPENDENT RODEO JOURNALISM
             </span>
             <h4 className="font-serif font-bold text-stone-900 text-sm leading-snug line-clamp-2 mb-1">
@@ -141,11 +141,11 @@ export const SearchAppearancePreview: React.FC<SearchAppearancePreviewProps> = (
       {/* Canonical URL & Indexing Directives */}
       <div className="pt-2 border-t border-stone-100 grid grid-cols-1 sm:grid-cols-2 gap-3 text-xs font-mono">
         <div>
-          <span className="text-[10px] text-stone-400 uppercase tracking-wider block">Canonical URL:</span>
+          <span className="text-[10px] text-ink-muted uppercase tracking-wider block">Canonical URL:</span>
           <span className="text-stone-700 truncate block text-[11px]">{canonicalUrl}</span>
         </div>
         <div>
-          <span className="text-[10px] text-stone-400 uppercase tracking-wider block">Robots Directives:</span>
+          <span className="text-[10px] text-ink-muted uppercase tracking-wider block">Robots Directives:</span>
           <span className="text-emerald-700 font-semibold block text-[11px]">index, follow (SSL Enforced)</span>
         </div>
       </div>

@@ -56,7 +56,7 @@ export function LoginForm() {
         {pending ? 'Signing in…' : 'Sign In'}
       </button>
 
-      <p className="text-[11px] text-stone-500 font-sans text-center pt-1">
+      <p className="text-[11px] text-ink-inverse-muted font-sans text-center pt-1">
         Authorized editorial staff only. Accounts are provisioned by an administrator.
       </p>
     </form>

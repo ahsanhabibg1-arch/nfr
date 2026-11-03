@@ -138,6 +138,15 @@ suite('Batch 05 — media / DAM integration', () => {
     await expect(media.uploadMedia(actors.editor, { buffer: await jpg(), originalName: '../payload.exe', declaredMime: 'image/jpeg' })).rejects.toMatchObject({ code: 'validation' });
   });
 
+  // ---- Processing failures (Batch C, sharp 0.35.x) ----
+  it('processing: a valid signature with a corrupt body is rejected with a safe, generic error', async () => {
+    const good = await jpg(600, 400);
+    const corrupt = Buffer.concat([good.subarray(0, 64), Buffer.alloc(4096, 0x41)]);
+    const err = await media.uploadMedia(actors.editor, { buffer: corrupt, originalName: 'corrupt.jpg', declaredMime: 'image/jpeg' }).catch((e) => e);
+    expect(err).toMatchObject({ code: 'processing', message: 'The image could not be processed (it may be corrupt).' });
+    expect(String(err.message)).not.toMatch(/[\\/]|vips|sharp/i); // no paths or library internals
+  });
+
   // ---- Duplicate handling ----
   it('dedup: identical bytes reuse the existing asset instead of re-storing', async () => {
     const buf = await jpg(900, 600);

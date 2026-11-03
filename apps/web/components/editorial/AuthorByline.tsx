@@ -31,11 +31,11 @@ export const AuthorByline: React.FC<AuthorBylineProps> = ({
           >
             By {author.name}
           </a>
-          <p className="text-[11px] text-stone-500">{author.role}</p>
+          <p className="text-[11px] text-ink-muted">{author.role}</p>
         </div>
       </div>
 
-      <div className="flex flex-wrap items-center gap-2 text-[11px] text-stone-500 font-sans sm:text-right">
+      <div className="flex flex-wrap items-center gap-2 text-[11px] text-ink-muted font-sans sm:text-right">
         <span>Published {publishedAt}</span>
         {updatedAt && (
           <>

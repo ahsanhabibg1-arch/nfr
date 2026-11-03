@@ -1,6 +1,6 @@
 import type { Metadata } from 'next';
-import { notFound } from 'next/navigation';
-import { getPublishedArticleBySlug, getPublishedArticleSlugs } from '@/lib/content';
+import { notFound, permanentRedirect, redirect } from 'next/navigation';
+import { getPublishedArticleBySlug, getPublishedArticleSlugs, resolveArticleRedirect } from '@/lib/content';
 import { ArticleView } from '@/views/ArticleView';
 import { buildMetadata, articleJsonLd, breadcrumbJsonLd, JsonLd } from '@/lib/seo';
 import { ROUTES } from '@/config/routes';
@@ -48,8 +48,13 @@ export async function generateMetadata({ params }: Params): Promise<Metadata> {
 export default async function ArticlePage({ params }: Params) {
   const { slug } = await params;
   const article = await getPublishedArticleBySlug(slug);
-  // Eligibility policy: unpublished/unknown slugs never render publicly (404).
-  if (!article) notFound();
+  // Eligibility policy: unpublished/unknown slugs never render publicly. A slug that was
+  // renamed while published redirects to its current URL; everything else is a 404.
+  if (!article) {
+    const moved = await resolveArticleRedirect(slug);
+    if (moved) (moved.permanent ? permanentRedirect : redirect)(moved.destination);
+    notFound();
+  }
 
   return (
     <>

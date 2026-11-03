@@ -25,7 +25,7 @@ export const SectionLandingHero: React.FC<SectionLandingHeroProps> = ({
       <div className="max-w-[1280px] mx-auto px-4 sm:px-6 lg:px-8">
         {breadcrumbs && (
           <div className="mb-4">
-            <Breadcrumbs items={breadcrumbs} className="text-stone-400" />
+            <Breadcrumbs items={breadcrumbs} tone="dark" />
           </div>
         )}
 

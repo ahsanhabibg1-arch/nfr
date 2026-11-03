@@ -3,6 +3,7 @@ import { prisma } from '../db';
 import { articleInclude, toArticle } from '../mappers';
 import type { Article, ArticleRevision, ArticleWorkflowStatus } from '../../types';
 import { Prisma, WorkflowStatus } from '@prisma/client';
+import type { ArticleRelationshipOptions, SourceDirectoryOption } from './relationshipTypes';
 
 /**
  * Server-only admin reads (Batch 03). Unlike the public repository
@@ -44,6 +45,43 @@ export async function getEditableArticle(id: string): Promise<EditableArticlePay
     where: { articleId: id }, orderBy: { revisionNo: 'desc' }, take: 30,
   });
   return { article: toArticle(row), version: row.version, revisions: revisions.map(toRevision) };
+}
+
+/** Database-backed choices for the article editor's rodeo relationships panel. */
+export async function listArticleRelationshipOptions(): Promise<ArticleRelationshipOptions> {
+  const [disciplines, hubs, events, editions] = await Promise.all([
+    prisma.discipline.findMany({ orderBy: { sortOrder: 'asc' }, select: { id: true, name: true, category: true } }),
+    prisma.rodeoHub.findMany({ orderBy: { sortOrder: 'asc' }, select: { id: true, title: true, region: true } }),
+    prisma.rodeoEvent.findMany({ orderBy: { name: 'asc' }, select: { id: true, name: true, location: true } }),
+    prisma.rodeoEventEdition.findMany({
+      orderBy: [{ eventId: 'asc' }, { editionSlug: 'desc' }],
+      select: { id: true, label: true, eventId: true, editionSlug: true },
+    }),
+  ]);
+  return {
+    disciplines: disciplines.map((d) => ({ id: d.id, label: d.name, detail: d.category })),
+    hubs: hubs.map((h) => ({ id: h.id, label: h.title, detail: h.region })),
+    events: events.map((e) => ({ id: e.id, label: e.name, detail: e.location })),
+    editions: editions.map((e) => ({ id: e.id, label: e.label, detail: e.editionSlug, eventId: e.eventId })),
+  };
+}
+
+/** The real Source directory for the editor's "attach existing source" picker (Batch A, D6). */
+export async function listSourceDirectoryOptions(): Promise<SourceDirectoryOption[]> {
+  const rows = await prisma.source.findMany({
+    orderBy: { title: 'asc' },
+    take: 500,
+    select: { id: true, title: true, publisher: true, url: true, type: true, status: true, classification: true },
+  });
+  return rows.map((s) => ({
+    id: s.id,
+    title: s.title,
+    publisher: s.publisher,
+    url: s.url,
+    type: s.type,
+    status: s.status === 'VERIFIED' ? 'verified' : s.status === 'EXPIRED' ? 'expired' : 'needs_review',
+    classification: s.classification === 'OFFICIAL' ? 'Official' : s.classification === 'HISTORICAL_ARCHIVE' ? 'Historical Archive' : 'Independent Reference',
+  }));
 }
 
 export interface AdminArticleRow {

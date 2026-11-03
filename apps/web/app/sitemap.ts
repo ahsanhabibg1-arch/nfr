@@ -9,6 +9,7 @@ import {
 import { getAllRodeoSlugs } from '@/lib/rodeoContent';
 import { getIndexableVenueSlugs, getIndexableCompetitorSlugs } from '@/lib/batch12Content';
 import { listPublicCoverageEditions } from '@/lib/cms/competitionService';
+import { getIndexableLegalPages } from '@/config/legalPages';
 
 /**
  * Central indexability policy (Master Requirements §8.2 / Batch 01 §12): the XML
@@ -88,6 +89,12 @@ export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
     if (c.schedule) entries.push({ url: `${base}/schedule/`, lastModified: now, changeFrequency: 'weekly', priority: 0.6 });
     if (c.results) entries.push({ url: `${base}/results/`, lastModified: now, changeFrequency: 'weekly', priority: 0.6 });
     if (c.standings) entries.push({ url: `${base}/standings/`, lastModified: now, changeFrequency: 'weekly', priority: 0.6 });
+  }
+
+  // Publication policy pages: listed only once the owner approves their wording
+  // (drafts render with a review notice and are noindex — config/legalPages.ts).
+  for (const p of getIndexableLegalPages()) {
+    entries.push({ url: `${SITE_URL}${p.path}`, lastModified: now, changeFrequency: 'yearly', priority: 0.3 });
   }
 
   return entries;

@@ -3,6 +3,9 @@
   "version": "0.1.0",
   "private": true,
   "type": "module",
+  "engines": {
+    "node": ">=22.23.4 <23"
+  },
   "prisma": {
     "seed": "tsx prisma/seed.ts"
   },
@@ -22,7 +25,8 @@
     "db:reset": "prisma migrate reset --force",
     "db:setup": "prisma migrate deploy && prisma generate && prisma db seed",
     "db:studio": "prisma studio",
-    "bootstrap:admin": "tsx prisma/bootstrap-admin.ts"
+    "bootstrap:admin": "tsx prisma/bootstrap-admin.ts",
+    "test:e2e": "playwright test"
   },
   "dependencies": {
     "@aws-sdk/client-s3": "^3.1161.0",
@@ -33,10 +37,12 @@
     "next": "16.4.3",
     "react": "19.2.0",
     "react-dom": "19.2.0",
-    "sharp": "^0.33.5",
+    "sharp": "^0.35.5",
     "zod": "^4.6.7"
   },
   "devDependencies": {
+    "@axe-core/playwright": "^4.14.0",
+    "@playwright/test": "^1.64.1",
     "@tailwindcss/postcss": "^4.3.3",
     "@types/bcryptjs": "^2.4.6",
     "@types/node": "^22.14.0",

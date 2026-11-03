@@ -65,7 +65,7 @@ export const AdminArticlesPage: React.FC<Props> = ({ result, filters, categories
         {STATUS_TABS.map((s) => (
           <button key={s || 'all'} onClick={() => navigate({ status: s })}
             className={`px-3 py-1.5 rounded-xs font-semibold uppercase tracking-wider ${filters.status === s ? 'bg-[#0F1115] text-[#D4A757]' : 'text-stone-600 hover:bg-stone-100'}`}>
-            {s ? s.replace('_', ' ') : 'All'}
+            {s === 'scheduled' ? 'scheduled (manual publish)' : s ? s.replace('_', ' ') : 'All'}
           </button>
         ))}
       </div>
@@ -133,11 +133,16 @@ export const AdminArticlesPage: React.FC<Props> = ({ result, filters, categories
                     </td>
                     <td className="py-3 px-4 max-w-md">
                       <Link href={ROUTES.ADMIN_ARTICLE_EDIT(art.id)} className="font-serif font-bold text-stone-900 hover:text-[#8B5E3C] line-clamp-1 text-sm">{art.title}</Link>
-                      <span className="font-mono text-[10px] text-stone-400 block mt-0.5 truncate">/articles/{art.slug}/</span>
+                      <span className="font-mono text-[10px] text-ink-muted block mt-0.5 truncate">
+                        /articles/{art.slug}/
+                        {art.slug.startsWith('fixture-') && (
+                          <span className="ml-2 px-1 rounded-xs bg-amber-100 text-amber-900 font-semibold" title="Synthetic test fixture — not editorial content; hidden from public pages in production">FIXTURE</span>
+                        )}
+                      </span>
                     </td>
                     <td className="py-3 px-4 whitespace-nowrap"><span className="font-semibold text-stone-700">{art.category}</span>{art.subcategory && <span className="text-stone-400 block text-[10px]">{art.subcategory}</span>}</td>
                     <td className="py-3 px-4 whitespace-nowrap text-stone-600">{art.authorName}</td>
-                    <td className="py-3 px-4 whitespace-nowrap"><span className={`text-[10px] font-mono px-2 py-0.5 rounded-xs font-semibold ${STATUS_STYLES[art.workflowStatus] ?? 'bg-stone-100'}`}>{art.workflowStatus.toUpperCase()}</span></td>
+                    <td className="py-3 px-4 whitespace-nowrap"><span className={`text-[10px] font-mono px-2 py-0.5 rounded-xs font-semibold ${STATUS_STYLES[art.workflowStatus] ?? 'bg-stone-100'}`}>{art.workflowStatus === 'scheduled' ? 'SCHEDULED — MANUAL PUBLISH REQUIRED' : art.workflowStatus.toUpperCase()}</span></td>
                     <td className="py-3 px-4 whitespace-nowrap text-stone-500 font-mono text-[11px]">{art.publishedAt ?? '—'}</td>
                     <td className="py-3 px-4 text-right whitespace-nowrap space-x-2">
                       {art.workflowStatus === 'published' && <Link href={ROUTES.ARTICLE(art.slug)} target="_blank" className="text-stone-500 hover:text-stone-900 font-medium">Live</Link>}

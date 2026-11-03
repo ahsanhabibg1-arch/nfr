@@ -28,7 +28,7 @@ export const ArticleHeader: React.FC<ArticleHeaderProps> = ({ article }) => {
       <Breadcrumbs items={breadcrumbs} className="mb-2" />
 
       {/* Meta Line: Category & Article Type Label */}
-      <div className="flex items-center gap-2 text-xs font-sans text-stone-500">
+      <div className="flex items-center gap-2 text-xs font-sans text-ink-muted">
         <span className="font-bold text-[#8B5E3C] uppercase tracking-wider">
           {article.category}
         </span>

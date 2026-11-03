@@ -63,7 +63,7 @@ export const CategoryArchiveView: React.FC<CategoryArchiveViewProps> = ({
           </p>
 
           <div className="mt-6 flex items-center gap-2 overflow-x-auto pb-2 scrollbar-none">
-            <span className="text-[11px] font-mono text-stone-500 uppercase tracking-wider mr-1">
+            <span className="text-[11px] font-mono text-ink-muted uppercase tracking-wider mr-1">
               Article Type:
             </span>
             {(['all', 'feature', 'analysis', 'guide', 'news'] as const).map((type) => (

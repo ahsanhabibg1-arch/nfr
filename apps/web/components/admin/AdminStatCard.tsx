@@ -34,11 +34,11 @@ export const AdminStatCard: React.FC<AdminStatCardProps> = ({
 
   return (
     <div className={`p-5 bg-white border border-stone-200 rounded-sm shadow-2xs flex flex-col justify-between ${className}`}>
-      <div className="flex items-center justify-between text-stone-500 mb-2">
+      <div className="flex items-center justify-between text-ink-muted mb-2">
         <span className="text-xs uppercase font-sans tracking-wider font-semibold text-stone-600">
           {title}
         </span>
-        {icon && <span className="text-stone-400">{icon}</span>}
+        {icon && <span className="text-ink-muted">{icon}</span>}
       </div>
 
       <div className="flex items-baseline gap-2.5 my-1">
@@ -53,7 +53,7 @@ export const AdminStatCard: React.FC<AdminStatCardProps> = ({
       </div>
 
       {subText && (
-        <p className="text-[11px] text-stone-400 font-sans mt-1 line-clamp-1">
+        <p className="text-[11px] text-ink-muted font-sans mt-1 line-clamp-1">
           {subText}
         </p>
       )}

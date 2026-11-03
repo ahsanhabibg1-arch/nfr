@@ -15,7 +15,7 @@ export default async function LoginPage() {
           <span className="font-serif text-3xl font-black text-white tracking-tight uppercase">
             NFR<span className="text-[#D4A757]">CMS</span>
           </span>
-          <p className="mt-2 text-xs font-mono uppercase tracking-widest text-stone-500">
+          <p className="mt-2 text-xs font-mono uppercase tracking-widest text-ink-inverse-muted">
             Editorial Management Console
           </p>
         </div>

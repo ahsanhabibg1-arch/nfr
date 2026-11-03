@@ -2,16 +2,19 @@
 
 import React, { useState } from 'react';
 import { SourceReference } from '../../../types';
-import { ADMIN_SOURCES } from '../../../data/mockAdminData';
+import { NEW_SOURCE_ID_PREFIX, type SourceDirectoryOption } from '../../../lib/cms/relationshipTypes';
 import { AdminModal } from '../AdminModal';
 
 interface ArticleSourcesPanelProps {
   sources: SourceReference[];
+  /** Real Source directory rows (DB), loaded server-side. */
+  directory: SourceDirectoryOption[];
   onChange: (sources: SourceReference[]) => void;
 }
 
 export const ArticleSourcesPanel: React.FC<ArticleSourcesPanelProps> = ({
   sources,
+  directory,
   onChange,
 }) => {
   const [modalOpen, setModalOpen] = useState(false);
@@ -29,16 +32,14 @@ export const ArticleSourcesPanel: React.FC<ArticleSourcesPanelProps> = ({
     onChange(sources.filter((s) => s.id !== id));
   };
 
-  const handleAttachExisting = (srcItem: (typeof ADMIN_SOURCES)[0]) => {
+  const handleAttachExisting = (srcItem: SourceDirectoryOption) => {
     if (sources.some((s) => s.id === srcItem.id)) return;
 
     const attached: SourceReference = {
       id: srcItem.id,
       title: srcItem.title,
-      publisher: srcItem.publisher,
+      publisher: srcItem.publisher ?? '',
       url: srcItem.url,
-      date: srcItem.verificationDate,
-      note: `${srcItem.type} citation verified ${srcItem.verificationDate}`,
       classification: srcItem.classification,
       status: srcItem.status,
     };
@@ -51,14 +52,14 @@ export const ArticleSourcesPanel: React.FC<ArticleSourcesPanelProps> = ({
     if (!newTitle.trim() || !newPublisher.trim()) return;
 
     const newSource: SourceReference = {
-      id: `src-${Date.now()}`,
+      // Not in the directory yet: the server creates it (status Needs review) on save.
+      id: `${NEW_SOURCE_ID_PREFIX}${Date.now()}`,
       title: newTitle.trim(),
       publisher: newPublisher.trim(),
       url: newUrl.trim() || undefined,
       note: newNote.trim() || undefined,
-      date: 'Current Season',
       classification: newClassification,
-      status: 'verified',
+      status: 'needs_review',
     };
 
     onChange([...sources, newSource]);
@@ -69,9 +70,9 @@ export const ArticleSourcesPanel: React.FC<ArticleSourcesPanelProps> = ({
     setModalOpen(false);
   };
 
-  const filteredDirectory = ADMIN_SOURCES.filter((s) =>
-    s.title.toLowerCase().includes(searchQuery.toLowerCase()) ||
-    s.publisher.toLowerCase().includes(searchQuery.toLowerCase())
+  const q = searchQuery.toLowerCase();
+  const filteredDirectory = directory.filter((s) =>
+    s.title.toLowerCase().includes(q) || (s.publisher ?? '').toLowerCase().includes(q)
   );
 
   return (
@@ -82,7 +83,7 @@ export const ArticleSourcesPanel: React.FC<ArticleSourcesPanelProps> = ({
           <h4 className="font-serif font-bold text-stone-900 text-sm">
             Sources &amp; Judicial Evidence
           </h4>
-          <p className="text-[11px] text-stone-500 font-sans">
+          <p className="text-[11px] text-ink-muted font-sans">
             Attach official rulebooks, PRCA scoring archives, or historical documents to satisfy E-E-A-T.
           </p>
         </div>
@@ -115,20 +116,20 @@ export const ArticleSourcesPanel: React.FC<ArticleSourcesPanelProps> = ({
                   <span className={`text-[10px] font-mono px-1.5 py-0.2 rounded-xs font-semibold ${
                     src.status === 'verified' ? 'bg-emerald-100 text-emerald-800' : 'bg-amber-100 text-amber-800'
                   }`}>
-                    {src.status === 'verified' ? 'Verified Official' : 'Needs Review'}
+                    {src.status === 'verified' ? 'Verified' : src.status === 'expired' ? 'Expired' : 'Needs review'}
                   </span>
                   {src.classification && (
-                    <span className="text-[10px] font-mono text-stone-400">
+                    <span className="text-[10px] font-mono text-ink-muted">
                       [{src.classification}]
                     </span>
                   )}
                 </div>
                 <div className="text-[11px] text-stone-600">
                   <span>Publisher: <strong>{src.publisher}</strong></span>
-                  {src.date && <span className="text-stone-400 ml-2">&bull; {src.date}</span>}
+                  {src.date && <span className="text-ink-muted ml-2">&bull; {src.date}</span>}
                 </div>
                 {src.note && (
-                  <p className="text-[11px] text-stone-500 italic mt-0.5">
+                  <p className="text-[11px] text-ink-muted italic mt-0.5">
                     Citation note: {src.note}
                   </p>
                 )}
@@ -147,7 +148,7 @@ export const ArticleSourcesPanel: React.FC<ArticleSourcesPanelProps> = ({
               <button
                 type="button"
                 onClick={() => handleRemoveSource(src.id)}
-                className="text-stone-400 hover:text-rose-600 p-1"
+                className="text-ink-muted hover:text-rose-600 p-1"
                 title="Detach Source"
               >
                 &times;
@@ -156,7 +157,7 @@ export const ArticleSourcesPanel: React.FC<ArticleSourcesPanelProps> = ({
           ))}
         </div>
       ) : (
-        <div className="p-4 bg-stone-50 border border-dashed border-stone-200 rounded-xs text-xs text-stone-500 text-center italic">
+        <div className="p-4 bg-stone-50 border border-dashed border-stone-200 rounded-xs text-xs text-ink-muted text-center italic">
           No external sources or judicial rulebooks attached yet. Use the buttons above to link primary evidence.
         </div>
       )}
@@ -165,7 +166,7 @@ export const ArticleSourcesPanel: React.FC<ArticleSourcesPanelProps> = ({
       {sourceDirectoryOpen && (
         <AdminModal
           isOpen={true}
-          title="Attach Verified Source from Directory"
+          title="Attach Source from Directory"
           onClose={() => setSourceDirectoryOpen(false)}
         >
           <div className="space-y-4">
@@ -177,15 +178,20 @@ export const ArticleSourcesPanel: React.FC<ArticleSourcesPanelProps> = ({
               className="w-full px-3 py-2 text-xs border border-stone-300 rounded-xs bg-white text-stone-900 focus:outline-none focus:border-[#D4A757]"
             />
 
-            <div className="divide-y divide-stone-200 border border-stone-200 rounded-xs max-h-60 overflow-y-auto">
+            {filteredDirectory.length === 0 && (
+              <p className="text-xs text-ink-muted italic" data-testid="source-directory-empty">
+                {directory.length === 0 ? 'The source directory is empty. Add sources in Sources & References, or create one here.' : 'No directory source matches your search.'}
+              </p>
+            )}
+            <div className="divide-y divide-stone-200 border border-stone-200 rounded-xs max-h-60 overflow-y-auto" data-testid="source-directory">
               {filteredDirectory.map((item) => {
                 const isAttached = sources.some((s) => s.id === item.id);
                 return (
                   <div key={item.id} className="p-3 flex items-center justify-between text-xs hover:bg-stone-50">
                     <div>
                       <div className="font-semibold text-stone-900">{item.title}</div>
-                      <div className="text-[11px] text-stone-500 font-mono">
-                        {item.publisher} &bull; {item.type}
+                      <div className="text-[11px] text-ink-muted font-mono">
+                        {[item.publisher, item.type, item.status === 'verified' ? 'Verified' : item.status === 'expired' ? 'Expired' : 'Needs review'].filter(Boolean).join(' • ')}
                       </div>
                     </div>
                     <button
@@ -194,7 +200,7 @@ export const ArticleSourcesPanel: React.FC<ArticleSourcesPanelProps> = ({
                       onClick={() => handleAttachExisting(item)}
                       className={`px-3 py-1 text-xs rounded-xs font-medium transition-colors ${
                         isAttached
-                          ? 'bg-stone-100 text-stone-400 cursor-not-allowed'
+                          ? 'bg-stone-100 text-ink-muted cursor-not-allowed'
                           : 'bg-[#0F1115] text-[#D4A757] hover:bg-stone-800'
                       }`}
                     >
@@ -217,7 +223,7 @@ export const ArticleSourcesPanel: React.FC<ArticleSourcesPanelProps> = ({
         >
           <form onSubmit={handleAddNewSource} className="space-y-4">
             <div>
-              <label className="block text-xs font-mono uppercase text-stone-500 font-medium mb-1">
+              <label className="block text-xs font-mono uppercase text-ink-muted font-medium mb-1">
                 Source Document Title
               </label>
               <input
@@ -231,7 +237,7 @@ export const ArticleSourcesPanel: React.FC<ArticleSourcesPanelProps> = ({
             </div>
 
             <div>
-              <label className="block text-xs font-mono uppercase text-stone-500 font-medium mb-1">
+              <label className="block text-xs font-mono uppercase text-ink-muted font-medium mb-1">
                 Publishing Entity / Provenance
               </label>
               <input
@@ -245,7 +251,7 @@ export const ArticleSourcesPanel: React.FC<ArticleSourcesPanelProps> = ({
             </div>
 
             <div>
-              <label className="block text-xs font-mono uppercase text-stone-500 font-medium mb-1">
+              <label className="block text-xs font-mono uppercase text-ink-muted font-medium mb-1">
                 Source URL (Verification Link)
               </label>
               <input
@@ -258,7 +264,7 @@ export const ArticleSourcesPanel: React.FC<ArticleSourcesPanelProps> = ({
             </div>
 
             <div>
-              <label className="block text-xs font-mono uppercase text-stone-500 font-medium mb-1">
+              <label className="block text-xs font-mono uppercase text-ink-muted font-medium mb-1">
                 Classification Type
               </label>
               <select
@@ -273,7 +279,7 @@ export const ArticleSourcesPanel: React.FC<ArticleSourcesPanelProps> = ({
             </div>
 
             <div>
-              <label className="block text-xs font-mono uppercase text-stone-500 font-medium mb-1">
+              <label className="block text-xs font-mono uppercase text-ink-muted font-medium mb-1">
                 Specific Citation Note / Rule Section
               </label>
               <input

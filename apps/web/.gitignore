@@ -7,6 +7,13 @@ next-env.d.ts
 .env*
 !.env.example
 
+# Batch A — test/browser artifacts (never commit; e2e/.auth holds an ephemeral test-only credential)
+/vitest-results.json
+/test-results/
+/playwright-report/
+/e2e/.auth/
+/next-start.log
+
 # Batch 05 — local media blob store (dev adapter); never commit uploaded files
 /var/media/
 var/media/

@@ -6,7 +6,6 @@ import { ArticleBody } from '../../editorial/ArticleBody';
 import { AuthorBio } from '../../editorial/AuthorBio';
 import { SourceList } from '../../editorial/SourceList';
 import { DisclosureBanner } from '../../editorial/DisclosureBanner';
-import { SEVEN_DISCIPLINES, RODEO_HUBS } from '../../../data/mockEditorialData';
 
 interface ArticleDraftPreviewProps {
   article: Article;

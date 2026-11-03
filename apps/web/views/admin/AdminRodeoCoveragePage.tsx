@@ -119,7 +119,7 @@ export const AdminRodeoCoveragePage: React.FC<Props> = ({ hubs, events, editions
         <div className="space-y-3">
           {canManage && eventOptions.length > 0 && <button onClick={() => openEdition()} className={btn}>+ Add Edition</button>}
           {eventOptions.length === 0 && <p className="text-xs text-stone-500">Create a recurring event first — editions belong to an event.</p>}
-          <Table head={['Event', 'Edition', 'Year', 'Venue', 'Purse', 'Articles', '']}>
+          <Table head={['Event', 'Edition', 'Year', 'Venue', 'Purse note (internal)', 'Articles', '']}>
             {editions.map((e) => (
               <tr key={e.id} className="hover:bg-stone-50/60">
                 <td className={`${th} font-semibold text-stone-900`}>{e.eventName}</td>
@@ -203,8 +203,8 @@ export const AdminRodeoCoveragePage: React.FC<Props> = ({ hubs, events, editions
             <Field label="Label"><input value={ed.label} onChange={(e) => setEd({ ...ed, label: e.target.value })} placeholder="e.g. 2025 National Finals Rodeo" className={inp} /></Field>
             <Field label="Year"><input type="number" value={ed.year} onChange={(e) => setEd({ ...ed, year: e.target.value })} className="w-32 p-2 bg-stone-50 border border-stone-200 rounded-xs" /></Field>
             <Field label="Venue"><select value={ed.venueId} onChange={(e) => setEd({ ...ed, venueId: e.target.value })} className={inp}><option value="">— none —</option>{venueOptions.map((o) => <option key={o.id} value={o.id}>{o.name}</option>)}</select></Field>
-            <Field label="Purse benchmark"><input value={ed.purseBenchmark} onChange={(e) => setEd({ ...ed, purseBenchmark: e.target.value })} placeholder="e.g. $11.5M (verify before publishing)" className={inp} /></Field>
-            <p className="text-[10px] text-stone-400">Do not enter unverified purse figures or results. Leave blank if unconfirmed.</p>
+            <Field label="Purse note (internal — never shown publicly)"><input value={ed.purseBenchmark} onChange={(e) => setEd({ ...ed, purseBenchmark: e.target.value })} placeholder="Internal note with source, if known" className={inp} /></Field>
+            <p className="text-[10px] text-stone-400">Admin-only. This note is not displayed on public pages, metadata or structured data.</p>
           </div>
         </AdminModal>
       )}

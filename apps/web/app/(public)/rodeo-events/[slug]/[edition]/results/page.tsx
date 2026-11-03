@@ -16,7 +16,7 @@ export async function generateMetadata({ params }: Params): Promise<Metadata> {
   const ed = await getPublicEditionBySlug(slug, edition);
   if (!ed) return buildMetadata({ title: 'Results Not Found', description: 'Rodeo results.', path: ROUTES.EDITION_RESULTS(slug, edition), noindex: true });
   const rows = await getPublicResults(ed.id);
-  return buildMetadata({ title: `${ed.event.name} ${ed.label} — Results`, description: `Official, source-verified results for ${ed.event.name} ${ed.label}.`, path: ROUTES.EDITION_RESULTS(ed.event.slug, ed.editionSlug), noindex: rows.length === 0 });
+  return buildMetadata({ title: `${ed.event.name} ${ed.label} — Results`, description: `Source-verified results for ${ed.event.name} ${ed.label}.`, path: ROUTES.EDITION_RESULTS(ed.event.slug, ed.editionSlug), noindex: rows.length === 0 });
 }
 
 function val(r: { resultType: string; timeSeconds: string | null; scoreNumeric: string | null }): string {

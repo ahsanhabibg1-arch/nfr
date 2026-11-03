@@ -57,10 +57,14 @@ const cleanJson = (v: unknown): object => JSON.parse(JSON.stringify(v ?? {}));
 const slugify = (s: string) =>
   s.toLowerCase().trim().replace(/[^a-z0-9]+/g, '-').replace(/(^-|-$)/g, '');
 
-const RIGHTS: Record<string, ImageRightsStatus> = {
+/** Editor rights labels ↔ DB enum. Only the four resolved values clear the publish gate. */
+export const IMAGE_RIGHTS_LABELS = ['Staff Photo', 'Editorial Pool', 'PRCA Archive', 'Licensed Creative', 'Unresolved'] as const;
+type RightsLabel = (typeof IMAGE_RIGHTS_LABELS)[number];
+const RIGHTS: Record<RightsLabel, ImageRightsStatus> = {
   'Staff Photo': 'STAFF_PHOTO', 'Editorial Pool': 'EDITORIAL_POOL', 'PRCA Archive': 'PRCA_ARCHIVE',
   'Licensed Creative': 'LICENSED_CREATIVE', Unresolved: 'UNRESOLVED',
 };
+const RIGHTS_LABEL = Object.fromEntries(Object.entries(RIGHTS).map(([label, db]) => [db, label])) as Record<ImageRightsStatus, RightsLabel>;
 
 const blockSchema: z.ZodType = z.object({ type: z.string() }).passthrough();
 
@@ -85,12 +89,15 @@ export const ArticleInputSchema = z.object({
   heroImage: z.string().max(600).optional().default(''),
   imageCredit: z.string().max(300).optional().default(''),
   imageCaption: z.string().max(600).optional().default(''),
-  imageRightsStatus: z.string().optional().default('Staff Photo'),
+  // Fail closed: unknown values are rejected, and an omitted value is Unresolved (never assumed cleared).
+  imageRightsStatus: z.enum(IMAGE_RIGHTS_LABELS).optional().default('Unresolved'),
   disclosure: z.string().optional().default('editorial-independent'),
   disclosureNote: z.string().max(600).optional().default(''),
   tags: z.array(z.string().max(60)).default([]),
   takeaways: z.array(z.string().max(400)).default([]),
   sources: z.array(z.object({
+    // Set when the source is an existing Source-directory row (Batch A, D6). Validated server-side.
+    sourceId: z.string().min(1).optional(),
     title: z.string().min(1), url: z.string(), publisher: z.string().optional(), note: z.string().optional(),
   })).default([]),
   disciplineIds: z.array(z.string()).default([]),
@@ -100,15 +107,16 @@ export const ArticleInputSchema = z.object({
 });
 
 export type ArticleInput = z.input<typeof ArticleInputSchema>;
+type ParsedInput = z.infer<typeof ArticleInputSchema>;
 
 /** Build a Partial<Article> for the publication gate from validated input. */
-function toValidatorShape(v: z.infer<typeof ArticleInputSchema>): Partial<Article> {
+function toValidatorShape(v: ParsedInput): Partial<Article> {
   return {
     title: v.title,
     excerpt: v.excerpt,
     slug: v.slug,
     structuredBody: v.blocks as unknown as ContentBlock[],
-    imageRightsStatus: (v.imageRightsStatus as Article['imageRightsStatus']) ?? 'Staff Photo',
+    imageRightsStatus: v.imageRightsStatus,
     imageAltText: v.imageAltText,
     disclosure: v.disclosure as Article['disclosure'],
     disclosureNote: v.disclosureNote,
@@ -131,6 +139,96 @@ async function resolveAuthorId(tx: Prisma.TransactionClient, name: string, role:
     create: { id, slug: slugify(name), name, role },
   });
   return id;
+}
+
+// --- Publication gate -----------------------------------------------------
+
+const articlePath = (slug: string) => `/articles/${slug}/`;
+
+/** Image URLs (hero + inline image blocks) referenced by an article input. */
+function referencedImageUrls(v: ParsedInput): string[] {
+  const inline = v.blocks
+    .map((b) => b as { type?: unknown; src?: unknown })
+    .filter((b) => b.type === 'image' && typeof b.src === 'string' && b.src.length > 0)
+    .map((b) => String(b.src));
+  return [...new Set([v.heroImage, ...inline].filter(Boolean))];
+}
+
+/**
+ * Blocking publication checks (Requirements v2.0 §6.4): required fields, image rights,
+ * disclosures, and confirmed rights on every managed (DAM) image. Routine SEO findings are
+ * warnings and never reach here. Used both when an article goes live and whenever an
+ * already-published article is edited or restored, so a live article cannot be edited
+ * into a state that would not have been allowed to publish.
+ */
+async function assertPublishable(v: ParsedInput): Promise<void> {
+  const report = validateArticle(toValidatorShape(v));
+  if (!report.canPublish) {
+    throw new ServiceError('validation', 'Publication blocked by unresolved editorial/compliance checks.', {
+      blockers: report.blockers.map((b) => b.message),
+      compliance: report.compliance.map((c) => c.message),
+    });
+  }
+  const urls = referencedImageUrls(v);
+  const unconfirmed = urls.length
+    ? await prisma.mediaAsset.count({ where: { url: { in: urls }, storageProvider: { not: 'legacy-local' }, rightsConfirmed: false } })
+    : 0;
+  if (unconfirmed > 0) {
+    throw new ServiceError('validation', 'One or more attached images have unconfirmed usage rights. Confirm their licenses in the Media Library before publishing.', { media: 'rights_unconfirmed' });
+  }
+}
+
+// --- Rodeo relationships --------------------------------------------------
+
+interface ResolvedRelations { disciplineIds: string[]; hubIds: string[]; eventIds: string[]; editionIds: string[] }
+
+/**
+ * Validate every relationship id against the database (ADM-06, §7.3). Unknown or deleted
+ * ids are rejected rather than silently dropped, and an edition may only be linked when
+ * its parent event is linked too. Disciplines also accept their slug (legacy callers).
+ */
+async function resolveRelationships(tx: Prisma.TransactionClient, v: ParsedInput): Promise<ResolvedRelations> {
+  const uniq = (ids: string[]) => [...new Set(ids.filter(Boolean))];
+  const [discIn, hubIn, eventIn, editionIn] = [uniq(v.disciplineIds), uniq(v.hubIds), uniq(v.eventIds), uniq(v.editionIds)];
+
+  const [discs, hubs, events, editions] = await Promise.all([
+    discIn.length ? tx.discipline.findMany({ where: { OR: [{ id: { in: discIn } }, { slug: { in: discIn } }] }, select: { id: true, slug: true } }) : [],
+    hubIn.length ? tx.rodeoHub.findMany({ where: { id: { in: hubIn } }, select: { id: true } }) : [],
+    eventIn.length ? tx.rodeoEvent.findMany({ where: { id: { in: eventIn } }, select: { id: true } }) : [],
+    editionIn.length ? tx.rodeoEventEdition.findMany({ where: { id: { in: editionIn } }, select: { id: true, label: true, eventId: true } }) : [],
+  ]);
+
+  const missing: string[] = [];
+  const discKnown = new Set(discs.flatMap((d) => [d.id, d.slug]));
+  discIn.filter((d) => !discKnown.has(d)).forEach((d) => missing.push(`discipline ${d}`));
+  const hubKnown = new Set(hubs.map((h) => h.id));
+  hubIn.filter((h) => !hubKnown.has(h)).forEach((h) => missing.push(`hub ${h}`));
+  const eventKnown = new Set(events.map((e) => e.id));
+  eventIn.filter((e) => !eventKnown.has(e)).forEach((e) => missing.push(`event ${e}`));
+  const editionKnown = new Set(editions.map((e) => e.id));
+  editionIn.filter((e) => !editionKnown.has(e)).forEach((e) => missing.push(`edition ${e}`));
+  if (missing.length) throw new ServiceError('validation', `Unknown or deleted relationship(s): ${missing.join(', ')}.`, { relationships: missing });
+
+  const mismatched = editions.filter((ed) => !eventKnown.has(ed.eventId));
+  if (mismatched.length) {
+    throw new ServiceError(
+      'validation',
+      `Edition ${mismatched.map((e) => `"${e.label}"`).join(', ')} must be linked together with its parent event. Select the event too, or remove the edition.`,
+      { editions: mismatched.map((e) => ({ editionId: e.id, requiredEventId: e.eventId })) },
+    );
+  }
+  return { disciplineIds: [...new Set(discs.map((d) => d.id))], hubIds: hubIn, eventIds: eventIn, editionIds: editionIn };
+}
+
+/** Every referenced directory source must exist; unknown or deleted ids are rejected (D6). */
+async function resolveSources(tx: Prisma.TransactionClient, v: ParsedInput): Promise<void> {
+  const ids = [...new Set(v.sources.map((s) => s.sourceId).filter((id): id is string => !!id))];
+  if (!ids.length) return;
+  const found = new Set((await tx.source.findMany({ where: { id: { in: ids } }, select: { id: true } })).map((s) => s.id));
+  const missing = ids.filter((id) => !found.has(id));
+  if (missing.length) {
+    throw new ServiceError('validation', `Unknown or deleted source(s): ${missing.join(', ')}. Re-select them from the source directory.`, { sources: missing });
+  }
 }
 
 /**
@@ -180,13 +278,17 @@ async function reconcileInlineMedia(tx: Prisma.TransactionClient, articleId: str
 async function writeChildren(
   tx: Prisma.TransactionClient,
   articleId: string,
-  v: z.infer<typeof ArticleInputSchema>,
+  v: ParsedInput,
+  rel: ResolvedRelations,
 ): Promise<void> {
   // Reset-and-rebuild child collections.
   await tx.articleBlock.deleteMany({ where: { articleId } });
   await tx.articleTag.deleteMany({ where: { articleId } });
   await tx.articleSource.deleteMany({ where: { articleId } });
   await tx.articleDiscipline.deleteMany({ where: { articleId } });
+  await tx.articleHub.deleteMany({ where: { articleId } });
+  await tx.articleEvent.deleteMany({ where: { articleId } });
+  await tx.articleEdition.deleteMany({ where: { articleId } });
 
   for (let i = 0; i < v.blocks.length; i++) {
     await tx.articleBlock.create({
@@ -198,21 +300,31 @@ async function writeChildren(
     await tx.tag.upsert({ where: { id: tagId }, update: { name }, create: { id: tagId, slug: slugify(name), name } });
     await tx.articleTag.create({ data: { articleId, tagId } });
   }
+  // Sources (Batch A, D6). The Source table is a shared directory: article editing links to
+  // it but never rewrites another article's or the directory's record.
+  //   - `sourceId` → an existing directory row (validated by resolveSources); linked as-is.
+  //   - no `sourceId` → a newly typed source, created only if its deterministic id is free.
   let sOrder = 0;
+  const linked = new Set<string>();
   for (const s of v.sources) {
-    const sid = `src-${slugify(s.title).slice(0, 40)}-${slugify(s.url).slice(0, 20)}`;
-    await tx.source.upsert({
-      where: { id: sid },
-      update: { title: s.title, url: safeHref(s.url), publisher: s.publisher ?? null },
-      create: { id: sid, title: s.title, url: safeHref(s.url), publisher: s.publisher ?? null },
-    });
+    let sid = s.sourceId;
+    if (!sid) {
+      sid = `src-${slugify(s.title).slice(0, 40)}-${slugify(s.url).slice(0, 20)}`;
+      await tx.source.upsert({
+        where: { id: sid },
+        update: {},
+        create: { id: sid, title: s.title, url: safeHref(s.url), publisher: s.publisher ?? null },
+      });
+    }
+    if (linked.has(sid)) continue; // the same source twice in one article
+    linked.add(sid);
     await tx.articleSource.create({ data: { articleId, sourceId: sid, note: s.note ?? null, sortOrder: sOrder++ } });
   }
-  // Link disciplines that exist.
-  for (const d of new Set(v.disciplineIds)) {
-    const disc = await tx.discipline.findFirst({ where: { OR: [{ id: d }, { slug: d }] }, select: { id: true } });
-    if (disc) await tx.articleDiscipline.create({ data: { articleId, disciplineId: disc.id } }).catch(() => {});
-  }
+  // Rodeo relationships — ids already validated by resolveRelationships().
+  if (rel.disciplineIds.length) await tx.articleDiscipline.createMany({ data: rel.disciplineIds.map((disciplineId) => ({ articleId, disciplineId })) });
+  if (rel.hubIds.length) await tx.articleHub.createMany({ data: rel.hubIds.map((hubId) => ({ articleId, hubId })) });
+  if (rel.eventIds.length) await tx.articleEvent.createMany({ data: rel.eventIds.map((eventId) => ({ articleId, eventId })) });
+  if (rel.editionIds.length) await tx.articleEdition.createMany({ data: rel.editionIds.map((editionId) => ({ articleId, editionId })) });
   // SEO 1:1
   await tx.articleSeo.upsert({
     where: { articleId },
@@ -221,7 +333,7 @@ async function writeChildren(
   });
 }
 
-function scalarData(v: z.infer<typeof ArticleInputSchema>) {
+function scalarData(v: ParsedInput) {
   return {
     slug: v.slug,
     title: v.title,
@@ -235,7 +347,7 @@ function scalarData(v: z.infer<typeof ArticleInputSchema>) {
     imageCaption: v.imageCaption || null,
     imageSeoTitle: v.imageSeoTitle || null,
     imageAltText: v.imageAltText || null,
-    imageRightsStatus: RIGHTS[v.imageRightsStatus] ?? 'STAFF_PHOTO',
+    imageRightsStatus: RIGHTS[v.imageRightsStatus],
     disclosureType: v.disclosure || 'editorial-independent',
     disclosureNote: v.disclosureNote || null,
     takeaways: v.takeaways,
@@ -262,39 +374,117 @@ async function addRevision(
   });
 }
 
-export interface SaveResult { id: string; slug: string; version: number; }
+// --- Revision snapshots ---------------------------------------------------
 
-/** Create or update an article (draft-safe; never auto-publishes). */
-export async function saveArticle(actor: ActorContext, rawInput: ArticleInput): Promise<SaveResult> {
-  const v = ArticleInputSchema.parse(rawInput);
-  const isCreate = !v.id;
+/**
+ * Revision snapshot format v2: the complete validated editor input (all scalar fields,
+ * body blocks, SEO, sources, tags and rodeo relationships), so restoring a revision can
+ * faithfully re-apply it. Pre-Phase-2 revisions hold only { title, excerpt, slug } (content
+ * edits) or { status } (workflow changes); restoreRevision handles those explicitly.
+ */
+const SNAPSHOT_VERSION = 2;
+function buildSnapshot(v: ParsedInput) {
+  const { id: _id, expectedVersion: _ev, ...input } = v;
+  return { v: SNAPSHOT_VERSION, input };
+}
 
-  if (isCreate) {
-    assert(actor, 'article.create');
-  } else {
-    const existing = await prisma.article.findUnique({
-      where: { id: v.id }, select: { id: true, version: true, createdById: true, workflowStatus: true },
-    });
-    if (!existing) throw new ServiceError('not_found', 'Article not found');
-    const canAny = roleHasPermission(actor.roles, 'article.edit.any');
-    const canOwn = roleHasPermission(actor.roles, 'article.edit.own') && existing.createdById === actor.id;
-    if (!canAny && !canOwn) throw new ServiceError('forbidden', 'Not permitted to edit this article');
-    // edit.own authors may only edit non-published states they own.
-    if (!canAny && (existing.workflowStatus === 'PUBLISHED' || existing.workflowStatus === 'ARCHIVED')) {
-      throw new ServiceError('forbidden', 'Authors cannot edit published or archived articles');
-    }
-    if (typeof v.expectedVersion === 'number' && v.expectedVersion !== existing.version) {
-      throw new ServiceError('conflict', 'This article was changed by someone else. Reload and reapply your edits.');
-    }
+/** Current persisted state of an article as editor input (used to restore legacy partial snapshots). */
+async function loadArticleInput(articleId: string): Promise<ParsedInput | null> {
+  const a = await prisma.article.findUnique({
+    where: { id: articleId },
+    include: {
+      blocks: { orderBy: { sortOrder: 'asc' } }, seo: true, category: true, author: true,
+      tags: { include: { tag: true } }, sources: { orderBy: { sortOrder: 'asc' }, include: { source: true } },
+      disciplines: true, hubs: true, events: true, editions: true,
+    },
+  });
+  if (!a) return null;
+  return ArticleInputSchema.parse({
+    id: a.id, slug: a.slug, title: a.title, deck: a.deck ?? '', excerpt: a.excerpt,
+    blocks: a.blocks.map((b) => b.data), seoTitle: a.seo?.seoTitle ?? '', metaDescription: a.seo?.metaDescription ?? '',
+    imageSeoTitle: a.imageSeoTitle ?? '', imageAltText: a.imageAltText ?? '', subcategory: a.subcategory ?? '',
+    articleType: a.articleType, categoryName: a.category.name, authorName: a.author.name, authorRole: a.author.role ?? undefined,
+    heroImage: a.heroImageUrl ?? '', imageCredit: a.imageCredit ?? '', imageCaption: a.imageCaption ?? '',
+    imageRightsStatus: RIGHTS_LABEL[a.imageRightsStatus], disclosure: a.disclosureType, disclosureNote: a.disclosureNote ?? '',
+    tags: a.tags.map((t) => t.tag.name), takeaways: a.takeaways,
+    sources: a.sources.map((s) => ({ sourceId: s.source.id, title: s.source.title, url: s.source.url, publisher: s.source.publisher ?? undefined, note: s.note ?? undefined })),
+    disciplineIds: a.disciplines.map((d) => d.disciplineId), hubIds: a.hubs.map((h) => h.hubId),
+    eventIds: a.events.map((e) => e.eventId), editionIds: a.editions.map((e) => e.editionId),
+  });
+}
+
+// --- Published URL changes ------------------------------------------------
+
+/**
+ * When a published article's slug changes (§6.3, ADM-14, WEB-11): redirect the old path to
+ * the new one, collapse any redirect that pointed at the old path (no chains), and disable
+ * any redirect whose source is the new path — the article now owns it (no loops / shadowing).
+ * Destinations are always internal article paths built from a validated slug.
+ */
+async function syncSlugRedirect(tx: Prisma.TransactionClient, fromSlug: string, toSlug: string): Promise<boolean> {
+  const from = articlePath(fromSlug);
+  const to = articlePath(toSlug);
+  if (from === to) return false;
+  await claimArticlePath(tx, toSlug);
+  await tx.articleRedirect.updateMany({ where: { targetPath: from, status: 'ACTIVE' }, data: { targetPath: to } });
+  await tx.articleRedirect.upsert({
+    where: { sourcePath: from },
+    update: { targetPath: to, status: 'ACTIVE', statusCode: 308 },
+    create: { sourcePath: from, targetPath: to, statusCode: 308 },
+  });
+  return true;
+}
+
+/** A live article owns its canonical path: disable any active redirect away from it. */
+async function claimArticlePath(tx: Prisma.TransactionClient, slug: string): Promise<void> {
+  await tx.articleRedirect.updateMany({ where: { sourcePath: articlePath(slug), status: 'ACTIVE' }, data: { status: 'DISABLED' } });
+}
+
+export interface SaveResult { id: string; slug: string; version: number; previousSlug?: string; redirectCreated?: boolean }
+
+type EditableRow = { id: string; slug: string; version: number; createdById: string | null; workflowStatus: WorkflowStatus };
+
+async function loadEditable(actor: ActorContext, id: string): Promise<EditableRow> {
+  const existing = await prisma.article.findUnique({
+    where: { id }, select: { id: true, slug: true, version: true, createdById: true, workflowStatus: true },
+  });
+  if (!existing) throw new ServiceError('not_found', 'Article not found');
+  const canAny = roleHasPermission(actor.roles, 'article.edit.any');
+  const canOwn = roleHasPermission(actor.roles, 'article.edit.own') && existing.createdById === actor.id;
+  if (!canAny && !canOwn) throw new ServiceError('forbidden', 'Not permitted to edit this article');
+  // edit.own authors may only edit non-published states they own.
+  if (!canAny && (existing.workflowStatus === 'PUBLISHED' || existing.workflowStatus === 'ARCHIVED')) {
+    throw new ServiceError('forbidden', 'Authors cannot edit published or archived articles');
   }
+  return existing;
+}
+
+/**
+ * Single write path for create, edit and revision restore: publish gate for live articles,
+ * validated relationships, slug-redirect maintenance, full revision snapshot and audit log —
+ * all in one transaction with the optimistic version lock.
+ */
+async function persistArticle(
+  actor: ActorContext,
+  existing: EditableRow | null,
+  v: ParsedInput,
+  opts: { summary: string; action: string; auditDetail?: string },
+): Promise<SaveResult> {
+  const isLive = existing?.workflowStatus === 'PUBLISHED';
+  if (isLive) await assertPublishable(v);
 
   return prisma.$transaction(async (tx) => {
+    const clash = await tx.article.findFirst({ where: { slug: v.slug, ...(existing ? { id: { not: existing.id } } : {}) }, select: { id: true } });
+    if (clash) throw new ServiceError('conflict', `The slug "${v.slug}" is already used by another article.`, { field: 'slug' });
+
     const categoryId = await resolveCategoryId(tx, v.categoryName);
     const authorId = await resolveAuthorId(tx, v.authorName, v.authorRole);
+    const rel = await resolveRelationships(tx, v);
+    await resolveSources(tx, v);
     let articleId: string;
     let version: number;
 
-    if (isCreate) {
+    if (!existing) {
       const created = await tx.article.create({
         data: {
           ...scalarData(v), workflowStatus: 'DRAFT', version: 1,
@@ -306,27 +496,48 @@ export async function saveArticle(actor: ActorContext, rawInput: ArticleInput): 
       version = created.version;
     } else {
       // Optimistic lock: bump version only if it still matches.
-      const where: Prisma.ArticleWhereInput & { id: string } = { id: v.id! };
+      const where: Prisma.ArticleWhereInput & { id: string } = { id: existing.id };
       if (typeof v.expectedVersion === 'number') (where as { version?: number }).version = v.expectedVersion;
       const upd = await tx.article.updateMany({
         where, data: { ...scalarData(v), authorId, categoryId, version: { increment: 1 } },
       });
       if (upd.count === 0) throw new ServiceError('conflict', 'Concurrent edit detected. Reload and reapply.');
-      const after = await tx.article.findUniqueOrThrow({ where: { id: v.id! }, select: { version: true } });
-      articleId = v.id!;
+      const after = await tx.article.findUniqueOrThrow({ where: { id: existing.id }, select: { version: true } });
+      articleId = existing.id;
       version = after.version;
     }
 
-    await writeChildren(tx, articleId, v);
+    await writeChildren(tx, articleId, v, rel);
     await reconcileHeroMedia(tx, articleId, v.heroImage || null);
     await reconcileInlineMedia(tx, articleId, v.blocks);
-    await addRevision(tx, articleId, actor, v.authorName, 'DRAFT', isCreate ? 'Created article' : 'Edited article content', { title: v.title, excerpt: v.excerpt, slug: v.slug });
+    const slugChanged = !!existing && existing.slug !== v.slug;
+    const redirectCreated = isLive && slugChanged ? await syncSlugRedirect(tx, existing!.slug, v.slug) : false;
+    await addRevision(tx, articleId, actor, v.authorName, existing?.workflowStatus ?? 'DRAFT', opts.summary, buildSnapshot(v));
     await tx.auditLog.create({
-      data: { actorId: actor.id, action: isCreate ? 'article.create' : 'article.update', entityType: 'article', entityId: articleId, detail: v.slug },
+      data: { actorId: actor.id, action: opts.action, entityType: 'article', entityId: articleId, detail: opts.auditDetail ?? v.slug },
     });
+    if (redirectCreated) {
+      await tx.auditLog.create({
+        data: { actorId: actor.id, action: 'redirect.create', entityType: 'article', entityId: articleId, detail: `${articlePath(existing!.slug)} -> ${articlePath(v.slug)}` },
+      });
+    }
 
-    return { id: articleId, slug: v.slug, version };
+    return { id: articleId, slug: v.slug, version, ...(slugChanged ? { previousSlug: existing!.slug } : {}), redirectCreated };
   });
+}
+
+/** Create or update an article (draft-safe; never auto-publishes). */
+export async function saveArticle(actor: ActorContext, rawInput: ArticleInput): Promise<SaveResult> {
+  const v = ArticleInputSchema.parse(rawInput);
+  if (!v.id) {
+    assert(actor, 'article.create');
+    return persistArticle(actor, null, v, { summary: 'Created article', action: 'article.create' });
+  }
+  const existing = await loadEditable(actor, v.id);
+  if (typeof v.expectedVersion === 'number' && v.expectedVersion !== existing.version) {
+    throw new ServiceError('conflict', 'This article was changed by someone else. Reload and reapply your edits.');
+  }
+  return persistArticle(actor, existing, v, { summary: 'Edited article content', action: 'article.update' });
 }
 
 // --- Workflow -------------------------------------------------------------
@@ -348,6 +559,15 @@ const TRANSITIONS: Transition[] = [
 
 export interface TransitionResult { id: string; slug: string; status: WorkflowStatus; version: number; becamePublic: boolean; becamePrivate: boolean; }
 
+/**
+ * Scheduled publishing needs a durable job runner, which does not exist yet (Batch A, D8).
+ * Until it does, nothing may move INTO `SCHEDULED` — through the editor, bulk actions or a
+ * direct Server Action call. Existing SCHEDULED rows keep their exits (→ APPROVED to
+ * unschedule, → PUBLISHED to publish manually); they never publish on their own.
+ */
+export const SCHEDULED_PUBLISHING_AVAILABLE = false;
+export const SCHEDULING_UNAVAILABLE_MESSAGE = 'Scheduled publishing is not available yet. Please publish manually.';
+
 export async function transitionWorkflow(
   actor: ActorContext,
   id: string,
@@ -355,6 +575,10 @@ export async function transitionWorkflow(
   expectedVersion?: number,
   scheduledAt?: string,
 ): Promise<TransitionResult> {
+  if (target === 'SCHEDULED' && !SCHEDULED_PUBLISHING_AVAILABLE) {
+    throw new ServiceError('validation', SCHEDULING_UNAVAILABLE_MESSAGE, { scheduling: 'unavailable' });
+  }
+
   const existing = await prisma.article.findUnique({
     where: { id },
     include: { blocks: { orderBy: { sortOrder: 'asc' } }, seo: true, createdBy: true, author: true },
@@ -381,7 +605,7 @@ export async function transitionWorkflow(
       excerpt: existing.excerpt,
       slug: existing.slug,
       structuredBody: existing.blocks.map((b) => b.data as unknown as ContentBlock),
-      imageRightsStatus: existing.imageRightsStatus === 'UNRESOLVED' ? 'Unresolved' : 'Staff Photo',
+      imageRightsStatus: RIGHTS_LABEL[existing.imageRightsStatus],
       imageAltText: existing.imageAltText ?? '',
       disclosure: (existing.disclosureType as Article['disclosure']) ?? 'editorial-independent',
       disclosureNote: existing.disclosureNote ?? '',
@@ -423,6 +647,7 @@ export async function transitionWorkflow(
       data,
     });
     if (upd.count === 0) throw new ServiceError('conflict', 'Concurrent edit detected. Reload and retry.');
+    if (willBePublic) await claimArticlePath(tx, existing.slug);
 
     await tx.editorialWorkflowHistory.create({
       data: { articleId: id, fromStatus: existing.workflowStatus, toStatus: target, actorId: actor.id, actorName: actor.id, note: `→ ${target}` },
@@ -462,21 +687,43 @@ export async function deleteArticle(actor: ActorContext, id: string): Promise<{ 
   return { slug: existing.slug, wasPublic: existing.workflowStatus === 'PUBLISHED' };
 }
 
+/**
+ * Restore a revision (ADM-04): re-applies the revision's content through the normal write
+ * path, which records a NEW revision (history is never rewritten), keeps the current workflow
+ * status, re-runs the publish gate if the article is live, and maintains slug redirects.
+ *
+ *   - v2 snapshots (full editor input) are restored completely.
+ *   - Pre-Phase-2 content snapshots ({ title, excerpt, slug }) restore exactly those three
+ *     fields over the article's current state — nothing else was recorded.
+ *   - Workflow-only snapshots ({ status }) have no content and are refused.
+ */
 export async function restoreRevision(actor: ActorContext, articleId: string, revisionId: string): Promise<SaveResult> {
-  const existing = await prisma.article.findUnique({ where: { id: articleId }, select: { id: true, createdById: true, slug: true, version: true, workflowStatus: true } });
-  if (!existing) throw new ServiceError('not_found', 'Article not found');
-  const canAny = roleHasPermission(actor.roles, 'article.edit.any');
-  const canOwn = roleHasPermission(actor.roles, 'article.edit.own') && existing.createdById === actor.id;
-  if (!canAny && !canOwn) throw new ServiceError('forbidden', 'Not permitted to restore this article');
+  const existing = await loadEditable(actor, articleId);
   const rev = await prisma.articleRevision.findFirst({ where: { id: revisionId, articleId } });
   if (!rev) throw new ServiceError('not_found', 'Revision not found');
 
-  return prisma.$transaction(async (tx) => {
-    const upd = await tx.article.updateMany({ where: { id: articleId }, data: { version: { increment: 1 } } });
-    if (upd.count === 0) throw new ServiceError('not_found', 'Article not found');
-    await addRevision(tx, articleId, actor, 'System Restore', existing.workflowStatus, `Restored revision #${rev.revisionNo}`, rev.snapshot);
-    await tx.auditLog.create({ data: { actorId: actor.id, action: 'article.revision.restore', entityType: 'article', entityId: articleId, detail: `rev ${rev.revisionNo}` } });
-    const after = await tx.article.findUniqueOrThrow({ where: { id: articleId }, select: { version: true } });
-    return { id: articleId, slug: existing.slug, version: after.version };
+  const snap = (rev.snapshot ?? {}) as Record<string, unknown>;
+  let restored: ParsedInput;
+  if (snap.v === SNAPSHOT_VERSION && snap.input && typeof snap.input === 'object') {
+    const parsed = ArticleInputSchema.safeParse({ ...(snap.input as object), id: articleId });
+    if (!parsed.success) throw new ServiceError('validation', `Revision #${rev.revisionNo} cannot be restored: its content is no longer valid.`, { issues: parsed.error.issues.map((i) => i.message) });
+    restored = parsed.data;
+  } else if (typeof snap.title === 'string' || typeof snap.excerpt === 'string' || typeof snap.slug === 'string') {
+    const current = await loadArticleInput(articleId);
+    if (!current) throw new ServiceError('not_found', 'Article not found');
+    restored = ArticleInputSchema.parse({
+      ...current,
+      ...(typeof snap.title === 'string' ? { title: snap.title } : {}),
+      ...(typeof snap.excerpt === 'string' ? { excerpt: snap.excerpt } : {}),
+      ...(typeof snap.slug === 'string' ? { slug: snap.slug } : {}),
+    });
+  } else {
+    throw new ServiceError('validation', `Revision #${rev.revisionNo} records a workflow change only and has no content to restore.`);
+  }
+
+  return persistArticle(actor, existing, restored, {
+    summary: `Restored revision #${rev.revisionNo}`,
+    action: 'article.revision.restore',
+    auditDetail: `rev ${rev.revisionNo}`,
   });
 }

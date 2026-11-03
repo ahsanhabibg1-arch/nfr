@@ -38,7 +38,7 @@ export const AdminPageHeader: React.FC<AdminPageHeaderProps> = ({
           )}
         </div>
         {description && (
-          <p className="text-xs sm:text-sm text-stone-500 font-sans leading-relaxed max-w-2xl">
+          <p className="text-xs sm:text-sm text-ink-muted font-sans leading-relaxed max-w-2xl">
             {description}
           </p>
         )}

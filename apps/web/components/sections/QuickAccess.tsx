@@ -20,14 +20,14 @@ export const QuickAccess: React.FC<QuickAccessProps> = ({
         <div className="flex flex-col md:flex-row md:items-end justify-between mb-8 pb-4 border-b border-white/10 gap-3">
           <div>
             <span className="text-xs font-semibold uppercase tracking-widest text-[#D4A757] font-sans block mb-1">
-              Spectator Utility &middot; Essential Navigation
+              Quick Links
             </span>
             <h2 className="text-2xl sm:text-3xl font-serif font-bold text-white">
               NFR Quick Access
             </h2>
           </div>
           <div className="text-xs text-stone-400 font-sans max-w-md">
-            Independent informational and editorial reference links for championship week. (Not a ticketing or streaming vendor).
+            Independent editorial reference links. NFRGuide is not a ticketing or streaming vendor.
           </div>
         </div>
 
@@ -58,7 +58,7 @@ export const QuickAccess: React.FC<QuickAccessProps> = ({
                 </div>
 
                 <div className="mt-4 pt-3 border-t border-white/10 flex items-center justify-between text-xs text-[#D4A757] font-sans font-medium">
-                  <span>Access Guide</span>
+                  <span>Open section</span>
                   <span className="transition-transform group-hover:translate-x-1" aria-hidden="true">&rarr;</span>
                 </div>
               </>

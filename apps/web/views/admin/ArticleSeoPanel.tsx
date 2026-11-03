@@ -22,20 +22,20 @@ export async function ArticleSeoPanel({ articleId, userId, roles }: { articleId:
   return (
     <section className="mt-6 bg-white border border-stone-200 rounded-sm p-4 font-sans">
       <div className="flex items-center justify-between mb-3">
-        <h3 className="text-xs font-bold uppercase tracking-wider text-stone-700">SEO diagnostics <span className="font-normal text-stone-400">(advisory)</span></h3>
+        <h3 className="text-xs font-bold uppercase tracking-wider text-stone-700">SEO diagnostics <span className="font-normal text-ink-muted">(advisory)</span></h3>
         <Link href={`/admin/seo/?q=${articleId}`} className="text-[11px] text-[#8B5E3C] hover:underline">Open in SEO Intelligence →</Link>
       </div>
       {rows.length === 0 ? (
-        <p className="text-xs text-stone-400">No active SEO findings for this article. Run a full audit from SEO Intelligence to analyze all content. These diagnostics are advisory and never block publishing.</p>
+        <p className="text-xs text-ink-muted">No active SEO findings for this article. Run a full audit from SEO Intelligence to analyze all content. These diagnostics are advisory and never block publishing.</p>
       ) : (
         <ul className="space-y-1.5 text-xs">
           {rows.slice(0, 12).map((f) => (
             <li key={f.id} className="flex gap-2">
               <span className={`font-mono text-[10px] ${SEV[f.severity] || ''}`}>{f.severity}</span>
-              <span className="text-stone-700"><strong>{f.title}:</strong> {f.evidence}{f.recommendation ? <em className="text-stone-500"> — {f.recommendation}</em> : null}</span>
+              <span className="text-stone-700"><strong>{f.title}:</strong> {f.evidence}{f.recommendation ? <em className="text-ink-muted"> — {f.recommendation}</em> : null}</span>
             </li>
           ))}
-          {rows.length > 12 && <li className="text-stone-400">+{rows.length - 12} more…</li>}
+          {rows.length > 12 && <li className="text-ink-muted">+{rows.length - 12} more…</li>}
         </ul>
       )}
     </section>

@@ -22,14 +22,12 @@ export const DisciplineGuideHeader: React.FC<DisciplineGuideHeaderProps> = ({
     <header className={`mb-10 ${className}`}>
       <Breadcrumbs items={breadcrumbs} className="mb-4" />
 
-      <div className="flex items-center gap-2 text-xs font-sans text-stone-500 mb-2">
+      <div className="flex items-center gap-2 text-xs font-sans text-ink-muted mb-2">
         <span className="font-bold text-[#8B5E3C] uppercase tracking-wider">
-          Official NFR Discipline
+          NFR Discipline Guide
         </span>
         <span aria-hidden="true">&middot;</span>
         <span className="font-semibold text-stone-700">{discipline.category}</span>
-        <span aria-hidden="true">&middot;</span>
-        <span className="font-mono text-[11px] text-stone-500">Thomas &amp; Mack Standard</span>
       </div>
 
       <h1 className="text-3xl sm:text-4xl md:text-5xl font-serif font-bold text-[#0F1115] tracking-tight leading-[1.15]">

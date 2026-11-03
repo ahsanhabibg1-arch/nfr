@@ -23,6 +23,7 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import { register } from 'node:module';
+import { requireIsolatedScriptDatabase } from '../tests/support/testDbGuard';
 import { fileURLToPath } from 'node:url';
 
 // Neutralize `server-only` so the real server modules import cleanly under tsx.
@@ -40,6 +41,15 @@ if (!process.env.DATABASE_URL && fs.existsSync(envPath)) {
     if ((v.startsWith('"') && v.endsWith('"')) || (v.startsWith("'") && v.endsWith("'"))) v = v.slice(1, -1);
     if (!process.env[m[1]]) process.env[m[1]] = v;
   }
+}
+
+// Batch A (A8): this script WRITES (users, sessions, articles). It only ever targets an
+// explicit isolated test database — never the development or production database.
+try {
+  process.env.DATABASE_URL = requireIsolatedScriptDatabase(process.env, 'cache-invalidation');
+} catch (e) {
+  console.error((e as Error).message);
+  process.exit(2);
 }
 
 const BASE = process.env.SMOKE_BASE_URL || 'http://localhost:3000';

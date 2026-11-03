@@ -5,6 +5,9 @@
  * published-only eligibility boundary. Exits non-zero on any failure.
  *
  * Usage: start the app (`npm run start`) then `npm run test:routes`.
+ *
+ * Read-only (GET requests only). Expects the synthetic `fixture-` records from the seed
+ * (prisma/fixtures.ts), so point the server at an isolated, seeded test/CI database.
  */
 
 const BASE = process.env.SMOKE_BASE_URL || 'http://localhost:3000';
@@ -50,7 +53,7 @@ async function main() {
 
   // Article detail: 200 + JSON-LD structured data
   {
-    const { res, body } = await get('/articles/inside-the-chutes-nfr-roughstock-intensity/');
+    const { res, body } = await get('/articles/fixture-competition-article/');
     check('GET published article returns 200', res.status === 200, `status ${res.status}`);
     check('article emits JSON-LD', /application\/ld\+json/.test(body));
     check('article has canonical', /rel="canonical"/.test(body));
@@ -80,13 +83,13 @@ async function main() {
     check('GET /rodeo-events/ (section landing) returns 200', res.status === 200, `status ${res.status}`);
   }
   {
-    const { res, body } = await get('/rodeo-events/calgary-stampede/');
-    check('GET seeded rodeo event returns 200', res.status === 200, `status ${res.status}`);
+    const { res, body } = await get('/rodeo-events/fixture-rodeo-event-a/');
+    check('GET fixture rodeo event returns 200', res.status === 200, `status ${res.status}`);
     check('rodeo event has canonical', /rel="canonical"/.test(body));
   }
   {
-    const { res } = await get('/rodeo-events/canadian-professional-rodeo/');
-    check('GET seeded rodeo hub returns 200', res.status === 200, `status ${res.status}`);
+    const { res } = await get('/rodeo-events/fixture-hub-a/');
+    check('GET fixture rodeo hub returns 200', res.status === 200, `status ${res.status}`);
   }
   {
     const { res } = await get('/rodeo-events/this-rodeo-does-not-exist-404/');

@@ -1,3 +1,10 @@
+/**
+ * PHASE 0 DEMONSTRATION DATA — NOT EDITORIAL CONTENT. Contains unverified claims, figures
+ * and dates. Since Batch A it is never seeded, rendered or imported by public code; the only
+ * remaining consumer is the local legacy-repair script scripts/seed-rodeo-links.mts, which
+ * reads ids from it and never writes any of this text. Do not import it anywhere else
+ * (enforced by tests/public-content.test.ts and tests/batchB.test.ts).
+ */
 import {
   Article,
   Discipline,

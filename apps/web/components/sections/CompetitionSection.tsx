@@ -25,9 +25,9 @@ export const CompetitionSection: React.FC<CompetitionSectionProps> = ({
     <section id="competition" className="w-full bg-[#FFFFFF] text-[#0F1115] py-16 border-b border-stone-300">
       <div className="max-w-[1280px] mx-auto px-4 sm:px-6 lg:px-8">
         <SectionHeading
-          kicker="Championship Arena &middot; Primary Navigation 1"
-          title="The Seven Official NFR Disciplines"
-          description="A rigorous technical and athletic breakdown of the seven world championship disciplines contested over ten consecutive nights at the Thomas & Mack Center."
+          kicker="Competition"
+          title="The Seven NFR Disciplines"
+          description="Guides to the seven disciplines contested at the NFR: what each event involves and how it is scored."
         />
 
         {/* Filter Toggle */}
@@ -48,7 +48,7 @@ export const CompetitionSection: React.FC<CompetitionSectionProps> = ({
             ))}
           </div>
 
-          <span className="hidden sm:inline text-xs text-stone-500 font-sans italic">
+          <span className="hidden sm:inline text-xs text-ink-muted font-sans italic">
             Click any discipline for rules &amp; 50/50 scoring analysis
           </span>
         </div>
@@ -74,11 +74,11 @@ export const CompetitionSection: React.FC<CompetitionSectionProps> = ({
                 </div>
 
                 <div className="p-5">
-                  <div className="flex items-center justify-between text-[11px] font-sans text-stone-500 mb-1.5">
+                  <div className="flex items-center justify-between text-[11px] font-sans text-ink-muted mb-1.5">
                     <span className="font-bold text-[#8B5E3C] uppercase tracking-wider">
                       {disc.category}
                     </span>
-                    <span className="font-mono text-stone-400">0{idx + 1}</span>
+                    <span className="font-mono text-ink-muted">0{idx + 1}</span>
                   </div>
 
                   <h3 className="text-lg font-serif font-bold text-[#0F1115] group-hover:text-[#8B5E3C] transition-colors leading-snug">

@@ -14,14 +14,14 @@ export const SourceList: React.FC<SourceListProps> = ({ sources, className = '' 
       aria-labelledby="sources-heading"
       className={`p-6 bg-white border border-stone-200 rounded-sm ${className}`}
     >
-      <h3 
+      <h2
         id="sources-heading"
         className="text-xs uppercase tracking-widest font-sans font-bold text-stone-900 mb-3 flex items-center gap-2"
       >
         <span className="w-1.5 h-1.5 rounded-full bg-[#D4A757]" aria-hidden="true" />
         Sources &amp; Judicial References
-      </h3>
-      <p className="text-xs text-stone-500 font-sans mb-4">
+      </h2>
+      <p className="text-xs text-ink-muted font-sans mb-4">
         All rules, scoring statistics, and historical results in this article are cross-referenced with primary records.
       </p>
 
@@ -43,7 +43,7 @@ export const SourceList: React.FC<SourceListProps> = ({ sources, className = '' 
                   src.title
                 )}
               </span>
-              <span className="text-[11px] font-mono text-stone-500 shrink-0">
+              <span className="text-[11px] font-mono text-ink-muted shrink-0">
                 {src.publisher} {src.date ? `(${src.date})` : ''}
               </span>
             </div>

@@ -42,7 +42,7 @@ export const AdminFilterBar: React.FC<AdminFilterBarProps> = ({
       <div className="flex flex-1 flex-wrap items-center gap-2.5">
         {/* Search */}
         <div className="relative min-w-[220px] max-w-sm flex-1">
-          <svg className="w-4 h-4 text-stone-400 absolute left-3 top-1/2 -translate-y-1/2 pointer-events-none" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+          <svg className="w-4 h-4 text-ink-muted absolute left-3 top-1/2 -translate-y-1/2 pointer-events-none" fill="none" viewBox="0 0 24 24" stroke="currentColor">
             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
           </svg>
           <input
@@ -57,7 +57,7 @@ export const AdminFilterBar: React.FC<AdminFilterBarProps> = ({
         {/* Dropdowns */}
         {dropdowns.map((dd) => (
           <div key={dd.id} className="flex items-center gap-1.5">
-            <label htmlFor={dd.id} className="text-[11px] font-sans font-semibold text-stone-500 uppercase tracking-wider hidden sm:inline">
+            <label htmlFor={dd.id} className="text-[11px] font-sans font-semibold text-ink-muted uppercase tracking-wider hidden sm:inline">
               {dd.label}:
             </label>
             <select
@@ -78,7 +78,7 @@ export const AdminFilterBar: React.FC<AdminFilterBarProps> = ({
         {onReset && (searchQuery || dropdowns.some((d) => d.value !== 'all')) && (
           <button
             onClick={onReset}
-            className="text-[11px] font-sans text-stone-500 hover:text-stone-900 underline px-1.5 py-1"
+            className="text-[11px] font-sans text-ink-muted hover:text-stone-900 underline px-1.5 py-1"
           >
             Clear
           </button>

@@ -26,12 +26,14 @@ export const CANONICAL: Record<NavLocation, NavLink[]> = {
     { label: 'NFR Plan & Watch Guides', url: ROUTES.PLAN_WATCH, isExternal: false },
     { label: 'More Rodeo (Hubs & Major Events)', url: ROUTES.MORE_RODEO, isExternal: false },
   ],
+  // Batch A: only routes that always exist (reference data / directories). The previous
+  // entries pointed at Phase 0 demo article slugs, which 404 on any database without them.
   'footer-academy': [
-    { label: 'The 8-Second Rule Explainer', url: ROUTES.ARTICLE('inside-the-chutes-nfr-roughstock-intensity'), isExternal: false },
-    { label: '50/50 Scoring Mechanics', url: ROUTES.DISCIPLINE('saddle-bronc-riding'), isExternal: false },
-    { label: 'The 10-Round Average Formula', url: ROUTES.ARTICLE('the-anatomy-of-the-10-round-average'), isExternal: false },
-    { label: 'TV & Streaming Directory', url: ROUTES.ARTICLE('how-to-watch-nfr-streaming-cable-cord-cutters'), isExternal: false },
-    { label: 'Thomas & Mack Venue Tips', url: ROUTES.ARTICLE('navigating-thomas-and-mack-center-guide'), isExternal: false },
+    { label: 'Bull Riding Guide', url: ROUTES.DISCIPLINE('bull-riding'), isExternal: false },
+    { label: 'Saddle Bronc Riding Guide', url: ROUTES.DISCIPLINE('saddle-bronc-riding'), isExternal: false },
+    { label: 'Barrel Racing Guide', url: ROUTES.DISCIPLINE('barrel-racing'), isExternal: false },
+    { label: 'Rodeo Events Directory', url: ROUTES.MORE_RODEO, isExternal: false },
+    { label: 'Search NFRGuide', url: '/search/', isExternal: false },
   ],
 };
 

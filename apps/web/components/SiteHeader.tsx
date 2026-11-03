@@ -95,13 +95,14 @@ export const SiteHeader: React.FC<SiteHeaderProps> = ({ onOpenSearch, navItems }
             <button
               onClick={onOpenSearch}
               className="flex items-center gap-2 px-3 py-1.5 text-xs text-stone-300 hover:text-white bg-white/5 hover:bg-white/10 border border-white/10 rounded-sm transition-colors cursor-pointer"
-              aria-label="Open search dialog"
+              aria-haspopup="dialog"
             >
-              <svg className="w-4 h-4 text-[#D4A757]" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+              {/* Accessible name comes from the visible "Search" text (WCAG 2.5.3 label in name). */}
+              <svg className="w-4 h-4 text-[#D4A757]" fill="none" viewBox="0 0 24 24" stroke="currentColor" aria-hidden="true">
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
               </svg>
-              <span className="hidden sm:inline font-sans text-[11px] uppercase tracking-wider">Search</span>
-              <kbd className="hidden md:inline text-[9px] font-mono text-stone-400 bg-white/10 px-1.5 py-0.5 rounded">
+              <span className="sr-only sm:not-sr-only sm:inline font-sans text-[11px] uppercase tracking-wider">Search</span>
+              <kbd aria-hidden="true" className="hidden md:inline text-[9px] font-mono text-stone-300 bg-white/10 px-1.5 py-0.5 rounded">
                 ⌘K
               </kbd>
             </button>
@@ -223,14 +224,14 @@ export const SiteHeader: React.FC<SiteHeaderProps> = ({ onOpenSearch, navItems }
                 onClick={() => setMobileMenuOpen(false)}
                 className="block w-full py-2.5 px-3 text-left text-xs text-stone-300 hover:text-white hover:bg-white/5 rounded"
               >
-                &bull; How to Watch &amp; Stream Live
+                &bull; How to Watch
               </Link>
               <Link
-                href="/articles/inside-the-chutes-nfr-roughstock-intensity/"
+                href="/rodeo-events/"
                 onClick={() => setMobileMenuOpen(false)}
                 className="block w-full py-2.5 px-3 text-left text-xs text-stone-300 hover:text-white hover:bg-white/5 rounded"
               >
-                &bull; Inside the Chutes Feature Dispatch
+                &bull; Rodeo Events Directory
               </Link>
             </div>
 

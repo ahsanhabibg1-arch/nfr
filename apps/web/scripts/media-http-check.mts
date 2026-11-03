@@ -11,6 +11,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import crypto from 'node:crypto';
 import { register } from 'node:module';
+import { requireIsolatedScriptDatabase } from '../tests/support/testDbGuard';
 import { fileURLToPath } from 'node:url';
 import sharp from 'sharp';
 
@@ -25,6 +26,15 @@ if (!process.env.DATABASE_URL && fs.existsSync(envPath)) {
     if (!process.env[m[1]]) process.env[m[1]] = v;
   }
 }
+// Batch A (A8): this script WRITES (users, sessions, articles). It only ever targets an
+// explicit isolated test database — never the development or production database.
+try {
+  process.env.DATABASE_URL = requireIsolatedScriptDatabase(process.env, 'media-http-check');
+} catch (e) {
+  console.error((e as Error).message);
+  process.exit(2);
+}
+
 const BASE = process.env.SMOKE_BASE_URL || 'http://localhost:3000';
 let pass = 0, fail = 0; const fails: string[] = [];
 const check = (n: string, ok: boolean, d = '') => { if (ok) { pass++; console.log(`  ✓ ${n}`); } else { fail++; fails.push(`${n}${d ? ` — ${d}` : ''}`); console.error(`  ✗ ${n}${d ? ` — ${d}` : ''}`); } };

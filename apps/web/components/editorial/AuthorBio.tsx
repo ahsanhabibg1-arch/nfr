@@ -20,16 +20,16 @@ export const AuthorBio: React.FC<AuthorBioProps> = ({ author, className = '' }) 
 
         <div className="flex-1 space-y-2 font-sans">
           <div className="flex flex-col sm:flex-row sm:items-baseline justify-between gap-1">
-            <h3 id="author-bio-heading" className="text-base font-serif font-bold text-stone-900">
+            <h2 id="author-bio-heading" className="text-base font-serif font-bold text-stone-900">
               {author.name}
-            </h3>
+            </h2>
             <span className="text-xs text-[#8B5E3C] font-semibold uppercase tracking-wider">
               {author.role}
             </span>
           </div>
 
           {author.credentials && (
-            <p className="text-xs text-stone-500 font-mono">
+            <p className="text-xs text-ink-muted font-mono">
               Credentials: {author.credentials}
             </p>
           )}
@@ -44,7 +44,7 @@ export const AuthorBio: React.FC<AuthorBioProps> = ({ author, className = '' }) 
             {author.bio || 'Veteran rodeo journalist contributing independent reporting and championship analysis to NFRGuide.com.'}
           </p>
 
-          <div className="pt-2 text-[11px] text-stone-500 italic">
+          <div className="pt-2 text-[11px] text-ink-muted italic">
             NFRGuide staff adhere to the Society of Professional Journalists Code of Ethics.
           </div>
         </div>

@@ -40,7 +40,7 @@ export const AdminTeamPage: React.FC<AdminTeamPageProps> = ({ staff, invitations
 
   return (
     <div className="space-y-6">
-      {toast && <div className="fixed bottom-6 right-6 z-50 bg-[#0F1115] text-[#D4A757] border border-[#D4A757]/40 px-4 py-2.5 rounded-xs shadow-xl text-xs font-mono">{toast}</div>}
+      {toast && <div role="status" aria-live="polite" className="fixed bottom-6 right-6 z-50 bg-[#0F1115] text-[#D4A757] border border-[#D4A757]/40 px-4 py-2.5 rounded-xs shadow-xl text-xs font-mono">{toast}</div>}
 
       <AdminPageHeader
         title="Team & Permissions"
@@ -66,12 +66,12 @@ export const AdminTeamPage: React.FC<AdminTeamPageProps> = ({ staff, invitations
       {tab === 'members' && (
         <div className="space-y-3">
           <form method="get" className="flex flex-wrap gap-2 text-xs">
-            <input name="q" defaultValue={filters.q ?? ''} placeholder="Search name/email…" className="px-3 py-1.5 border border-stone-300 rounded-xs bg-white" />
-            <select name="role" defaultValue={filters.role ?? ''} className="px-2 py-1.5 border border-stone-300 rounded-xs bg-white">
+            <input name="q" type="search" aria-label="Search staff by name or email" defaultValue={filters.q ?? ''} placeholder="Search name/email…" className="px-3 py-1.5 border border-stone-300 rounded-xs bg-white" />
+            <select name="role" aria-label="Filter by role" defaultValue={filters.role ?? ''} className="px-2 py-1.5 border border-stone-300 rounded-xs bg-white">
               <option value="">Any role</option>
               {ALL_ROLES.map((r) => <option key={r} value={r}>{ROLE_LABELS[r]}</option>)}
             </select>
-            <select name="status" defaultValue={filters.status ?? ''} className="px-2 py-1.5 border border-stone-300 rounded-xs bg-white">
+            <select name="status" aria-label="Filter by status" defaultValue={filters.status ?? ''} className="px-2 py-1.5 border border-stone-300 rounded-xs bg-white">
               <option value="">Any status</option>
               {['ACTIVE', 'INVITED', 'SUSPENDED'].map((s) => <option key={s}>{s}</option>)}
             </select>
@@ -80,7 +80,7 @@ export const AdminTeamPage: React.FC<AdminTeamPageProps> = ({ staff, invitations
 
           <div className="bg-white border border-stone-200 rounded-xs overflow-x-auto">
             <table className="w-full text-left text-xs font-sans">
-              <thead className="bg-stone-50 border-b border-stone-200 text-stone-500 font-mono text-[11px] uppercase tracking-wider">
+              <thead className="bg-stone-50 border-b border-stone-200 text-ink-muted font-mono text-[11px] uppercase tracking-wider">
                 <tr>
                   <th className="px-4 py-2.5">Staff</th><th className="px-4 py-2.5">Role</th><th className="px-4 py-2.5 text-center">Status</th>
                   <th className="px-4 py-2.5 text-center">Sessions</th><th className="px-4 py-2.5">Last Login</th><th className="px-4 py-2.5 text-right">Actions</th>
@@ -92,10 +92,11 @@ export const AdminTeamPage: React.FC<AdminTeamPageProps> = ({ staff, invitations
                   const primary = (u.roles[0]?.key as RoleKey) ?? 'author';
                   return (
                     <tr key={u.id} className="hover:bg-stone-50/50">
-                      <td className="px-4 py-3"><div className="font-semibold text-stone-900">{u.name}</div><div className="text-[11px] text-stone-500 font-mono">{u.email}</div></td>
+                      <td className="px-4 py-3"><div className="font-semibold text-stone-900">{u.name}</div><div className="text-[11px] text-ink-muted font-mono">{u.email}</div></td>
                       <td className="px-4 py-3">
                         {caps.canAssign && !self ? (
                           <select
+                            aria-label={`Role for ${u.name}`}
                             defaultValue={primary}
                             disabled={pending}
                             onChange={(e) => act(actions.assignRolesAction(u.id, [e.target.value as RoleKey]), 'Role updated (sessions revoked)')}
@@ -105,18 +106,18 @@ export const AdminTeamPage: React.FC<AdminTeamPageProps> = ({ staff, invitations
                             {!assignable.includes(primary) && <option value={primary}>{ROLE_LABELS[primary]}</option>}
                           </select>
                         ) : (
-                          <span className="text-stone-700">{u.roleLabel}{self && <span className="text-[10px] text-stone-400 ml-1">(you)</span>}</span>
+                          <span className="text-stone-700">{u.roleLabel}{self && <span className="text-[10px] text-ink-muted ml-1">(you)</span>}</span>
                         )}
                       </td>
                       <td className="px-4 py-3 text-center"><span className={`text-[10px] font-mono px-2 py-0.5 rounded-xs font-semibold ${u.status === 'ACTIVE' ? 'bg-emerald-100 text-emerald-800' : u.status === 'INVITED' ? 'bg-amber-100 text-amber-800' : 'bg-rose-100 text-rose-800'}`}>{u.status}</span></td>
                       <td className="px-4 py-3 text-center font-mono">{u.activeSessions}</td>
-                      <td className="px-4 py-3 text-stone-500 font-mono text-[11px]">{u.lastLoginAt ? new Date(u.lastLoginAt).toISOString().slice(0, 16).replace('T', ' ') : '—'}</td>
+                      <td className="px-4 py-3 text-ink-muted font-mono text-[11px]">{u.lastLoginAt ? new Date(u.lastLoginAt).toISOString().slice(0, 16).replace('T', ' ') : '—'}</td>
                       <td className="px-4 py-3 text-right space-x-2 whitespace-nowrap">
                         {!self && u.status !== 'INVITED' && (
                           <button disabled={pending} onClick={() => act(actions.setStaffStatusAction(u.id, u.status === 'ACTIVE' ? 'SUSPENDED' : 'ACTIVE'), 'Status updated')} className={`text-[11px] font-mono underline disabled:opacity-40 ${u.status === 'ACTIVE' ? 'text-rose-600' : 'text-emerald-700'}`}>{u.status === 'ACTIVE' ? 'Suspend' : 'Activate'}</button>
                         )}
-                        {!self && u.activeSessions > 0 && <button disabled={pending} onClick={() => act(actions.revokeStaffSessionsAction(u.id), 'Sessions revoked')} className="text-[11px] font-mono underline text-stone-500 disabled:opacity-40">Revoke sessions</button>}
-                        <button disabled={pending} onClick={() => start(async () => { const r = await actions.createPasswordResetAction(u.id); if (r.ok && 'data' in r) { const link = `${location.origin}/admin/reset-password/?token=${r.data.token}`; setInviteLink(link); setInviteOpen(true); } else notify(`Failed: ${(r as { error?: string }).error}`); })} className="text-[11px] font-mono underline text-stone-500 disabled:opacity-40">Reset link</button>
+                        {!self && u.activeSessions > 0 && <button disabled={pending} onClick={() => act(actions.revokeStaffSessionsAction(u.id), 'Sessions revoked')} className="text-[11px] font-mono underline text-ink-muted disabled:opacity-40">Revoke sessions</button>}
+                        <button disabled={pending} onClick={() => start(async () => { const r = await actions.createPasswordResetAction(u.id); if (r.ok && 'data' in r) { const link = `${location.origin}/admin/reset-password/?token=${r.data.token}`; setInviteLink(link); setInviteOpen(true); } else notify(`Failed: ${(r as { error?: string }).error}`); })} className="text-[11px] font-mono underline text-ink-muted disabled:opacity-40">Reset link</button>
                       </td>
                     </tr>
                   );
@@ -124,23 +125,23 @@ export const AdminTeamPage: React.FC<AdminTeamPageProps> = ({ staff, invitations
               </tbody>
             </table>
           </div>
-          <p className="text-[11px] text-stone-400">Role changes and suspensions revoke the member's sessions immediately. You cannot change your own role/status here. The last active Super Admin is protected.</p>
+          <p className="text-[11px] text-ink-muted">Role changes and suspensions revoke the member's sessions immediately. You cannot change your own role/status here. The last active Super Admin is protected.</p>
         </div>
       )}
 
       {/* INVITATIONS */}
       {tab === 'invitations' && (
         <div className="bg-white border border-stone-200 rounded-xs overflow-x-auto">
-          {invitations.length === 0 ? <div className="px-4 py-10 text-center text-xs text-stone-400">No invitations yet.</div> : (
+          {invitations.length === 0 ? <div className="px-4 py-10 text-center text-xs text-ink-muted">No invitations yet.</div> : (
             <table className="w-full text-left text-xs font-sans">
-              <thead className="bg-stone-50 border-b border-stone-200 text-stone-500 font-mono text-[11px] uppercase"><tr><th className="px-4 py-2.5">Email</th><th className="px-4 py-2.5">Role</th><th className="px-4 py-2.5">Status</th><th className="px-4 py-2.5">Expires</th><th className="px-4 py-2.5 text-right">Actions</th></tr></thead>
+              <thead className="bg-stone-50 border-b border-stone-200 text-ink-muted font-mono text-[11px] uppercase"><tr><th className="px-4 py-2.5">Email</th><th className="px-4 py-2.5">Role</th><th className="px-4 py-2.5">Status</th><th className="px-4 py-2.5">Expires</th><th className="px-4 py-2.5 text-right">Actions</th></tr></thead>
               <tbody className="divide-y divide-stone-200">
                 {invitations.map((i) => (
                   <tr key={i.id} className="hover:bg-stone-50/50">
                     <td className="px-4 py-3 font-medium text-stone-900">{i.email}</td>
                     <td className="px-4 py-3 font-mono">{i.roleKey}</td>
                     <td className="px-4 py-3"><span className="text-[10px] font-mono px-2 py-0.5 rounded-xs bg-stone-100 text-stone-700 font-semibold">{i.status}</span></td>
-                    <td className="px-4 py-3 text-stone-500 font-mono text-[11px]">{new Date(i.expiresAt).toISOString().slice(0, 10)}</td>
+                    <td className="px-4 py-3 text-ink-muted font-mono text-[11px]">{new Date(i.expiresAt).toISOString().slice(0, 10)}</td>
                     <td className="px-4 py-3 text-right">{i.status === 'PENDING' && <button disabled={pending} onClick={() => act(actions.revokeInvitationAction(i.id), 'Invitation revoked')} className="text-[11px] font-mono underline text-rose-600 disabled:opacity-40">Revoke</button>}</td>
                   </tr>
                 ))}
@@ -155,9 +156,9 @@ export const AdminTeamPage: React.FC<AdminTeamPageProps> = ({ staff, invitations
         <div className="space-y-4">
           {matrix.map((g) => (
             <div key={g.module} className="bg-white border border-stone-200 rounded-xs overflow-x-auto">
-              <div className="px-4 py-2 bg-stone-50/50 border-b border-stone-200 text-xs font-mono uppercase tracking-wider text-stone-500 font-semibold">{g.module}</div>
+              <div className="px-4 py-2 bg-stone-50/50 border-b border-stone-200 text-xs font-mono uppercase tracking-wider text-ink-muted font-semibold">{g.module}</div>
               <table className="w-full text-left text-xs font-sans">
-                <thead className="bg-stone-50 border-b border-stone-200 text-stone-500 font-mono text-[11px] uppercase"><tr><th className="px-4 py-2">Capability</th>{ALL_ROLES.map((r) => <th key={r} className="px-3 py-2 text-center">{ROLE_LABELS[r].replace(' Admin', '').replace('istrator', 'in')}</th>)}</tr></thead>
+                <thead className="bg-stone-50 border-b border-stone-200 text-ink-muted font-mono text-[11px] uppercase"><tr><th className="px-4 py-2">Capability</th>{ALL_ROLES.map((r) => <th key={r} className="px-3 py-2 text-center">{ROLE_LABELS[r].replace(' Admin', '').replace('istrator', 'in')}</th>)}</tr></thead>
                 <tbody className="divide-y divide-stone-200">
                   {g.rows.map((row) => (
                     <tr key={row.key}><td className="px-4 py-2 text-stone-800">{row.label}</td>{ALL_ROLES.map((r) => <td key={r} className="px-3 py-2 text-center">{row.roles[r] ? <span className="text-emerald-700 font-bold">✓</span> : <span className="text-stone-300">—</span>}</td>)}</tr>
@@ -166,7 +167,7 @@ export const AdminTeamPage: React.FC<AdminTeamPageProps> = ({ staff, invitations
               </table>
             </div>
           ))}
-          <p className="text-[11px] text-stone-400">This matrix is generated from the enforced server-side RBAC source of truth (not hand-maintained).</p>
+          <p className="text-[11px] text-ink-muted">This matrix is generated from the enforced server-side RBAC source of truth (not hand-maintained).</p>
         </div>
       )}
 
@@ -176,7 +177,7 @@ export const AdminTeamPage: React.FC<AdminTeamPageProps> = ({ staff, invitations
           {inviteLink ? (
             <div className="space-y-3">
               <p className="text-xs text-stone-600">This single-use, time-limited link is shown once. Share it with the staff member through a secure channel — the app does not send email.</p>
-              <textarea readOnly value={inviteLink} onFocus={(e) => e.currentTarget.select()} rows={3} className="w-full px-3 py-2 text-[11px] font-mono border border-stone-300 rounded-xs bg-stone-50" />
+              <textarea readOnly aria-label="Invite link" value={inviteLink} onFocus={(e) => e.currentTarget.select()} rows={3} className="w-full px-3 py-2 text-[11px] font-mono border border-stone-300 rounded-xs bg-stone-50" />
               <div className="flex justify-end"><button onClick={() => setInviteOpen(false)} className="px-4 py-2 text-xs font-semibold text-white bg-[#0F1115] rounded-xs">Done</button></div>
             </div>
           ) : (
@@ -197,10 +198,10 @@ function InviteForm({ assignable, onDone }: { assignable: RoleKey[]; onDone: (li
       if (r.ok && 'data' in r) onDone(`${location.origin}/admin/accept-invitation/?token=${r.data.token}`, 'Invitation created — copy the link');
       else onDone(null, `Failed: ${(r as { error?: string }).error}`);
     }); }} className="space-y-3">
-      <div><label className="block text-xs font-mono uppercase text-stone-500 mb-1">Name</label><input required value={f.name} onChange={(e) => setF({ ...f, name: e.target.value })} className="w-full px-3 py-2 text-xs border border-stone-300 rounded-xs" /></div>
-      <div><label className="block text-xs font-mono uppercase text-stone-500 mb-1">Email</label><input type="email" required value={f.email} onChange={(e) => setF({ ...f, email: e.target.value })} className="w-full px-3 py-2 text-xs border border-stone-300 rounded-xs" /></div>
-      <div><label className="block text-xs font-mono uppercase text-stone-500 mb-1">Role</label><select value={f.roleKey} onChange={(e) => setF({ ...f, roleKey: e.target.value as RoleKey })} className="w-full px-3 py-2 text-xs border border-stone-300 rounded-xs bg-white">{assignable.map((r) => <option key={r} value={r}>{ROLE_LABELS[r]}</option>)}</select></div>
-      <p className="text-[11px] text-stone-500 font-mono bg-stone-50 border border-stone-200 p-2 rounded-xs">No email is sent. You will receive a single-use link to share manually. The account stays INVITED until the link is used to set a password.</p>
+      <div><label htmlFor="invite-name" className="block text-xs font-mono uppercase text-ink-muted mb-1">Name</label><input id="invite-name" required value={f.name} onChange={(e) => setF({ ...f, name: e.target.value })} className="w-full px-3 py-2 text-xs border border-stone-300 rounded-xs" /></div>
+      <div><label htmlFor="invite-email" className="block text-xs font-mono uppercase text-ink-muted mb-1">Email</label><input id="invite-email" type="email" required value={f.email} onChange={(e) => setF({ ...f, email: e.target.value })} className="w-full px-3 py-2 text-xs border border-stone-300 rounded-xs" /></div>
+      <div><label htmlFor="invite-role" className="block text-xs font-mono uppercase text-ink-muted mb-1">Role</label><select id="invite-role" value={f.roleKey} onChange={(e) => setF({ ...f, roleKey: e.target.value as RoleKey })} className="w-full px-3 py-2 text-xs border border-stone-300 rounded-xs bg-white">{assignable.map((r) => <option key={r} value={r}>{ROLE_LABELS[r]}</option>)}</select></div>
+      <p className="text-[11px] text-ink-muted font-mono bg-stone-50 border border-stone-200 p-2 rounded-xs">No email is sent. You will receive a single-use link to share manually. The account stays INVITED until the link is used to set a password.</p>
       <div className="flex justify-end gap-2 pt-2 border-t border-stone-200"><button type="submit" disabled={pending} className="px-4 py-2 text-xs font-semibold text-white bg-[#0F1115] rounded-xs disabled:opacity-50">Create Invitation</button></div>
     </form>
   );

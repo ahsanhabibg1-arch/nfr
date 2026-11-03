@@ -37,9 +37,9 @@ export const LatestCoverage: React.FC<LatestCoverageProps> = ({
     <section id="latest-coverage" className="w-full bg-[#F7F3EA] text-[#0F1115] py-14 border-b border-stone-300">
       <div className="max-w-[1280px] mx-auto px-4 sm:px-6 lg:px-8">
         <SectionHeading
-          kicker="Championship Dispatches"
-          title="Latest NFR Coverage &amp; Analysis"
-          description="In-depth event dispatches, competitor profiles, venue logistics, and analytical breakdowns from our independent correspondents."
+          kicker="Latest"
+          title="Latest NFR Coverage"
+          description="The most recently published articles."
           actionLabel="View All Coverage"
           onActionClick={() => setSelectedCategory('All')}
         />
@@ -78,7 +78,7 @@ export const LatestCoverage: React.FC<LatestCoverageProps> = ({
                 />
               </div>
 
-              <div className="flex items-center gap-2 text-xs font-sans text-stone-500 mb-2">
+              <div className="flex items-center gap-2 text-xs font-sans text-ink-muted mb-2">
                 <span className="font-semibold text-[#8B5E3C] uppercase tracking-wider">
                   {featuredStory.category}
                 </span>
@@ -114,7 +114,7 @@ export const LatestCoverage: React.FC<LatestCoverageProps> = ({
                 className="bg-white p-5 border border-stone-300 rounded-sm hover:border-[#8B5E3C] transition-colors cursor-pointer group flex flex-col sm:flex-row lg:flex-col gap-4"
               >
                 <div className="flex-1">
-                  <div className="flex items-center gap-2 text-[11px] font-sans text-stone-500 mb-1.5">
+                  <div className="flex items-center gap-2 text-[11px] font-sans text-ink-muted mb-1.5">
                     <span className="font-semibold text-[#8B5E3C] uppercase tracking-wider">
                       {story.category}
                     </span>
@@ -133,7 +133,7 @@ export const LatestCoverage: React.FC<LatestCoverageProps> = ({
                   </p>
                 </div>
 
-                <div className="pt-2 border-t border-stone-100 flex items-center justify-between text-[11px] font-sans text-stone-500">
+                <div className="pt-2 border-t border-stone-100 flex items-center justify-between text-[11px] font-sans text-ink-muted">
                   <span>{story.author.name}</span>
                   <span className="text-[#8B5E3C] font-medium group-hover:translate-x-1 transition-transform">
                     Read &rarr;
@@ -143,7 +143,7 @@ export const LatestCoverage: React.FC<LatestCoverageProps> = ({
             ))}
 
             {standardStories.length === 0 && (
-              <div className="p-8 bg-white border border-stone-300 text-center text-xs text-stone-500 font-sans">
+              <div className="p-8 bg-white border border-stone-300 text-center text-xs text-ink-muted font-sans">
                 Showing single featured dispatch for {selectedCategory}.
               </div>
             )}

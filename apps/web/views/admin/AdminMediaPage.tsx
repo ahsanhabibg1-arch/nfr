@@ -13,7 +13,7 @@ interface Props { result: MediaListResult; filters: Filters; viewerId: string; c
 
 const LICENSE = ['UNCONFIRMED', 'OWNED', 'LICENSED', 'PERMISSION_GRANTED', 'PUBLIC_DOMAIN', 'OTHER'] as const;
 const inp = 'w-full p-2 bg-stone-50 border border-stone-200 rounded-xs text-xs';
-const lbl = 'block text-[10px] font-mono uppercase text-stone-500 mb-1';
+const lbl = 'block text-[10px] font-mono uppercase text-ink-muted mb-1';
 const fmtBytes = (b: number | null) => (b == null ? '—' : b < 1024 * 1024 ? `${Math.round(b / 1024)} KB` : `${(b / 1048576).toFixed(1)} MB`);
 
 export const AdminMediaPage: React.FC<Props> = ({ result, filters, viewerId, canUpload, canDelete, canEditAny }) => {
@@ -84,7 +84,7 @@ export const AdminMediaPage: React.FC<Props> = ({ result, filters, viewerId, can
 
   const Badge: React.FC<{ r: MediaRow }> = ({ r }) => (
     <>
-      <span className={`text-[9px] font-mono px-1 rounded border ${r.visibility === 'PUBLIC' ? 'bg-emerald-50 border-emerald-200 text-emerald-700' : r.visibility === 'DRAFT' ? 'bg-amber-50 border-amber-200 text-amber-700' : 'bg-stone-100 border-stone-300 text-stone-500'}`}>{r.visibility}</span>
+      <span className={`text-[9px] font-mono px-1 rounded border ${r.visibility === 'PUBLIC' ? 'bg-emerald-50 border-emerald-200 text-emerald-700' : r.visibility === 'DRAFT' ? 'bg-amber-50 border-amber-200 text-amber-700' : 'bg-stone-100 border-stone-300 text-ink-muted'}`}>{r.visibility}</span>
       {!r.rightsConfirmed && r.storageProvider !== 'legacy-local' && <span className="ml-1 text-[9px] font-mono px-1 rounded border bg-rose-50 border-rose-200 text-rose-700" title="Usage rights not confirmed">RIGHTS?</span>}
     </>
   );
@@ -95,21 +95,21 @@ export const AdminMediaPage: React.FC<Props> = ({ result, filters, viewerId, can
         actions={
           <div className="flex items-center gap-2">
             <div className="flex border border-stone-200 rounded-xs overflow-hidden bg-white">
-              <button onClick={() => setView('grid')} className={`p-1.5 ${view === 'grid' ? 'bg-[#0F1115] text-[#D4A757]' : 'text-stone-500'}`} title="Grid">▦</button>
-              <button onClick={() => setView('list')} className={`p-1.5 ${view === 'list' ? 'bg-[#0F1115] text-[#D4A757]' : 'text-stone-500'}`} title="List">≣</button>
+              <button onClick={() => setView('grid')} aria-label="Grid view" aria-pressed={view === 'grid'} className={`p-1.5 ${view === 'grid' ? 'bg-[#0F1115] text-[#D4A757]' : 'text-ink-muted'}`} title="Grid">▦</button>
+              <button onClick={() => setView('list')} aria-label="List view" aria-pressed={view === 'list'} className={`p-1.5 ${view === 'list' ? 'bg-[#0F1115] text-[#D4A757]' : 'text-ink-muted'}`} title="List">≣</button>
             </div>
             {canUpload && <button onClick={() => fileRef.current?.click()} className="px-3.5 py-1.5 bg-[#0F1115] text-[#D4A757] text-xs font-semibold uppercase tracking-wider rounded-xs">+ Upload Media</button>}
             <input ref={fileRef} type="file" accept="image/jpeg,image/png,image/webp" multiple hidden onChange={(e) => e.target.files && onFiles(e.target.files)} />
           </div>
         }
       />
-      {notice && <div className="p-3 bg-emerald-50 border border-emerald-200 text-emerald-800 text-xs rounded-xs">{notice}</div>}
+      {notice && <div role="status" aria-live="polite" className="p-3 bg-emerald-50 border border-emerald-200 text-emerald-800 text-xs rounded-xs">{notice}</div>}
 
       {uploads.length > 0 && (
         <div className="bg-white border border-stone-200 rounded-sm p-3 space-y-2">
           {uploads.map((u, i) => (
             <div key={i} className="text-xs">
-              <div className="flex justify-between font-mono"><span className="truncate max-w-[70%]">{u.name}</span><span className={u.error ? 'text-rose-600' : 'text-stone-500'}>{u.error ? u.error : u.done ? 'done' : `${u.pct}%`}</span></div>
+              <div className="flex justify-between font-mono"><span className="truncate max-w-[70%]">{u.name}</span><span className={u.error ? 'text-rose-600' : 'text-ink-muted'}>{u.error ? u.error : u.done ? 'done' : `${u.pct}%`}</span></div>
               <div className="h-1 bg-stone-100 rounded"><div className={`h-1 rounded ${u.error ? 'bg-rose-400' : 'bg-[#D4A757]'}`} style={{ width: `${u.pct}%` }} /></div>
             </div>
           ))}
@@ -118,30 +118,30 @@ export const AdminMediaPage: React.FC<Props> = ({ result, filters, viewerId, can
 
       {/* Filters */}
       <form onSubmit={(e) => { e.preventDefault(); const fd = new FormData(e.currentTarget); navigate({ q: String(fd.get('q') || ''), page: 1 }); }} className="flex flex-wrap items-center gap-2">
-        <input name="q" defaultValue={filters.q ?? ''} placeholder="Search filename, title, alt, credit…" className="text-xs p-2 bg-white border border-stone-200 rounded-xs w-64" />
-        <select value={filters.type ?? ''} onChange={(e) => navigate({ type: e.target.value || undefined, page: 1 })} className="text-xs p-2 bg-white border border-stone-200 rounded-xs">
+        <input name="q" type="search" aria-label="Search media" defaultValue={filters.q ?? ''} placeholder="Search filename, title, alt, credit…" className="text-xs p-2 bg-white border border-stone-200 rounded-xs w-64" />
+        <select aria-label="Filter by file type" value={filters.type ?? ''} onChange={(e) => navigate({ type: e.target.value || undefined, page: 1 })} className="text-xs p-2 bg-white border border-stone-200 rounded-xs">
           <option value="">All types</option><option value="jpg">JPEG</option><option value="png">PNG</option><option value="webp">WebP</option>
         </select>
-        <select value={filters.visibility ?? ''} onChange={(e) => navigate({ visibility: e.target.value || undefined, page: 1 })} className="text-xs p-2 bg-white border border-stone-200 rounded-xs">
+        <select aria-label="Filter by visibility" value={filters.visibility ?? ''} onChange={(e) => navigate({ visibility: e.target.value || undefined, page: 1 })} className="text-xs p-2 bg-white border border-stone-200 rounded-xs">
           <option value="">All states</option><option value="PUBLIC">Public</option><option value="DRAFT">Draft</option><option value="ARCHIVED">Archived</option>
         </select>
-        <select value={filters.usage ?? ''} onChange={(e) => navigate({ usage: (e.target.value || undefined) as Filters['usage'], page: 1 })} className="text-xs p-2 bg-white border border-stone-200 rounded-xs">
+        <select aria-label="Filter by usage" value={filters.usage ?? ''} onChange={(e) => navigate({ usage: (e.target.value || undefined) as Filters['usage'], page: 1 })} className="text-xs p-2 bg-white border border-stone-200 rounded-xs">
           <option value="">Any usage</option><option value="used">In use</option><option value="unused">Unused</option>
         </select>
-        <select value={filters.uploadedWithin ?? ''} onChange={(e) => navigate({ uploadedWithin: (e.target.value || undefined) as Filters['uploadedWithin'], page: 1 })} className="text-xs p-2 bg-white border border-stone-200 rounded-xs">
+        <select aria-label="Filter by upload date" value={filters.uploadedWithin ?? ''} onChange={(e) => navigate({ uploadedWithin: (e.target.value || undefined) as Filters['uploadedWithin'], page: 1 })} className="text-xs p-2 bg-white border border-stone-200 rounded-xs">
           <option value="">Any upload date</option><option value="7d">Last 7 days</option><option value="30d">Last 30 days</option><option value="365d">Last year</option>
         </select>
-        <span className="text-[11px] text-stone-500 ml-auto">{result.total} asset(s)</span>
+        <span className="text-[11px] text-ink-muted ml-auto">{result.total} asset(s)</span>
       </form>
 
       <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 items-start">
         {/* Assets */}
         <div className="lg:col-span-8 space-y-3">
-          {result.rows.length === 0 && <div className="p-8 text-center text-stone-400 text-sm bg-white border border-stone-200 rounded-sm">No media assets match these filters.</div>}
+          {result.rows.length === 0 && <div className="p-8 text-center text-ink-muted text-sm bg-white border border-stone-200 rounded-sm">No media assets match these filters.</div>}
           {view === 'grid' ? (
             <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
               {result.rows.map((r) => (
-                <button key={r.id} onClick={() => setSelId(r.id)} className={`group text-left bg-white border rounded-sm overflow-hidden ${selId === r.id ? 'border-[#D4A757] ring-1 ring-[#D4A757]' : 'border-stone-200'}`}>
+                <button key={r.id} type="button" onClick={() => setSelId(r.id)} aria-pressed={selId === r.id} className={`group text-left bg-white border rounded-sm overflow-hidden ${selId === r.id ? 'border-[#D4A757] ring-1 ring-[#D4A757]' : 'border-stone-200'}`}>
                   <div className="aspect-[4/3] bg-stone-100 overflow-hidden">
                     {/* eslint-disable-next-line @next/next/no-img-element */}
                     <img src={r.thumbUrl} alt={r.altText ?? r.filename} className="w-full h-full object-cover" loading="lazy" />
@@ -160,12 +160,12 @@ export const AdminMediaPage: React.FC<Props> = ({ result, filters, viewerId, can
                 <tbody className="divide-y divide-stone-100">
                   {result.rows.map((r) => (
                     <tr key={r.id} onClick={() => setSelId(r.id)} className={`cursor-pointer hover:bg-stone-50 ${selId === r.id ? 'bg-amber-50/40' : ''}`}>
-                      <td className="py-2 px-3 font-semibold text-stone-800 truncate max-w-[220px]">{r.title || r.filename}</td>
-                      <td className="py-2 px-3 font-mono text-stone-500">{r.mimeType?.replace('image/', '') ?? '—'}</td>
-                      <td className="py-2 px-3 text-stone-500">{r.width && r.height ? `${r.width}×${r.height}` : '—'}</td>
-                      <td className="py-2 px-3 text-stone-500">{fmtBytes(r.bytes)}</td>
+                      <td className="py-2 px-3 font-semibold text-stone-800 truncate max-w-[220px]"><button type="button" onClick={() => setSelId(r.id)} aria-pressed={selId === r.id} className="text-left font-semibold hover:underline">{r.title || r.filename}</button></td>
+                      <td className="py-2 px-3 font-mono text-ink-muted">{r.mimeType?.replace('image/', '') ?? '—'}</td>
+                      <td className="py-2 px-3 text-ink-muted">{r.width && r.height ? `${r.width}×${r.height}` : '—'}</td>
+                      <td className="py-2 px-3 text-ink-muted">{fmtBytes(r.bytes)}</td>
                       <td className="py-2 px-3"><Badge r={r} /></td>
-                      <td className="py-2 px-3 text-right font-mono text-stone-500">{r.usageCount}</td>
+                      <td className="py-2 px-3 text-right font-mono text-ink-muted">{r.usageCount}</td>
                     </tr>
                   ))}
                 </tbody>
@@ -176,7 +176,7 @@ export const AdminMediaPage: React.FC<Props> = ({ result, filters, viewerId, can
           {result.totalPages > 1 && (
             <div className="flex items-center justify-between text-xs">
               <button disabled={result.page <= 1} onClick={() => navigate({ page: result.page - 1 })} className="px-3 py-1.5 border border-stone-300 rounded-xs disabled:opacity-40">← Previous</button>
-              <span className="text-stone-500">Page {result.page} of {result.totalPages}</span>
+              <span className="text-ink-muted">Page {result.page} of {result.totalPages}</span>
               <button disabled={result.page >= result.totalPages} onClick={() => navigate({ page: result.page + 1 })} className="px-3 py-1.5 border border-stone-300 rounded-xs disabled:opacity-40">Next →</button>
             </div>
           )}
@@ -185,22 +185,22 @@ export const AdminMediaPage: React.FC<Props> = ({ result, filters, viewerId, can
         {/* Detail panel */}
         <div className="lg:col-span-4">
           {!selected ? (
-            <div className="bg-white border border-stone-200 rounded-sm p-6 text-center text-stone-400 text-xs">Select an asset to view and edit its metadata.</div>
+            <div className="bg-white border border-stone-200 rounded-sm p-6 text-center text-ink-muted text-xs">Select an asset to view and edit its metadata.</div>
           ) : (
             <div className="bg-white border border-stone-200 rounded-sm p-4 space-y-3 sticky top-20">
               <div className="aspect-video bg-stone-100 rounded-xs overflow-hidden">
                 {/* eslint-disable-next-line @next/next/no-img-element */}
                 <img src={selected.thumbUrl} alt={selected.altText ?? selected.filename} className="w-full h-full object-contain" />
               </div>
-              <div className="text-[11px] font-mono text-stone-500 break-all">{selected.filename}</div>
+              <div className="text-[11px] font-mono text-ink-muted break-all">{selected.filename}</div>
               <div className="flex flex-wrap gap-2 text-[11px] text-stone-600">
                 <span>{selected.width}×{selected.height}</span><span>·</span><span>{fmtBytes(selected.bytes)}</span><span>·</span><span>{selected.mimeType?.replace('image/', '')}</span><span>·</span><span>{selected.usageCount} use(s)</span>
               </div>
 
               {/* Rights */}
               <div className="p-2 bg-stone-50 border border-stone-200 rounded-xs space-y-2">
-                <div className={lbl}>Usage rights {selected.rightsConfirmed ? <span className="text-emerald-700">confirmed</span> : <span className="text-rose-700">unconfirmed</span>}</div>
-                <select value={license} onChange={(e) => setLicense(e.target.value)} disabled={!canEditSel} className={inp}>
+                <label htmlFor="media-license" className={lbl}>Usage rights {selected.rightsConfirmed ? <span className="text-emerald-700">confirmed</span> : <span className="text-rose-700">unconfirmed</span>}</label>
+                <select id="media-license" value={license} onChange={(e) => setLicense(e.target.value)} disabled={!canEditSel} className={inp}>
                   {LICENSE.map((l) => <option key={l} value={l}>{l.replace('_', ' ')}</option>)}
                 </select>
                 {canEditSel && (
@@ -213,19 +213,19 @@ export const AdminMediaPage: React.FC<Props> = ({ result, filters, viewerId, can
 
               {/* Metadata */}
               {([['title', 'Title'], ['seoTitle', 'Image SEO title'], ['altText', 'ALT text'], ['caption', 'Caption'], ['credit', 'Credit / photographer'], ['copyrightHolder', 'Copyright holder'], ['licenseSourceUrl', 'License source URL'], ['usageRestrictions', 'Usage restrictions'], ['sourceAttribution', 'Source attribution']] as const).map(([k, label]) => (
-                <div key={k}><label className={lbl}>{label}</label><input value={form[k] ?? ''} onChange={(e) => setForm({ ...form, [k]: e.target.value })} disabled={!canEditSel} className={inp} /></div>
+                <div key={k}><label htmlFor={`media-${k}`} className={lbl}>{label}</label><input id={`media-${k}`} value={form[k] ?? ''} onChange={(e) => setForm({ ...form, [k]: e.target.value })} disabled={!canEditSel} className={inp} /></div>
               ))}
 
               <div className="flex flex-wrap gap-2 pt-1">
                 {canEditSel && <button onClick={() => run(updateMediaMetadataAction(selected.id, form), 'Metadata saved.')} disabled={pending} className="px-3 py-1.5 bg-[#0F1115] text-[#D4A757] text-xs font-semibold rounded-xs disabled:opacity-50">Save metadata</button>}
                 {canEditSel && (
-                  <select value={selected.visibility} onChange={(e) => run(setVisibilityAction(selected.id, e.target.value as never), 'Visibility updated.')} className="text-xs p-1.5 border border-stone-300 rounded-xs">
+                  <select aria-label="Asset visibility" value={selected.visibility} onChange={(e) => run(setVisibilityAction(selected.id, e.target.value as never), 'Visibility updated.')} className="text-xs p-1.5 border border-stone-300 rounded-xs">
                     <option value="DRAFT">Draft</option><option value="PUBLIC">Public</option><option value="ARCHIVED">Archived</option>
                   </select>
                 )}
                 {canDelete && <button onClick={() => { if (confirm('Delete this asset? This cannot be undone.')) run(deleteMediaAction(selected.id), 'Asset deleted.'); }} className="px-3 py-1.5 border border-rose-300 text-rose-600 text-xs rounded-xs ml-auto">Delete</button>}
               </div>
-              <p className="text-[10px] text-stone-400">Asset-level metadata is reusable. Article-specific ALT text is edited on the article itself and is not overwritten by these values.</p>
+              <p className="text-[10px] text-ink-muted">Asset-level metadata is reusable. Article-specific ALT text is edited on the article itself and is not overwritten by these values.</p>
             </div>
           )}
         </div>

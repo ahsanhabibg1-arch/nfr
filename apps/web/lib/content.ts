@@ -1,6 +1,7 @@
 import 'server-only';
 import { WorkflowStatus } from '@prisma/client';
 import { prisma } from './db';
+import { publicArticleWhere } from './fixturePolicy';
 import { articleInclude, toArticle, toDiscipline } from './mappers';
 import { Article, Discipline, SearchIndexItem } from '../types';
 import { PRIMARY_SECTIONS, SectionMeta } from '../config/routes';
@@ -16,11 +17,9 @@ import { PRIMARY_SECTIONS, SectionMeta } from '../config/routes';
  * It replaces the Batch 01 static adapter of the same name and path, so the
  * public pages' imports are unchanged (their calls simply became `await`ed).
  *
- * BOUNDARY (documented, Batch 02 §9): articles, categories and disciplines are
- * database-backed. The non-article homepage/section decorative modules
- * (entertainment features, shopping events, plan & watch guide cards, rodeo hub
- * & event cards, learning resources, quick-access) remain Phase 0 static content
- * and are NOT yet in the content database — see KNOWN_LIMITATIONS.md.
+ * Phase 2: the homepage/section modules that were Phase 0 static content are now
+ * fed from published articles (and the DB rodeo directory); no static mock data
+ * reaches public pages. Quick-access is plain navigation (config/quickAccess.ts).
  */
 
 const PUBLISHED = WorkflowStatus.PUBLISHED;
@@ -29,7 +28,7 @@ const PUBLISHED = WorkflowStatus.PUBLISHED;
 
 export async function getPublishedArticles(): Promise<Article[]> {
   const rows = await prisma.article.findMany({
-    where: { workflowStatus: PUBLISHED },
+    where: { ...publicArticleWhere() },
     include: articleInclude,
     orderBy: { publishedAt: 'desc' },
   });
@@ -38,7 +37,7 @@ export async function getPublishedArticles(): Promise<Article[]> {
 
 export async function getPublishedArticleBySlug(slug: string): Promise<Article | null> {
   const row = await prisma.article.findFirst({
-    where: { slug, workflowStatus: PUBLISHED },
+    where: { slug, ...publicArticleWhere() },
     include: articleInclude,
   });
   return row ? toArticle(row) : null;
@@ -46,7 +45,7 @@ export async function getPublishedArticleBySlug(slug: string): Promise<Article |
 
 export async function getPublishedArticlesBySection(categoryKey: string): Promise<Article[]> {
   const rows = await prisma.article.findMany({
-    where: { workflowStatus: PUBLISHED, category: { name: categoryKey } },
+    where: { ...publicArticleWhere(), category: { name: categoryKey } },
     include: articleInclude,
     orderBy: { publishedAt: 'desc' },
   });
@@ -55,7 +54,7 @@ export async function getPublishedArticlesBySection(categoryKey: string): Promis
 
 export async function getPublishedArticlesByCategory(categorySlug: string): Promise<Article[]> {
   const rows = await prisma.article.findMany({
-    where: { workflowStatus: PUBLISHED, category: { slug: categorySlug } },
+    where: { ...publicArticleWhere(), category: { slug: categorySlug } },
     include: articleInclude,
     orderBy: { publishedAt: 'desc' },
   });
@@ -67,7 +66,7 @@ export async function getPublishedArticlesByDiscipline(
   limit = 3,
 ): Promise<Article[]> {
   const linked = await prisma.article.findMany({
-    where: { workflowStatus: PUBLISHED, disciplines: { some: { discipline: { slug: disciplineSlug } } } },
+    where: { ...publicArticleWhere(), disciplines: { some: { discipline: { slug: disciplineSlug } } } },
     include: articleInclude,
     orderBy: { publishedAt: 'desc' },
   });
@@ -75,7 +74,7 @@ export async function getPublishedArticlesByDiscipline(
 
   // Fallback: competition coverage when no explicit links exist.
   const fallback = await prisma.article.findMany({
-    where: { workflowStatus: PUBLISHED, category: { name: 'NFR Competition' } },
+    where: { ...publicArticleWhere(), category: { name: 'NFR Competition' } },
     include: articleInclude,
     orderBy: { publishedAt: 'desc' },
     take: limit,
@@ -89,7 +88,7 @@ export async function getRelatedPublishedArticles(
 ): Promise<Article[]> {
   const curated = await prisma.article.findMany({
     where: {
-      workflowStatus: PUBLISHED,
+      ...publicArticleWhere(),
       id: { not: articleId },
       relatedFrom: { some: { sourceId: articleId } },
     },
@@ -104,7 +103,7 @@ export async function getRelatedPublishedArticles(
   });
   const rows = await prisma.article.findMany({
     where: {
-      workflowStatus: PUBLISHED,
+      ...publicArticleWhere(),
       id: { not: articleId },
       ...(current ? { categoryId: current.categoryId } : {}),
     },
@@ -118,9 +117,28 @@ export async function getRelatedPublishedArticles(
 /** Batch 01 compatibility alias (same published-only guarantee). */
 export const getRelatedArticles = getRelatedPublishedArticles;
 
+const ARTICLE_PATH = /^\/articles\/([a-z0-9]+(?:-[a-z0-9]+)*)\/$/;
+
+/**
+ * Resolve an article slug that no longer renders to its redirect target (ADM-14 / WEB-11).
+ * Only ACTIVE redirects whose destination is an internal article path of a PUBLISHED
+ * article are honoured — anything else falls through to 404 (no open or dangling redirect).
+ */
+export async function resolveArticleRedirect(slug: string): Promise<{ destination: string; permanent: boolean } | null> {
+  const r = await prisma.articleRedirect.findFirst({
+    where: { sourcePath: `/articles/${slug}/`, status: 'ACTIVE' },
+    select: { targetPath: true, statusCode: true },
+  });
+  const target = r ? ARTICLE_PATH.exec(r.targetPath) : null;
+  if (!r || !target) return null;
+  const live = await prisma.article.findFirst({ where: { slug: target[1], ...publicArticleWhere() }, select: { id: true } });
+  if (!live) return null;
+  return { destination: r.targetPath, permanent: r.statusCode === 301 || r.statusCode === 308 };
+}
+
 export async function getPublishedArticleSlugs(): Promise<string[]> {
   const rows = await prisma.article.findMany({
-    where: { workflowStatus: PUBLISHED },
+    where: { ...publicArticleWhere() },
     select: { slug: true },
   });
   return rows.map((r) => r.slug);
@@ -130,13 +148,13 @@ export async function getPublishedArticleSlugs(): Promise<string[]> {
 
 export async function getHeroArticle(): Promise<Article | null> {
   const lead = await prisma.article.findFirst({
-    where: { workflowStatus: PUBLISHED, isLeadHero: true },
+    where: { ...publicArticleWhere(), isLeadHero: true },
     include: articleInclude,
     orderBy: { publishedAt: 'desc' },
   });
   if (lead) return toArticle(lead);
   const latest = await prisma.article.findFirst({
-    where: { workflowStatus: PUBLISHED },
+    where: { ...publicArticleWhere() },
     include: articleInclude,
     orderBy: { publishedAt: 'desc' },
   });
@@ -146,7 +164,7 @@ export async function getHeroArticle(): Promise<Article | null> {
 export async function getSecondaryHeroStories(limit = 2, excludeId?: string): Promise<Article[]> {
   const rows = await prisma.article.findMany({
     where: {
-      workflowStatus: PUBLISHED,
+      ...publicArticleWhere(),
       isFeatured: true,
       ...(excludeId ? { id: { not: excludeId } } : {}),
     },
@@ -160,7 +178,7 @@ export async function getSecondaryHeroStories(limit = 2, excludeId?: string): Pr
 export async function getLatestArticles(limit = 6, excludeIds: string[] = []): Promise<Article[]> {
   const rows = await prisma.article.findMany({
     where: {
-      workflowStatus: PUBLISHED,
+      ...publicArticleWhere(),
       ...(excludeIds.length ? { id: { notIn: excludeIds } } : {}),
     },
     include: articleInclude,
@@ -170,9 +188,22 @@ export async function getLatestArticles(limit = 6, excludeIds: string[] = []): P
   return rows.map(toArticle);
 }
 
+/** Article types treated as evergreen learning content (Requirements v2.0 §6.2 seed types). */
+export const EVERGREEN_ARTICLE_TYPES = ['Rules & Format', 'History', 'Records & Past Winners', 'General Information'];
+
+export async function getEvergreenArticles(limit = 4): Promise<Article[]> {
+  const rows = await prisma.article.findMany({
+    where: { ...publicArticleWhere(), articleType: { in: EVERGREEN_ARTICLE_TYPES } },
+    include: articleInclude,
+    orderBy: { publishedAt: 'desc' },
+    take: limit,
+  });
+  return rows.map(toArticle);
+}
+
 export async function getPublishedSearchIndex(): Promise<SearchIndexItem[]> {
   const rows = await prisma.article.findMany({
-    where: { workflowStatus: PUBLISHED },
+    where: { ...publicArticleWhere() },
     select: { id: true, slug: true, title: true, deck: true, readTime: true, category: { select: { name: true } } },
     orderBy: { publishedAt: 'desc' },
   });

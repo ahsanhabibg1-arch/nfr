@@ -94,7 +94,7 @@ export async function ArticleView({ article }: { article: Article }) {
 
             {/* Quick Department Link */}
             <div className="p-5 bg-white border border-stone-200 rounded-sm">
-              <span className="text-[10px] uppercase font-mono tracking-wider text-stone-400 block mb-1">
+              <span className="text-[10px] uppercase font-mono tracking-wider text-ink-muted block mb-1">
                 Department
               </span>
               <h3 className="text-sm font-serif font-bold text-stone-900 mb-1">

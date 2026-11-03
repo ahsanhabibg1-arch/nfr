@@ -27,14 +27,14 @@ export async function ArticleMonetization({ articleId }: { articleId: string }) 
         <div className="border border-stone-300 rounded-sm bg-[#F7F3EA]/60 overflow-hidden">
           <div className="px-4 py-2 border-b border-stone-200 bg-white/60 flex items-center justify-between">
             <span className="text-[10px] uppercase tracking-widest font-mono font-bold text-[#8B5E3C]">Related Offers</span>
-            <span className="text-[10px] uppercase tracking-wider font-mono text-stone-400">Affiliate · Advertisement</span>
+            <span className="text-[10px] uppercase tracking-wider font-mono text-ink-muted">Affiliate · Advertisement</span>
           </div>
           <ul className="divide-y divide-stone-200">
             {m.offers.map((o) => (
               <li key={o.placementId} className="px-4 py-3 flex items-center justify-between gap-3">
                 <div className="min-w-0">
                   <p className="text-sm font-serif font-semibold text-stone-900 truncate">{o.label}</p>
-                  {o.context && <p className="text-xs text-stone-500 font-sans truncate">{o.context}</p>}
+                  {o.context && <p className="text-xs text-ink-muted font-sans truncate">{o.context}</p>}
                 </div>
                 <a
                   href={o.href}

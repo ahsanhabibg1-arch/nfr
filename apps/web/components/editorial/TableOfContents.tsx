@@ -96,7 +96,7 @@ export const TableOfContents: React.FC<TableOfContentsProps> = ({
                     : 'text-stone-600 hover:text-stone-950'
                 }`}
               >
-                <span className="text-[10px] font-mono text-stone-400 shrink-0 mt-0.5">
+                <span className="text-[10px] font-mono text-ink-muted shrink-0 mt-0.5">
                   0{idx + 1}
                 </span>
                 <span>{item.text}</span>
