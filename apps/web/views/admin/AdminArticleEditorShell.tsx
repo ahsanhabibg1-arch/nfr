@@ -4,8 +4,10 @@ import React, { useState, useEffect, useMemo } from 'react';
 import Link from 'next/link';
 import { useParams, useRouter } from 'next/navigation';
 import { Article, ArticleWorkflowStatus, ArticleType, PrimarySection, ContentBlock, SourceReference, DisclosureType, ArticleRevision } from '../../types';
-import { AUTHORS } from '../../data/mockEditorialData';
 import { ROUTES } from '../../config/routes';
+
+/** Database-backed author bylines supplied by the server (Batch 16) — replaces the Phase-0 mock map. */
+export interface AuthorOption { id: string; name: string; role: string }
 import { validateArticle } from '../../utils/seoValidator';
 import { saveArticleAction, transitionArticleAction, restoreRevisionAction } from '../../app/admin/article-actions';
 import type { ArticleInput } from '../../lib/cms/articleService';
@@ -62,6 +64,7 @@ interface AdminArticleEditorShellProps {
   initialRevisions?: ArticleRevision[];
   permissions: EditorPermissions;
   actorName: string;
+  authors?: AuthorOption[];
 }
 
 export const AdminArticleEditorShell: React.FC<AdminArticleEditorShellProps> = ({
@@ -70,6 +73,7 @@ export const AdminArticleEditorShell: React.FC<AdminArticleEditorShellProps> = (
   initialRevisions = [],
   permissions,
   actorName,
+  authors = [],
 }) => {
   const params = useParams<{ id: string }>();
   const id = params?.id;
@@ -106,13 +110,16 @@ export const AdminArticleEditorShell: React.FC<AdminArticleEditorShellProps> = (
     (existingArticle?.workflowStatus || existingArticle?.status || 'draft') as ArticleWorkflowStatus
   );
   // No preselected demo author — unselected for new articles. For an existing article,
-  // map its saved byline name back to the matching author key (else leave unselected).
+  // resolve its saved byline to the matching database author id (else leave unselected,
+  // preserving the legacy byline text as a review signal — see legacyBylineName below).
   const [authorKey, setAuthorKey] = useState<string>(() => {
     const name = existingArticle?.author?.name;
     if (!name) return '';
-    const match = Object.entries(AUTHORS as Record<string, { name: string }>).find(([, a]) => a.name === name);
-    return match?.[0] || '';
+    return authors.find((a) => a.name === name)?.id || '';
   });
+  // A saved byline that doesn't match any current database author (legacy string) — shown
+  // as an editorial review warning rather than silently reassigned.
+  const legacyBylineName = existingArticle?.author?.name && !authors.some((a) => a.name === existingArticle.author?.name) ? existingArticle.author?.name : null;
   const [reviewerName, setReviewerName] = useState(existingArticle?.reviewerName || '');
   const [scheduledAt, setScheduledAt] = useState(existingArticle?.scheduledAt || '');
   // No preselected featured image / caption / credit for new articles.
@@ -174,14 +181,15 @@ export const AdminArticleEditorShell: React.FC<AdminArticleEditorShellProps> = (
 
   // Current article snapshot for validation & preview
   const currentArticleSnapshot: Article = useMemo(() => {
-    // No demo-author fallback: an unselected author stays empty (never auto-fills Clayton Vance).
-    const selectedAuthorObj = (AUTHORS as Record<string, { name: string; role: string; credentials?: string; editorialBeat?: string; bio?: string }>)[authorKey] || { name: '', role: '', credentials: '', editorialBeat: '', bio: '' };
+    // Database-backed byline: resolve the selected author id to its real record; an
+    // unselected author stays empty (never auto-fills a demo author).
+    const selectedAuthorObj = authors.find((a) => a.id === authorKey);
     const author = {
-      name: selectedAuthorObj.name,
-      role: selectedAuthorObj.role,
-      credentials: selectedAuthorObj.credentials,
-      editorialBeat: selectedAuthorObj.editorialBeat,
-      bio: selectedAuthorObj.bio,
+      name: selectedAuthorObj?.name || legacyBylineName || '',
+      role: selectedAuthorObj?.role || '',
+      credentials: undefined,
+      editorialBeat: undefined,
+      bio: undefined,
     };
 
     return {
@@ -295,7 +303,10 @@ export const AdminArticleEditorShell: React.FC<AdminArticleEditorShellProps> = (
     showNotification('Applied featured imagery & verified rights');
   };
 
-  const selectedAuthor = (AUTHORS as Record<string, { name: string; role: string }>)[authorKey] || { name: '', role: '' };
+  // Byline sent on save: the selected database author, or (when editing a legacy article
+  // with an unmatched byline and no new selection) the preserved legacy name — never a demo author.
+  const picked = authors.find((a) => a.id === authorKey);
+  const selectedAuthor = picked ?? (legacyBylineName ? { name: legacyBylineName, role: existingArticle?.author?.role || 'Staff Writer' } : { name: '', role: '' });
 
   const buildInput = (): ArticleInput => ({
     id: id || undefined,
@@ -1116,12 +1127,14 @@ export const AdminArticleEditorShell: React.FC<AdminArticleEditorShellProps> = (
                   }}
                   className="w-full p-2 bg-stone-50 border border-stone-200 rounded-xs text-xs text-stone-800"
                 >
-                  <option value="">Select author…</option>
-                  <option value="clayton">Clayton Vance &bull; Senior Rodeo Correspondent</option>
-                  <option value="elena">Elena Morales &bull; Staff Editor & Researcher</option>
-                  <option value="marcus">Marcus Sterling &bull; Travel & Venue Editor</option>
-                  <option value="sarah">Sarah Jenkins &bull; Western Lifestyle Editor</option>
+                  <option value="">{authors.length ? 'Select author…' : 'No authors — add one in Organization & Taxonomy'}</option>
+                  {authors.map((a) => (
+                    <option key={a.id} value={a.id}>{a.name} &bull; {a.role}</option>
+                  ))}
                 </select>
+                {legacyBylineName && !authorKey && (
+                  <p className="text-[11px] text-amber-700 font-mono mt-1">Legacy byline “{legacyBylineName}” — preserved on save. Pick a database author to update it.</p>
+                )}
               </div>
 
               {/* Tags Input */}

@@ -17,11 +17,18 @@ const SECTIONS_FALLBACK: NavLink[] = [
   { label: 'More Rodeo (Hubs & Major Events)', url: ROUTES.MORE_RODEO, isExternal: false },
 ];
 const ACADEMY_FALLBACK: NavLink[] = [
-  { label: 'Competitors Directory', url: '/competitors/', isExternal: false },
-  { label: 'Venues Directory', url: '/venues/', isExternal: false },
   { label: 'The 8-Second Rule Explainer', url: ROUTES.ARTICLE('inside-the-chutes-nfr-roughstock-intensity'), isExternal: false },
   { label: '50/50 Scoring Mechanics', url: ROUTES.DISCIPLINE('saddle-bronc-riding'), isExternal: false },
   { label: 'The 10-Round Average Formula', url: ROUTES.ARTICLE('the-anatomy-of-the-10-round-average'), isExternal: false },
+  { label: 'TV & Streaming Directory', url: ROUTES.ARTICLE('how-to-watch-nfr-streaming-cable-cord-cutters'), isExternal: false },
+  { label: 'Thomas & Mack Venue Tips', url: ROUTES.ARTICLE('navigating-thomas-and-mack-center-guide'), isExternal: false },
+];
+
+// Batch 15/16: public directory links always surface in the footer, independent of the
+// DB-backed navigation (so they appear even when the nav table has custom academy links).
+const DIRECTORY_LINKS: NavLink[] = [
+  { label: 'Competitors Directory', url: '/competitors/', isExternal: false },
+  { label: 'Venues Directory', url: '/venues/', isExternal: false },
 ];
 
 const FooterLinks: React.FC<{ links: NavLink[] }> = ({ links }) => (
@@ -80,7 +87,8 @@ interface SiteFooterProps {
 export const SiteFooter: React.FC<SiteFooterProps> = ({ sections, academy }) => {
   const [activePolicy, setActivePolicy] = useState<PolicyKey>(null);
   const sectionLinks = sections && sections.length > 0 ? sections : SECTIONS_FALLBACK;
-  const academyLinks = academy && academy.length > 0 ? academy : ACADEMY_FALLBACK;
+  const baseAcademy = academy && academy.length > 0 ? academy : ACADEMY_FALLBACK;
+  const academyLinks = [...baseAcademy, ...DIRECTORY_LINKS.filter((d) => !baseAcademy.some((a) => a.url === d.url))];
 
   return (
     <footer className="w-full bg-[#0F1115] text-stone-400 font-sans border-t border-white/10 pt-16 pb-12">
