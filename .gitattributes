@@ -1,0 +1,2 @@
+# Scripts with a #! line must keep LF endings: a CRLF hashbang breaks Vitest imports on Windows checkouts.
+apps/web/scripts/*.mjs text eol=lf

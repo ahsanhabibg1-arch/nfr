@@ -228,6 +228,14 @@ describe('A6 — skip gate classification', () => {
     expect(classifyReport(report(['failed'])).ok).toBe(false);
     expect(classifyReport(report([])).ok).toBe(false);
   });
+  it('fails when a test file failed to load (compile/import error leaves no test results)', () => {
+    const r = classifyReport({ testResults: [
+      { name: 'ok', status: 'passed', assertionResults: [{ fullName: 't0', status: 'passed' }] },
+      { name: 'broken', status: 'failed', message: 'SyntaxError: Invalid or unexpected token', assertionResults: [] },
+    ] });
+    expect(r.ok).toBe(false);
+    expect(r.brokenFiles).toEqual([{ file: 'broken', message: 'SyntaxError: Invalid or unexpected token' }]);
+  });
   it('treats allow-listed skips as intentional', () => {
     const r = classifyReport(report(['passed', 'skipped']), [{ fullName: 't1', reason: 'documented' }]);
     expect(r.ok).toBe(true);

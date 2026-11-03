@@ -146,4 +146,16 @@ The Phase 1 audit and the Gap audit were **deliberately not committed**: this re
 3. **Advisories:** the Vitest 3 → 5 and Prisma 6 → 7 upgrades remain open; each needs its own batch.
 4. **Accessibility outside this batch:** admin areas not in this batch (for example Analytics, Competitors, Landing SEO) have not been axe-audited; known grey tokens remain there.
 5. **Original uploads** keep their EXIF metadata by design (see the Batch C report §8).
-6. **CI:** the release is the first CI run with these changes; its result is reported separately in the release summary.
+6. **CI:** the result of the follow-up run is reported in the release summary (see §12).
+
+## 12. First CI run and follow-up fix
+
+The first CI run on `main` (`80f633b`, run 41727914774) **failed**: 363 of 364 tests passed. The failure was in `batchB.test.ts › production: fixture articles are excluded from every article read`, which asserted that non-fixture published articles exist. The local test DB had such rows left from older seeds; the freshly seeded CI database contains only fixtures. This was a test-data dependency, not an application defect.
+
+The follow-up commit fixes it as follows:
+
+- **The test is now self-contained.** It creates a non-fixture published control article, cloned from the published fixture, asserts that the control article is visible and every fixture is hidden in production mode, and deletes the control article in `finally`. 0 rows are left behind (verified).
+- **The skip gate is hardened.** A test file that fails to load (compile or import error, with no test results) now fails `assert-no-skipped-tests.mjs`. Before, such a file was counted only through Vitest's own exit code. The new unit test is in `batchA.test.ts`. The fix was checked against a real broken report, where the gate exited 1 and named the file.
+- **`.gitattributes` was added** (`apps/web/scripts/*.mjs text eol=lf`). On Windows checkouts with `core.autocrlf=true`, the gate script's `#!` line got CRLF, which Vitest's import of it cannot parse. This affected local Windows working copies only; CI checks out with LF.
+
+After the fix, the local results are: Vitest **365 passed, 0 failed, 0 skipped**; the gate passes; tsc passes.

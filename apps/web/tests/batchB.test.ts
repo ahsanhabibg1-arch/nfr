@@ -160,10 +160,20 @@ dbSuite('Batch B — fixtures never surface publicly in production (isolated tes
   });
 
   it('production: fixture articles are excluded from every article read', async () => {
+    // A fresh CI database holds only fixtures, so create a non-fixture control article to prove
+    // the policy removes fixtures without hiding legitimate content.
+    const { prisma } = await import('../lib/db');
+    const { id: _id, slug: _slug, createdAt: _c, updatedAt: _u, ...fields } = await prisma.article.findUniqueOrThrow({ where: { slug: FIXTURE_SLUGS.publishedArticle } });
+    const control = await prisma.article.create({ data: { ...fields, slug: `batchb-control-${Date.now()}` } as never });
+    try {
+      asProduction();
+      const all = await content.getPublishedArticles();
+      expect(all.some((a) => a.slug === control.slug), 'legitimate content still appears').toBe(true);
+      expect(all.some((a) => a.slug.startsWith('fixture-'))).toBe(false);
+    } finally {
+      await prisma.article.delete({ where: { id: control.id } });
+    }
     asProduction();
-    const all = await content.getPublishedArticles();
-    expect(all.length).toBeGreaterThan(0); // legitimate content still appears
-    expect(all.some((a) => a.slug.startsWith('fixture-'))).toBe(false);
     expect(await content.getPublishedArticleBySlug(FIXTURE_SLUGS.publishedArticle)).toBeNull();
     expect((await content.getPublishedArticleSlugs()).some((s) => s.startsWith('fixture-'))).toBe(false);
     expect((await content.getLatestArticles(50)).some((a) => a.slug.startsWith('fixture-'))).toBe(false);
