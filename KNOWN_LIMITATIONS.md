@@ -6,7 +6,58 @@ This document transparently defines the technical boundaries, prototype scopes, 
 
 ---
 
-## 1. Phase 0 Prototype Scope
+## 0. Current Status — Phase 1/2 Implemented (updated Batch 17, 2026-11-04)
+
+> **The Phase 0 boundaries in Sections 1–5 below are HISTORICAL.** They describe the
+> original Vite SPA prototype and have since been **superseded** by the Phase 1/2
+> implementation. They are retained for traceability, not as a description of the
+> current system. Where a Phase 0 limitation has been resolved it is marked
+> **[RESOLVED in Phase 1]** inline.
+
+**What the application actually is today:**
+
+- **Next.js 16 App Router (SSR/ISR)** — not a client-side SPA. Server Components, Server
+  Actions, server-rendered metadata/canonical/JSON-LD, and HTTP 308 redirects.
+- **PostgreSQL via Prisma 6** — real relational persistence (≈70 models, 12 ordered
+  migrations, Batch 17 adds an additive 13th). No sessionStorage/in-memory "demo store".
+- **Database-session authentication** — bcrypt (cost 12) password hashing, SHA-256
+  session tokens in an HttpOnly/Secure(prod)/SameSite=Lax cookie, server-side expiry +
+  suspended-user checks. No `(DEMO)` roles; RBAC is real and default-deny.
+- **Default-deny RBAC** across every admin Server Action, with audit logging.
+- **Server-side content eligibility** — drafts / unverified competition coverage are
+  filtered in the data layer, never shipped to unauthenticated clients.
+- **Gated private media delivery**, baseline security headers + CSP (report-only,
+  Batch 17), durable multi-instance rate limiting on login + media upload (Batch 17),
+  and optimistic-concurrency version guards on articles and competition coverage
+  (Batch 17).
+
+### Resolved since Phase 0
+- Client-side-only draft isolation → **server-side query filters + auth**.
+- sessionStorage persistence → **PostgreSQL**.
+- `(DEMO)` client role switching → **real DB-session auth + RBAC**.
+- SPA DOM-injected SEO → **server-rendered Metadata API + JSON-LD**.
+- Client `<Navigate>` redirects → **server HTTP 308**.
+- Competition last-write-wins editing → **optimistic concurrency (Batch 17)**.
+
+### Current open items (engineering)
+- CSP is **report-only**; enforcing (nonce-based) policy is a documented follow-up.
+- Rate limiter **fails open** on limiter-storage error (availability over strictness).
+- Global `overflow-x: hidden` retained as defense-in-depth alongside the per-component
+  overflow fixes (Batch 17 §E).
+
+### Deferred (post-launch)
+- Public author profile pages, advanced analytics depth, external APM/observability,
+  repo-root legacy Vite SPA cleanup.
+
+### Mandatory pre-launch blockers (NOT code — owner/ops action required)
+- **Rotate the previously-exposed Admin / Aiven / R2 credentials.**
+- Provision a **least-privilege** Aiven application DB role; verify Aiven migration state.
+- Choose host + CD + **staging**; backup/PITR + rollback; proper Aiven CA verification.
+- Enter **source-verified NFR 2026 content** (never fabricated).
+
+---
+
+## 1. Phase 0 Prototype Scope  *(HISTORICAL)*
 
 Phase 0 is an **Editorial Design Foundation, Responsive UI System, and Custom CMS Prototype**. It is designed to prove editorial UX, validate Concept C visual hierarchy, establish typed data contracts, and demonstrate the 12 CMS workflows prior to backend engineering.
 
@@ -14,7 +65,7 @@ The following systems are intentional client-side demonstration implementations:
 
 ---
 
-## 2. Persistence & Storage Boundaries
+## 2. Persistence & Storage Boundaries  *(HISTORICAL — RESOLVED in Phase 1: PostgreSQL via Prisma; see §0)*
 
 - **In-Memory & Session Storage**:
   - All article creations, updates, deletions, and revision snapshots are stored in the browser's `sessionStorage` (`nfrguide_demo_articles_v1`).
@@ -26,7 +77,7 @@ The following systems are intentional client-side demonstration implementations:
 
 ---
 
-## 3. Authentication & Security Boundaries
+## 3. Authentication & Security Boundaries  *(HISTORICAL — RESOLVED in Phase 1: DB-session auth + default-deny RBAC; see §0)*
 
 - **Simulated Editorial Roles (DEMO ONLY)**:
   - User role switching between the 5 approved roles (`Super Admin`, `Administrator`, `Editor`, `Author`, `SEO Manager`) is a client-side prototype. It allows evaluating how different roles experience the publishing interface and least-privilege rules (e.g. Authors cannot publish directly).
@@ -39,7 +90,7 @@ The following systems are intentional client-side demonstration implementations:
 
 ---
 
-## 4. Search Engine Indexing & Routing (SSR vs SPA)
+## 4. Search Engine Indexing & Routing (SSR vs SPA)  *(HISTORICAL — RESOLVED in Phase 1: Next.js SSR + server 308 redirects; see §0)*
 
 - **Client-Side Rendering (SPA)**:
   - NFRGuide currently operates as a Vite + React 19 Single Page Application.

@@ -42,7 +42,7 @@ export const SiteHeader: React.FC<SiteHeaderProps> = ({ onOpenSearch, navItems }
     <>
       {/* Sticky Editorial Header */}
       <header className="sticky top-0 z-40 w-full bg-[#0F1115]/95 backdrop-blur-md border-b border-white/10 transition-colors">
-        <div className="max-w-[1280px] mx-auto px-4 sm:px-6 lg:px-8 h-18 flex items-center justify-between gap-8">
+        <div className="max-w-[1280px] mx-auto px-4 sm:px-6 lg:px-8 h-18 flex items-center justify-between gap-4 xl:gap-6">
           {/* Zone 1: Brand Wordmark */}
           <div className="flex items-center gap-3 shrink-0">
             <Link
@@ -53,7 +53,7 @@ export const SiteHeader: React.FC<SiteHeaderProps> = ({ onOpenSearch, navItems }
                 <span className="font-serif text-2xl sm:text-3xl font-extrabold tracking-tight text-white uppercase group-hover:text-[#D4A757] transition-colors">
                   NFR<span className="text-[#D4A757]">Guide</span>
                 </span>
-                <span className="hidden xl:inline text-[10px] tracking-widest uppercase font-mono text-stone-400 border-l border-white/20 pl-2 ml-1">
+                <span className="hidden 2xl:inline text-[10px] tracking-widest uppercase font-mono text-stone-400 border-l border-white/20 pl-2 ml-1">
                   Independent Publication
                 </span>
               </div>
@@ -61,8 +61,8 @@ export const SiteHeader: React.FC<SiteHeaderProps> = ({ onOpenSearch, navItems }
           </div>
 
           {/* Zone 2: Five Primary Navigation Links */}
-          <nav 
-            className="hidden lg:flex items-center gap-7 text-xs font-semibold tracking-wider uppercase font-sans text-stone-300"
+          <nav
+            className="hidden xl:flex items-center gap-5 min-w-0 text-xs font-semibold tracking-wider uppercase font-sans text-stone-300"
             aria-label="Primary Navigation"
           >
             {navLinks.map((item) => {
@@ -118,7 +118,7 @@ export const SiteHeader: React.FC<SiteHeaderProps> = ({ onOpenSearch, navItems }
             {/* Mobile Menu Hamburger */}
             <button
               onClick={() => setMobileMenuOpen(true)}
-              className="lg:hidden p-2 text-stone-300 hover:text-white transition-colors"
+              className="xl:hidden p-2 text-stone-300 hover:text-white transition-colors"
               aria-label="Open mobile navigation menu"
               aria-expanded={mobileMenuOpen}
             >
@@ -133,7 +133,7 @@ export const SiteHeader: React.FC<SiteHeaderProps> = ({ onOpenSearch, navItems }
       {/* Accessible Mobile Navigation Drawer */}
       {mobileMenuOpen && (
         <div 
-          className="fixed inset-0 z-50 lg:hidden flex justify-end bg-black/75 backdrop-blur-sm animate-fade-in"
+          className="fixed inset-0 z-50 xl:hidden flex justify-end bg-black/75 backdrop-blur-sm animate-fade-in"
           role="dialog"
           aria-modal="true"
         >

@@ -31,19 +31,19 @@ export const RevisionHistoryModal: React.FC<RevisionHistoryModalProps> = ({
   return (
     <AdminModal
       isOpen={isOpen}
-      title="Article Revision History & Audit Log (Demo Prototype)"
+      title="Article Revision History & Audit Log"
       onClose={onClose}
       className="max-w-4xl"
     >
       <div className="space-y-4">
-        {/* Prototype boundary notice */}
-        <div className="p-3 bg-amber-50 border border-amber-200 rounded-xs text-xs text-amber-900 flex items-start gap-2">
-          <svg className="w-4 h-4 text-amber-700 shrink-0 mt-0.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+        {/* How revisions work (DB-backed — Batch 19 relabel of the former Phase-0 notice) */}
+        <div className="p-3 bg-stone-50 border border-stone-200 rounded-xs text-xs text-stone-700 flex items-start gap-2">
+          <svg className="w-4 h-4 text-stone-500 shrink-0 mt-0.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
           </svg>
           <div>
-            <span className="font-semibold block">Demo Session Revisions</span>
-            Revisions are recorded during your active editing session. Restoring a revision updates the current editor state and logs a new restore event in the audit trail.
+            <span className="font-semibold block text-stone-900">Revision history</span>
+            Each saved edit and workflow transition is stored as a revision in the database. Restoring one overwrites the current draft with that snapshot and records a restore event in the audit trail.
           </div>
         </div>
 

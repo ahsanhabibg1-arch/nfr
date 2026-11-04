@@ -1174,6 +1174,7 @@ model CompetitionSession {
   createdById    String?
   createdAt      DateTime                 @default(now())
   updatedAt      DateTime                 @updatedAt
+  version        Int                      @default(1)
   edition        RodeoEventEdition        @relation(fields: [editionId], references: [id], onDelete: Cascade)
   discipline     Discipline?              @relation(fields: [disciplineId], references: [id])
   venue          Venue?                   @relation(fields: [venueId], references: [id])
@@ -1206,6 +1207,7 @@ model CompetitionResult {
   createdById    String?
   createdAt      DateTime              @default(now())
   updatedAt      DateTime              @updatedAt
+  version        Int                   @default(1)
   edition        RodeoEventEdition     @relation(fields: [editionId], references: [id], onDelete: Cascade)
   discipline     Discipline            @relation(fields: [disciplineId], references: [id])
   session        CompetitionSession?   @relation(fields: [sessionId], references: [id])
@@ -1238,12 +1240,26 @@ model CompetitionStanding {
   createdById    String?
   createdAt      DateTime             @default(now())
   updatedAt      DateTime             @updatedAt
+  version        Int                  @default(1)
   edition        RodeoEventEdition    @relation(fields: [editionId], references: [id], onDelete: Cascade)
   discipline     Discipline?          @relation(fields: [disciplineId], references: [id])
   competitor     Competitor           @relation(fields: [competitorId], references: [id], onDelete: Cascade)
 
   @@index([editionId, category, disciplineId])
   @@index([competitorId])
+}
+
+/// Durable, multi-instance fixed-window rate limiter (Batch 17 §C). One row per
+/// bucket key (e.g. "login:<ip>:<email>" / "media-upload:<userId>"); an atomic
+/// upsert increments `count` within the active window and rolls it over when
+/// `resetAt` has passed. Shared across app instances via Postgres, so it is not
+/// defeated by horizontal scaling the way a per-process memory limiter is.
+model RateLimitHit {
+  key     String   @id
+  count   Int      @default(0)
+  resetAt DateTime
+
+  @@index([resetAt])
 }
 
 /// Editorial state for coverage records (parallels article workflow; no SCHEDULED).

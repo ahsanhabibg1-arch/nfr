@@ -87,7 +87,8 @@ suite('Batch 15 — directories + admin edit', () => {
 
   it('admin edit updates a result in place without resetting unrelated fields', async () => {
     const r = await svc.createResult(admin, { editionId, disciplineId, competitorId: compIds[0], resultType: 'TIME', timeSeconds: '8.50', placement: 2, sourceRef: 'official' });
-    await svc.updateResult(admin, r.id, { disciplineId, competitorId: compIds[0], resultType: 'TIME', timeSeconds: '8.10', placement: 1, sourceRef: 'official' });
+    const v0 = (await prisma.competitionResult.findUniqueOrThrow({ where: { id: r.id }, select: { version: true } })).version;
+    await svc.updateResult(admin, r.id, { disciplineId, competitorId: compIds[0], resultType: 'TIME', timeSeconds: '8.10', placement: 1, sourceRef: 'official' }, v0);
     const row = await prisma.competitionResult.findUniqueOrThrow({ where: { id: r.id } });
     expect(row.timeSeconds?.toString()).toBe('8.1');
     expect(row.placement).toBe(1);

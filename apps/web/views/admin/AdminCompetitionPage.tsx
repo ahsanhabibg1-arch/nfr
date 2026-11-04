@@ -1,8 +1,9 @@
 'use client';
 
-import React, { useState, useTransition } from 'react';
+import React, { useState, useEffect, useTransition } from 'react';
 import { useRouter } from 'next/navigation';
 import { AdminPageHeader } from '../../components/admin/AdminPageHeader';
+import { useUnsavedChangesWarning } from '../../lib/hooks/useUnsavedChangesWarning';
 import {
   createSessionAction, updateSessionAction, deleteSessionAction,
   createResultAction, updateResultAction, correctResultAction, deleteResultAction,
@@ -13,13 +14,13 @@ import {
 const ic = 'w-full px-2.5 py-1.5 text-xs border border-stone-300 rounded-xs bg-white text-stone-900 focus:outline-none focus:border-[#D4A757]';
 const lbl = 'block text-[10px] font-mono uppercase text-stone-500 mb-0.5';
 const badge = (s: string, v: string) => `text-[10px] font-mono px-1.5 py-0.5 rounded-xs ${v === 'VERIFIED' && s === 'PUBLISHED' ? 'bg-green-100 text-green-800' : v === 'VERIFIED' ? 'bg-amber-100 text-amber-800' : 'bg-stone-100 text-stone-500'}`;
-type R<T = unknown> = Promise<{ ok: boolean; error?: string } & T>;
+type R<T = unknown> = Promise<{ ok: boolean; error?: string; code?: string } & T>;
 
 interface Opt { id: string; name?: string }
 interface Edition { id: string; label: string }
-interface Sess { id: string; title: string; sessionType: string; disciplineId: string | null; startAt: string | null; timezone: string | null; roundNumber: number | null; status: string; coverageStatus: string; verification: string; discipline: string | null; venue: string | null; sourceRef: string | null; sourceUrl: string | null; notes: string | null }
-interface Res { id: string; disciplineId: string; discipline: string; competitorId: string; competitor: string; resultType: string; scoreNumeric: string | null; timeSeconds: string | null; placement: number | null; isTie: boolean; coverageStatus: string; verification: string; correctionOfId: string | null; sourceRef: string | null; sourceUrl: string | null; notes: string | null }
-interface Stand { id: string; category: string; disciplineId: string | null; discipline: string | null; competitorId: string; competitor: string; rankPosition: number | null; aggregateValue: string | null; earnings: string | null; coverageStatus: string; verification: string; sourceRef: string | null; sourceUrl: string | null }
+interface Sess { id: string; title: string; sessionType: string; disciplineId: string | null; startAt: string | null; timezone: string | null; roundNumber: number | null; status: string; coverageStatus: string; verification: string; discipline: string | null; venue: string | null; sourceRef: string | null; sourceUrl: string | null; notes: string | null; version: number }
+interface Res { id: string; disciplineId: string; discipline: string; competitorId: string; competitor: string; resultType: string; scoreNumeric: string | null; timeSeconds: string | null; placement: number | null; isTie: boolean; coverageStatus: string; verification: string; correctionOfId: string | null; sourceRef: string | null; sourceUrl: string | null; notes: string | null; version: number }
+interface Stand { id: string; category: string; disciplineId: string | null; discipline: string | null; competitorId: string; competitor: string; rankPosition: number | null; aggregateValue: string | null; earnings: string | null; coverageStatus: string; verification: string; sourceRef: string | null; sourceUrl: string | null; version: number }
 interface Detail { editionId: string; sessions: Sess[]; results: Res[]; standings: Stand[]; competitors: { id: string; fullName: string }[] }
 interface Filters { fDiscipline: string; fStatus: string; fVerify: string; fCompetitor: string; fCategory: string }
 
@@ -28,7 +29,20 @@ export const AdminCompetitionPage: React.FC<{ editions: Edition[]; disciplines: 
   const [pending, start] = useTransition();
   const [toast, setToast] = useState<string | null>(null);
   const notify = (m: string) => { setToast(m); setTimeout(() => setToast(null), 3500); };
-  const act = (p: R, okMsg: string, after?: () => void) => start(async () => { const r = await p; notify(r.ok ? okMsg : `Failed: ${r.error}`); if (r.ok) { after?.(); router.refresh(); } });
+  // Unsaved-change protection (Batch 20 §2): warn on refresh/tab-close while any
+  // coverage editor has unsaved edits. Each sub-editor reports its own dirty state.
+  const [dirty, setDirty] = useState({ schedule: false, results: false, standings: false });
+  useUnsavedChangesWarning(dirty.schedule || dirty.results || dirty.standings);
+  const onDirty = (key: 'schedule' | 'results' | 'standings') => (v: boolean) =>
+    setDirty((p) => (p[key] === v ? p : { ...p, [key]: v }));
+  const act = (p: R, okMsg: string, after?: () => void) => start(async () => {
+    const r = await p;
+    if (r.ok) { notify(okMsg); after?.(); router.refresh(); return; }
+    // Optimistic-concurrency conflict: reload the latest server data so the editor
+    // can review it, but keep the edit form open — never silently discard their input.
+    if (r.code === 'conflict') { notify(`Conflict — ${r.error ?? 'reload and reapply.'}`); router.refresh(); return; }
+    notify(`Failed: ${r.error}`);
+  });
 
   const verify = (kind: 'session' | 'result' | 'standing', id: string, v: 'VERIFIED' | 'UNVERIFIED') => act(setVerificationAction(kind, id, v), 'Verification updated.');
   const publish = (kind: 'session' | 'result' | 'standing', id: string, s: 'PUBLISHED' | 'DRAFT') => act(setCoverageStatusAction(kind, id, s), 'Status updated.');
@@ -72,16 +86,16 @@ export const AdminCompetitionPage: React.FC<{ editions: Edition[]; disciplines: 
             {anyFilter && <button onClick={() => router.push(`/admin/competition/?edition=${detail.editionId}`)} className="px-3 py-1.5 text-xs text-stone-500 underline">Reset filters</button>}
           </div>
 
-          <Schedule d={detail} disciplines={disciplines} pending={pending} act={act} verify={verify} publish={publish} />
-          <Results d={detail} disciplines={disciplines} pending={pending} act={act} verify={verify} publish={publish} />
-          <Standings d={detail} disciplines={disciplines} pending={pending} act={act} verify={verify} publish={publish} />
+          <Schedule d={detail} disciplines={disciplines} pending={pending} act={act} verify={verify} publish={publish} onDirty={onDirty('schedule')} />
+          <Results d={detail} disciplines={disciplines} pending={pending} act={act} verify={verify} publish={publish} onDirty={onDirty('results')} />
+          <Standings d={detail} disciplines={disciplines} pending={pending} act={act} verify={verify} publish={publish} onDirty={onDirty('standings')} />
         </>
       )}
     </div>
   );
 };
 
-type Common = { d: Detail; disciplines: Opt[]; pending: boolean; act: (p: R, m: string, after?: () => void) => void; verify: (k: 'session' | 'result' | 'standing', id: string, v: 'VERIFIED' | 'UNVERIFIED') => void; publish: (k: 'session' | 'result' | 'standing', id: string, s: 'PUBLISHED' | 'DRAFT') => void };
+type Common = { d: Detail; disciplines: Opt[]; pending: boolean; act: (p: R, m: string, after?: () => void) => void; verify: (k: 'session' | 'result' | 'standing', id: string, v: 'VERIFIED' | 'UNVERIFIED') => void; publish: (k: 'session' | 'result' | 'standing', id: string, s: 'PUBLISHED' | 'DRAFT') => void; onDirty: (v: boolean) => void };
 
 function Controls({ kind, id, coverageStatus, verification, pending, verify, publish, onEdit, onCorrect, del }: { kind: 'session' | 'result' | 'standing'; id: string; coverageStatus: string; verification: string; pending: boolean; onEdit: () => void; onCorrect?: () => void } & Pick<Common, 'verify' | 'publish'> & { del: () => void }) {
   return (
@@ -100,14 +114,18 @@ function Controls({ kind, id, coverageStatus, verification, pending, verify, pub
 }
 
 // ---------- Schedule ----------
-function Schedule({ d, disciplines, pending, act, verify, publish }: Common) {
+function Schedule({ d, disciplines, pending, act, verify, publish, onDirty }: Common) {
   const [edit, setEdit] = useState<string | 'new' | null>(null);
+  const [ver, setVer] = useState(1);
   const blank = { title: '', sessionType: 'performance', disciplineId: '', roundNumber: '', startAt: '', timezone: 'America/Los_Angeles', sourceUrl: '' };
   const [f, setF] = useState(blank);
+  const [snap, setSnap] = useState('');
   const toLocal = (iso: string | null) => (iso ? new Date(iso).toISOString().slice(0, 16) : '');
-  const open = (s?: Sess) => { setEdit(s ? s.id : 'new'); setF(s ? { title: s.title, sessionType: s.sessionType, disciplineId: s.disciplineId ?? '', roundNumber: s.roundNumber?.toString() ?? '', startAt: toLocal(s.startAt), timezone: s.timezone ?? '', sourceUrl: s.sourceUrl ?? '' } : blank); };
+  const open = (s?: Sess) => { const nf = s ? { title: s.title, sessionType: s.sessionType, disciplineId: s.disciplineId ?? '', roundNumber: s.roundNumber?.toString() ?? '', startAt: toLocal(s.startAt), timezone: s.timezone ?? '', sourceUrl: s.sourceUrl ?? '' } : blank; setEdit(s ? s.id : 'new'); setVer(s ? s.version : 1); setF(nf); setSnap(JSON.stringify(nf)); };
+  // Report unsaved edits to the parent (open form whose values differ from the snapshot).
+  useEffect(() => { onDirty(edit !== null && JSON.stringify(f) !== snap); }, [f, edit, snap]); // eslint-disable-line react-hooks/exhaustive-deps
   const payload = () => ({ title: f.title, sessionType: f.sessionType, disciplineId: f.disciplineId || undefined, roundNumber: f.roundNumber ? Number(f.roundNumber) : undefined, startAt: f.startAt ? new Date(f.startAt).toISOString() : undefined, timezone: f.timezone || undefined, sourceUrl: f.sourceUrl || undefined });
-  const save = () => edit === 'new' ? act(createSessionAction({ editionId: d.editionId, ...payload() }), 'Session added.', () => setEdit(null)) : act(updateSessionAction(edit as string, payload()), 'Session updated.', () => setEdit(null));
+  const save = () => edit === 'new' ? act(createSessionAction({ editionId: d.editionId, ...payload() }), 'Session added.', () => setEdit(null)) : act(updateSessionAction(edit as string, payload(), ver), 'Session updated.', () => setEdit(null));
   return (
     <section className="bg-white border border-stone-200 rounded-xs p-4 space-y-3">
       <div className="flex items-center justify-between"><h3 className="font-sans font-bold text-sm text-stone-900">Schedule ({d.sessions.length})</h3><button onClick={() => open()} className="text-xs text-[#8B5E3C] underline">+ add session</button></div>
@@ -135,18 +153,21 @@ function Schedule({ d, disciplines, pending, act, verify, publish }: Common) {
 }
 
 // ---------- Results ----------
-function Results({ d, disciplines, pending, act, verify, publish }: Common) {
+function Results({ d, disciplines, pending, act, verify, publish, onDirty }: Common) {
   const [mode, setMode] = useState<{ kind: 'edit' | 'correct' | 'new'; id?: string } | null>(null);
+  const [ver, setVer] = useState(1);
   const blank = { disciplineId: '', competitorId: '', resultType: 'TIME', value: '', placement: '', sourceUrl: '', notes: '' };
   const [f, setF] = useState(blank);
-  const open = (kind: 'edit' | 'correct' | 'new', r?: Res) => { setMode({ kind, id: r?.id }); setF(r ? { disciplineId: r.disciplineId, competitorId: r.competitorId, resultType: r.resultType, value: r.timeSeconds ?? r.scoreNumeric ?? '', placement: r.placement?.toString() ?? '', sourceUrl: r.sourceUrl ?? '', notes: kind === 'correct' ? '' : (r.notes ?? '') } : blank); };
+  const [snap, setSnap] = useState('');
+  const open = (kind: 'edit' | 'correct' | 'new', r?: Res) => { const nf = r ? { disciplineId: r.disciplineId, competitorId: r.competitorId, resultType: r.resultType, value: r.timeSeconds ?? r.scoreNumeric ?? '', placement: r.placement?.toString() ?? '', sourceUrl: r.sourceUrl ?? '', notes: kind === 'correct' ? '' : (r.notes ?? '') } : blank; setMode({ kind, id: r?.id }); setVer(r?.version ?? 1); setF(nf); setSnap(JSON.stringify(nf)); };
+  useEffect(() => { onDirty(mode !== null && JSON.stringify(f) !== snap); }, [f, mode, snap]); // eslint-disable-line react-hooks/exhaustive-deps
   const payload = () => {
     const base = { disciplineId: f.disciplineId, competitorId: f.competitorId, resultType: f.resultType as 'TIME' | 'SCORE' | 'NO_TIME' | 'NO_SCORE' | 'DISQUALIFIED' | 'WITHDRAWN', placement: f.placement ? Number(f.placement) : undefined, sourceUrl: f.sourceUrl || undefined, notes: f.notes || undefined };
     return f.resultType === 'TIME' ? { ...base, timeSeconds: f.value || undefined } : f.resultType === 'SCORE' ? { ...base, scoreNumeric: f.value || undefined } : base;
   };
   const save = () => {
     if (mode?.kind === 'new') return act(createResultAction({ editionId: d.editionId, ...payload() }), 'Result added.', () => setMode(null));
-    if (mode?.kind === 'edit') return act(updateResultAction(mode.id!, payload()), 'Result updated.', () => setMode(null));
+    if (mode?.kind === 'edit') return act(updateResultAction(mode.id!, payload(), ver), 'Result updated.', () => setMode(null));
     if (mode?.kind === 'correct') return act(correctResultAction(mode.id!, payload()), 'Correction recorded (original archived; verify to publish).', () => setMode(null));
   };
   return (
@@ -177,13 +198,16 @@ function Results({ d, disciplines, pending, act, verify, publish }: Common) {
 }
 
 // ---------- Standings ----------
-function Standings({ d, disciplines, pending, act, verify, publish }: Common) {
+function Standings({ d, disciplines, pending, act, verify, publish, onDirty }: Common) {
   const [edit, setEdit] = useState<string | 'new' | null>(null);
+  const [ver, setVer] = useState(1);
   const blank = { category: 'AGGREGATE', disciplineId: '', competitorId: '', rankPosition: '', aggregateValue: '', earnings: '', sourceUrl: '' };
   const [f, setF] = useState(blank);
-  const open = (s?: Stand) => { setEdit(s ? s.id : 'new'); setF(s ? { category: s.category, disciplineId: s.disciplineId ?? '', competitorId: s.competitorId, rankPosition: s.rankPosition?.toString() ?? '', aggregateValue: s.aggregateValue ?? '', earnings: s.earnings ?? '', sourceUrl: s.sourceUrl ?? '' } : blank); };
+  const [snap, setSnap] = useState('');
+  const open = (s?: Stand) => { const nf = s ? { category: s.category, disciplineId: s.disciplineId ?? '', competitorId: s.competitorId, rankPosition: s.rankPosition?.toString() ?? '', aggregateValue: s.aggregateValue ?? '', earnings: s.earnings ?? '', sourceUrl: s.sourceUrl ?? '' } : blank; setEdit(s ? s.id : 'new'); setVer(s ? s.version : 1); setF(nf); setSnap(JSON.stringify(nf)); };
+  useEffect(() => { onDirty(edit !== null && JSON.stringify(f) !== snap); }, [f, edit, snap]); // eslint-disable-line react-hooks/exhaustive-deps
   const payload = () => ({ category: f.category as 'ROUND' | 'AGGREGATE' | 'CHAMPIONSHIP' | 'SEASON', disciplineId: f.disciplineId || undefined, competitorId: f.competitorId, rankPosition: f.rankPosition ? Number(f.rankPosition) : undefined, aggregateValue: f.aggregateValue || undefined, earnings: f.earnings || undefined, sourceUrl: f.sourceUrl || undefined });
-  const save = () => edit === 'new' ? act(createStandingAction({ editionId: d.editionId, ...payload() }), 'Standing added.', () => setEdit(null)) : act(updateStandingAction(edit as string, payload()), 'Standing updated.', () => setEdit(null));
+  const save = () => edit === 'new' ? act(createStandingAction({ editionId: d.editionId, ...payload() }), 'Standing added.', () => setEdit(null)) : act(updateStandingAction(edit as string, payload(), ver), 'Standing updated.', () => setEdit(null));
   return (
     <section className="bg-white border border-stone-200 rounded-xs p-4 space-y-3">
       <div className="flex items-center justify-between"><h3 className="font-sans font-bold text-sm text-stone-900">Standings ({d.standings.length})</h3><button onClick={() => open()} className="text-xs text-[#8B5E3C] underline">+ add standing</button></div>

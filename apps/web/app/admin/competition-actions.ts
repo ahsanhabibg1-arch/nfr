@@ -9,22 +9,24 @@ import type { CoverageStatus, CoverageVerification } from '@prisma/client';
 const rev = () => { revalidatePath('/admin/competition/'); revalidatePath('/', 'layout'); };
 const withId = (p: Promise<{ id: string }>): Promise<ActionResult<{ id: string }>> => p.then((r) => { rev(); return { ok: true as const, ...r }; }).catch((e) => toActionError(e) as ActionResult<{ id: string }>);
 const voidAct = (p: Promise<void>): Promise<ActionResult> => p.then(() => { rev(); return { ok: true as const }; }).catch((e) => toActionError(e));
+// Returns the new optimistic-concurrency version so the editor can re-sync without a full reload.
+const withVersion = (p: Promise<{ version: number }>): Promise<ActionResult<{ version: number }>> => p.then((r) => { rev(); return { ok: true as const, version: r.version }; }).catch((e) => toActionError(e) as ActionResult<{ version: number }>);
 const P = 'rodeo.manage' as const;
 
 // Sessions
 export async function createSessionAction(input: SessionInput) { try { const a = await requireActor(P); return withId(svc.createSession(a, input)); } catch (e) { return toActionError(e) as ActionResult<{ id: string }>; } }
-export async function updateSessionAction(id: string, input: Omit<SessionInput, 'editionId'>) { try { const a = await requireActor(P); return voidAct(svc.updateSession(a, id, input)); } catch (e) { return toActionError(e); } }
+export async function updateSessionAction(id: string, input: Omit<SessionInput, 'editionId'>, expectedVersion: number) { try { const a = await requireActor(P); return withVersion(svc.updateSession(a, id, input, expectedVersion)); } catch (e) { return toActionError(e) as ActionResult<{ version: number }>; } }
 export async function deleteSessionAction(id: string) { try { const a = await requireActor(P); return voidAct(svc.deleteSession(a, id)); } catch (e) { return toActionError(e); } }
 
 // Results
 export async function createResultAction(input: ResultInput) { try { const a = await requireActor(P); return withId(svc.createResult(a, input)); } catch (e) { return toActionError(e) as ActionResult<{ id: string }>; } }
-export async function updateResultAction(id: string, input: Omit<ResultInput, 'editionId'>) { try { const a = await requireActor(P); return voidAct(svc.updateResult(a, id, input)); } catch (e) { return toActionError(e); } }
+export async function updateResultAction(id: string, input: Omit<ResultInput, 'editionId'>, expectedVersion: number) { try { const a = await requireActor(P); return withVersion(svc.updateResult(a, id, input, expectedVersion)); } catch (e) { return toActionError(e) as ActionResult<{ version: number }>; } }
 export async function correctResultAction(originalId: string, input: Omit<ResultInput, 'editionId'>) { try { const a = await requireActor(P); return withId(svc.correctResult(a, originalId, input)); } catch (e) { return toActionError(e) as ActionResult<{ id: string }>; } }
 export async function deleteResultAction(id: string) { try { const a = await requireActor(P); return voidAct(svc.deleteResult(a, id)); } catch (e) { return toActionError(e); } }
 
 // Standings
 export async function createStandingAction(input: StandingInput) { try { const a = await requireActor(P); return withId(svc.createStanding(a, input)); } catch (e) { return toActionError(e) as ActionResult<{ id: string }>; } }
-export async function updateStandingAction(id: string, input: Omit<StandingInput, 'editionId'>) { try { const a = await requireActor(P); return voidAct(svc.updateStanding(a, id, input)); } catch (e) { return toActionError(e); } }
+export async function updateStandingAction(id: string, input: Omit<StandingInput, 'editionId'>, expectedVersion: number) { try { const a = await requireActor(P); return withVersion(svc.updateStanding(a, id, input, expectedVersion)); } catch (e) { return toActionError(e) as ActionResult<{ version: number }>; } }
 export async function deleteStandingAction(id: string) { try { const a = await requireActor(P); return voidAct(svc.deleteStanding(a, id)); } catch (e) { return toActionError(e); } }
 
 // Verification + publication (shared)

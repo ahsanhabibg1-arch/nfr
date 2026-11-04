@@ -10,6 +10,7 @@ import { ROUTES } from '../../config/routes';
 export interface AuthorOption { id: string; name: string; role: string }
 import { validateArticle } from '../../utils/seoValidator';
 import { saveArticleAction, transitionArticleAction, restoreRevisionAction } from '../../app/admin/article-actions';
+import { useUnsavedChangesWarning } from '../../lib/hooks/useUnsavedChangesWarning';
 import type { ArticleInput } from '../../lib/cms/articleService';
 import { RichBlockEditor } from '../../components/admin/editor/RichBlockEditor';
 import { SearchAppearancePreview } from '../../components/admin/editor/SearchAppearancePreview';
@@ -163,6 +164,11 @@ export const AdminArticleEditorShell: React.FC<AdminArticleEditorShellProps> = (
   const [historyOpen, setHistoryOpen] = useState(false);
   const [mediaPickerOpen, setMediaPickerOpen] = useState(false);
   const [validationGateOpen, setValidationGateOpen] = useState(false);
+
+  // Warn on browser refresh / tab close while there are unsaved edits (Batch 20 §2).
+  // Cleared automatically once a successful save sets isDirty=false; preserved on
+  // validation / concurrency conflicts (those keep isDirty=true).
+  useUnsavedChangesWarning(isDirty);
 
   // Mark dirty on edits
   const markDirty = () => {

@@ -43,13 +43,40 @@ const nextConfig = {
   // plain HTTP (local dev) and takes effect only under HTTPS in production. Admin routes
   // additionally forbid shared/browser caching of private pages.
   async headers() {
+    // Content Security Policy — Batch 17 §B. Shipped as REPORT-ONLY first: it never
+    // blocks a request, only reports violations, so it cannot break Next.js hydration,
+    // the rich-block editor, Google Fonts or gated media while the policy is tuned.
+    // 'unsafe-inline' is tolerated for scripts/styles ONLY because Next injects an inline
+    // bootstrap and Tailwind emits inline styles; the enforcing follow-up should move to a
+    // nonce-based script-src and drop 'unsafe-inline' for scripts (documented as a phased
+    // rollout — do NOT flip to the enforcing header until the report stream is clean).
+    const csp = [
+      "default-src 'self'",
+      "base-uri 'self'",
+      "object-src 'none'",
+      "frame-ancestors 'none'",
+      "form-action 'self'",
+      "img-src 'self' data: blob:",
+      "font-src 'self' https://fonts.gstatic.com data:",
+      "style-src 'self' 'unsafe-inline' https://fonts.googleapis.com",
+      "script-src 'self' 'unsafe-inline'",
+      "connect-src 'self'",
+      "frame-src 'none'",
+      // First-party violation receiver (Batch 21 §D). report-uri is deprecated but still
+      // the most broadly supported directive for report-only collection today.
+      'report-uri /api/csp-report/',
+    ].join('; ');
+
     const security = [
       { key: 'X-Content-Type-Options', value: 'nosniff' },
       { key: 'X-Frame-Options', value: 'DENY' },
       { key: 'Referrer-Policy', value: 'strict-origin-when-cross-origin' },
       { key: 'X-DNS-Prefetch-Control', value: 'off' },
+      // HSTS without `preload` on purpose (Batch 17 §B3): preload is an irreversible,
+      // apex+subdomain commitment that must be verified at deploy time, not enabled here.
       { key: 'Strict-Transport-Security', value: 'max-age=63072000; includeSubDomains' },
       { key: 'Permissions-Policy', value: 'camera=(), microphone=(), geolocation=(), browsing-topics=()' },
+      { key: 'Content-Security-Policy-Report-Only', value: csp },
     ];
     return [
       { source: '/:path*', headers: security },

@@ -17,6 +17,19 @@ import { ServiceError } from './articleService';
  */
 const req = (a: Actor) => { if (!roleHasPermission(a.roles, 'rodeo.manage')) throw new ServiceError('forbidden', 'Not permitted to manage competition coverage'); };
 
+/**
+ * Optimistic-concurrency guard (Batch 17 finalization §4): an existing-record content
+ * update MUST carry the version the editor loaded. A missing / non-integer / < 1 value
+ * is rejected as `validation` — this closes the bypass where omitting `expectedVersion`
+ * previously fell back to an unconditional (last-write-wins) update.
+ */
+function requireVersion(expectedVersion: number): number {
+  if (typeof expectedVersion !== 'number' || !Number.isInteger(expectedVersion) || expectedVersion < 1) {
+    throw new ServiceError('validation', 'A valid record version is required to save edits. Reload the record and try again.');
+  }
+  return expectedVersion;
+}
+
 async function assertEdition(editionId: string) {
   if (!(await prisma.rodeoEventEdition.findUnique({ where: { id: editionId }, select: { id: true } }))) throw new ServiceError('validation', 'Edition not found.');
 }
@@ -77,19 +90,29 @@ export async function createSession(a: Actor, raw: SessionInput) {
   await audit(a.id, 'competition.session.create', 'competition_session', row.id, v.title);
   return { id: row.id };
 }
-export async function updateSession(a: Actor, id: string, raw: Omit<SessionInput, 'editionId'>) {
-  req(a); const existing = await prisma.competitionSession.findUnique({ where: { id }, select: { editionId: true } });
+export async function updateSession(a: Actor, id: string, raw: Omit<SessionInput, 'editionId'>, expectedVersion: number): Promise<{ version: number }> {
+  req(a); const ev = requireVersion(expectedVersion);
+  const existing = await prisma.competitionSession.findUnique({ where: { id }, select: { editionId: true } });
   if (!existing) throw new ServiceError('not_found', 'Session not found');
   const v = SessionInput.parse({ ...raw, editionId: existing.editionId });
   await assertDiscipline(v.disciplineId);
-  await prisma.competitionSession.update({ where: { id }, data: {
+  // Optimistic concurrency (Batch 17 §A): the update only matches when the row is
+  // still at the version the editor loaded, and the version is incremented in the
+  // same atomic statement. A mismatch means another editor saved first — we refuse
+  // rather than silently overwriting their changes.
+  const where = { id, version: ev };
+  const upd = await prisma.competitionSession.updateMany({ where, data: {
     disciplineId: v.disciplineId || null, venueId: v.venueId || null, date: v.date ? new Date(v.date) : null,
     title: v.title, sessionType: v.sessionType, roundNumber: v.roundNumber ?? null,
     startAt: v.startAt ? new Date(v.startAt) : null, endAt: v.endAt ? new Date(v.endAt) : null, timezone: v.timezone || null,
     sortOrder: v.sortOrder ?? 0, status: (v.status as CompetitionSessionStatus) ?? 'SCHEDULED',
     sourceRef: v.sourceRef || null, sourceUrl: v.sourceUrl || null, notes: v.notes || null,
+    version: { increment: 1 },
   } });
+  if (upd.count === 0) throw new ServiceError('conflict', 'This session was changed by someone else. Reload the latest data and reapply your edits.');
+  const after = await prisma.competitionSession.findUniqueOrThrow({ where: { id }, select: { version: true } });
   await audit(a.id, 'competition.session.update', 'competition_session', id, v.title);
+  return { version: after.version };
 }
 export async function deleteSession(a: Actor, id: string) {
   req(a);
@@ -147,19 +170,27 @@ export async function createResult(a: Actor, raw: ResultInput) {
   await audit(a.id, 'competition.result.create', 'competition_result', row.id);
   return { id: row.id };
 }
-export async function updateResult(a: Actor, id: string, raw: Omit<ResultInput, 'editionId'>) {
-  req(a); const existing = await prisma.competitionResult.findUnique({ where: { id }, select: { editionId: true } });
+export async function updateResult(a: Actor, id: string, raw: Omit<ResultInput, 'editionId'>, expectedVersion: number): Promise<{ version: number }> {
+  req(a); const ev = requireVersion(expectedVersion);
+  const existing = await prisma.competitionResult.findUnique({ where: { id }, select: { editionId: true } });
   if (!existing) throw new ServiceError('not_found', 'Result not found');
   const v = ResultInput.parse({ ...raw, editionId: existing.editionId });
   await assertDiscipline(v.disciplineId); await assertEligible(v.competitorId, existing.editionId);
   await assertSessionInEdition(v.sessionId, existing.editionId);
   const { score, time } = normalizeResultValues(v);
-  await prisma.competitionResult.update({ where: { id }, data: {
+  // Optimistic concurrency (Batch 17 §A) — atomic version-guarded update; never
+  // silently overwrite a concurrent editor's change (results are authoritative).
+  const where = { id, version: ev };
+  const upd = await prisma.competitionResult.updateMany({ where, data: {
     disciplineId: v.disciplineId, sessionId: v.sessionId || null, competitorId: v.competitorId,
     resultType: v.resultType as CompetitionResultType, scoreNumeric: score, timeSeconds: time,
     placement: v.placement ?? null, isTie: v.isTie ?? false, sourceRef: v.sourceRef || null, sourceUrl: v.sourceUrl || null, notes: v.notes || null,
+    version: { increment: 1 },
   } });
+  if (upd.count === 0) throw new ServiceError('conflict', 'This result was changed by someone else. Reload the latest data and reapply your edits.');
+  const after = await prisma.competitionResult.findUniqueOrThrow({ where: { id }, select: { version: true } });
   await audit(a.id, 'competition.result.update', 'competition_result', id);
+  return { version: after.version };
 }
 /** Record an explicit correction: a new result linked to the original (original archived). */
 export async function correctResult(a: Actor, originalId: string, raw: Omit<ResultInput, 'editionId'>) {
@@ -202,17 +233,24 @@ export async function createStanding(a: Actor, raw: StandingInput) {
   await audit(a.id, 'competition.standing.create', 'competition_standing', row.id);
   return { id: row.id };
 }
-export async function updateStanding(a: Actor, id: string, raw: Omit<StandingInput, 'editionId'>) {
-  req(a); const existing = await prisma.competitionStanding.findUnique({ where: { id }, select: { editionId: true } });
+export async function updateStanding(a: Actor, id: string, raw: Omit<StandingInput, 'editionId'>, expectedVersion: number): Promise<{ version: number }> {
+  req(a); const ev = requireVersion(expectedVersion);
+  const existing = await prisma.competitionStanding.findUnique({ where: { id }, select: { editionId: true } });
   if (!existing) throw new ServiceError('not_found', 'Standing not found');
   const v = StandingInput.parse({ ...raw, editionId: existing.editionId });
   await assertDiscipline(v.disciplineId); await assertEligible(v.competitorId, existing.editionId);
-  await prisma.competitionStanding.update({ where: { id }, data: {
+  // Optimistic concurrency (Batch 17 §A) — atomic version-guarded update.
+  const where = { id, version: ev };
+  const upd = await prisma.competitionStanding.updateMany({ where, data: {
     disciplineId: v.disciplineId || null, competitorId: v.competitorId, category: v.category as StandingCategory,
     rankPosition: v.rankPosition ?? null, aggregateValue: toDecimal(v.aggregateValue), earnings: toDecimal(v.earnings), points: toDecimal(v.points),
     sourceRef: v.sourceRef || null, sourceUrl: v.sourceUrl || null, lastUpdatedAt: new Date(),
+    version: { increment: 1 },
   } });
+  if (upd.count === 0) throw new ServiceError('conflict', 'This standing was changed by someone else. Reload the latest data and reapply your edits.');
+  const after = await prisma.competitionStanding.findUniqueOrThrow({ where: { id }, select: { version: true } });
   await audit(a.id, 'competition.standing.update', 'competition_standing', id);
+  return { version: after.version };
 }
 export async function deleteStanding(a: Actor, id: string) {
   req(a);
@@ -260,17 +298,17 @@ const f = (flt?: CoverageFilters) => ({
 export async function listSessionsAdmin(a: Actor, editionId: string, flt?: CoverageFilters) {
   req(a);
   const rows = await prisma.competitionSession.findMany({ where: { editionId, ...f(flt) }, orderBy: [{ sortOrder: 'asc' }, { startAt: 'asc' }], include: { discipline: { select: { name: true } }, venue: { select: { name: true } } } });
-  return rows.map((s) => ({ id: s.id, title: s.title, sessionType: s.sessionType, disciplineId: s.disciplineId, date: s.date?.toISOString() ?? null, startAt: s.startAt?.toISOString() ?? null, endAt: s.endAt?.toISOString() ?? null, timezone: s.timezone, roundNumber: s.roundNumber, status: s.status, coverageStatus: s.coverageStatus, verification: s.verification, discipline: s.discipline?.name ?? null, venue: s.venue?.name ?? null, sortOrder: s.sortOrder, sourceRef: s.sourceRef, sourceUrl: s.sourceUrl, notes: s.notes }));
+  return rows.map((s) => ({ id: s.id, title: s.title, sessionType: s.sessionType, disciplineId: s.disciplineId, date: s.date?.toISOString() ?? null, startAt: s.startAt?.toISOString() ?? null, endAt: s.endAt?.toISOString() ?? null, timezone: s.timezone, roundNumber: s.roundNumber, status: s.status, coverageStatus: s.coverageStatus, verification: s.verification, discipline: s.discipline?.name ?? null, venue: s.venue?.name ?? null, sortOrder: s.sortOrder, sourceRef: s.sourceRef, sourceUrl: s.sourceUrl, notes: s.notes, version: s.version }));
 }
 export async function listResultsAdmin(a: Actor, editionId: string, flt?: CoverageFilters) {
   req(a);
   const rows = await prisma.competitionResult.findMany({ where: { editionId, ...f(flt) }, orderBy: [{ disciplineId: 'asc' }, { placement: 'asc' }], include: { discipline: { select: { name: true } }, competitor: { select: { fullName: true } } } });
-  return rows.map((r) => ({ id: r.id, disciplineId: r.disciplineId, discipline: r.discipline.name, competitorId: r.competitorId, competitor: r.competitor.fullName, resultType: r.resultType, scoreNumeric: decStr(r.scoreNumeric), timeSeconds: decStr(r.timeSeconds), placement: r.placement, isTie: r.isTie, coverageStatus: r.coverageStatus, verification: r.verification, correctionOfId: r.correctionOfId, sourceRef: r.sourceRef, sourceUrl: r.sourceUrl, notes: r.notes }));
+  return rows.map((r) => ({ id: r.id, disciplineId: r.disciplineId, discipline: r.discipline.name, competitorId: r.competitorId, competitor: r.competitor.fullName, resultType: r.resultType, scoreNumeric: decStr(r.scoreNumeric), timeSeconds: decStr(r.timeSeconds), placement: r.placement, isTie: r.isTie, coverageStatus: r.coverageStatus, verification: r.verification, correctionOfId: r.correctionOfId, sourceRef: r.sourceRef, sourceUrl: r.sourceUrl, notes: r.notes, version: r.version }));
 }
 export async function listStandingsAdmin(a: Actor, editionId: string, flt?: CoverageFilters) {
   req(a);
   const rows = await prisma.competitionStanding.findMany({ where: { editionId, ...f(flt), ...(flt?.category ? { category: flt.category } : {}) }, orderBy: [{ category: 'asc' }, { rankPosition: 'asc' }], include: { discipline: { select: { name: true } }, competitor: { select: { fullName: true } } } });
-  return rows.map((s) => ({ id: s.id, category: s.category, disciplineId: s.disciplineId, discipline: s.discipline?.name ?? null, competitorId: s.competitorId, competitor: s.competitor.fullName, rankPosition: s.rankPosition, aggregateValue: decStr(s.aggregateValue), earnings: decStr(s.earnings), points: decStr(s.points), coverageStatus: s.coverageStatus, verification: s.verification, sourceRef: s.sourceRef, sourceUrl: s.sourceUrl }));
+  return rows.map((s) => ({ id: s.id, category: s.category, disciplineId: s.disciplineId, discipline: s.discipline?.name ?? null, competitorId: s.competitorId, competitor: s.competitor.fullName, rankPosition: s.rankPosition, aggregateValue: decStr(s.aggregateValue), earnings: decStr(s.earnings), points: decStr(s.points), coverageStatus: s.coverageStatus, verification: s.verification, sourceRef: s.sourceRef, sourceUrl: s.sourceUrl, version: s.version }));
 }
 
 // ======================= PUBLIC reads (PUBLISHED + VERIFIED only) =======================

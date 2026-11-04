@@ -63,6 +63,16 @@ jobs:
       - name: Install (locked)
         run: npm ci
 
+      # Dependency security gate (Batch 17 finalization §6). Scoped deliberately:
+      #   --omit=dev     → the production runtime tree only (dev-only advisories, e.g.
+      #                    vitest→tinypool, do not block releases and are tracked separately).
+      #   --audit-level=critical → fails only on CRITICAL production advisories.
+      # This does NOT conceal known high-severity advisories — they are documented in
+      # docs/batches/batch-17/06_DEPENDENCY_SECURITY_REPORT.md and reviewed each release.
+      # Never auto-fix: no `npm audit fix` runs in CI.
+      - name: Dependency audit (production, critical only)
+        run: npm audit --omit=dev --audit-level=critical
+
       - name: Assert the database target is the disposable CI service
         run: |
           node -e "

@@ -1,10 +1,13 @@
 import 'server-only';
 
 /**
- * Minimal in-memory fixed-window rate limiter for login abuse protection
- * (Batch 03 §3). Per-process only — adequate for a single local/dev instance;
- * a production multi-instance deployment should use a shared store (Redis/DB).
- * Documented as a limitation.
+ * Minimal in-memory fixed-window rate limiter (Batch 03 §3). Per-process only.
+ *
+ * As of Batch 17 the login and media-upload hot paths use the DURABLE,
+ * multi-instance limiter in `durableRateLimit.ts` (Postgres-backed) instead of
+ * this one, so abuse protection survives horizontal scaling. This module is
+ * retained as a dependency-free in-process utility/fallback and remains covered by
+ * tests/auth.test.ts. Prefer `checkDurableRateLimit` for any new request path.
  */
 type Entry = { count: number; resetAt: number };
 const buckets = new Map<string, Entry>();

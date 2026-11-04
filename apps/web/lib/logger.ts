@@ -1,4 +1,25 @@
 import 'server-only';
+import { randomUUID } from 'node:crypto';
+
+/**
+ * Request-correlation id (Batch 22 §3). A short, non-sensitive identifier used to tie
+ * the structured logs of one server request (or Server Action / API call) together and,
+ * when surfaced to a user, to let an operator find the matching server logs. It is random
+ * — it encodes NO session, account, or credential information. Prefer an inbound
+ * `x-request-id` / `x-correlation-id` from a trusted proxy when present (see
+ * `correlationIdFrom`), otherwise generate one. This is NOT a replacement for Next.js's
+ * error `digest`, which remains the correlation handle for render-error boundaries.
+ */
+export function newCorrelationId(): string {
+  return randomUUID();
+}
+
+/** Derive a correlation id from request headers (trusted proxy) or mint a fresh one. */
+export function correlationIdFrom(h: { get(name: string): string | null } | null | undefined): string {
+  const v = h?.get('x-request-id') || h?.get('x-correlation-id');
+  // Only accept a short, safe token from the header; otherwise mint our own.
+  return v && /^[\w-]{1,64}$/.test(v) ? v : newCorrelationId();
+}
 
 /**
  * Production-safe structured logging + error-reporting abstraction (Batch 13 §8).
