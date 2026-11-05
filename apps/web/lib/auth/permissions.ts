@@ -1,4 +1,4 @@
-import { Permission, RoleKey, ROLE_PERMISSIONS, ALL_ROLES, ROLE_LABELS, roleHasPermission } from './rbac';
+import { Permission, RoleKey, StaffRoleKey, ROLE_PERMISSIONS, ALL_ROLES, ROLE_LABELS, roleHasPermission } from './rbac';
 
 /**
  * Centralized CMS permission registry (Batch 09 §8). A single, authoritative mapping
@@ -25,6 +25,8 @@ export const CMS_MODULES: CmsModule[] = [
   { id: 'competitors', label: 'Competitors', path: '/admin/competitors/', view: 'cms.access' },
   { id: 'competition', label: 'Competition Coverage', path: '/admin/competition/', view: 'cms.access' },
   { id: 'editorial-organization', label: 'Organization & Taxonomy', path: '/admin/editorial-organization/', view: 'cms.access' },
+  { id: 'comments', label: 'Comment Moderation', path: '/admin/comments/', view: 'comment.view' },
+  { id: 'readers', label: 'Reader Accounts', path: '/admin/readers/', view: 'reader.view' },
   { id: 'media', label: 'Media Library', path: '/admin/media/', view: 'media.view' },
   { id: 'sources', label: 'Sources & References', path: '/admin/sources/', view: 'cms.access' },
   { id: 'seo', label: 'SEO Intelligence', path: '/admin/seo/', view: 'seo.audit.view' },
@@ -93,6 +95,15 @@ export const PERMISSION_CATALOGUE: PermissionGroup[] = [
     { key: 'monetization.link.manage', label: 'Manage links' },
     { key: 'monetization.config', label: 'Configure monetization' },
   ] },
+  { module: 'Comment Moderation', permissions: [
+    { key: 'comment.view', label: 'View reader comments' },
+    { key: 'comment.moderate', label: 'Approve / reject / hide comments' },
+    { key: 'comment.delete', label: 'Delete comments' },
+  ] },
+  { module: 'Reader Accounts', permissions: [
+    { key: 'reader.view', label: 'View reader accounts' },
+    { key: 'reader.manage', label: 'Suspend / activate / force-logout / delete readers' },
+  ] },
   { module: 'Administration', permissions: [
     { key: 'user.manage', label: 'Manage team' },
     { key: 'role.assign', label: 'Assign roles' },
@@ -116,4 +127,4 @@ export function buildPermissionMatrix(): PermissionMatrixGroup[] {
 }
 
 export { ALL_ROLES, ROLE_LABELS };
-export type { RoleKey };
+export type { RoleKey, StaffRoleKey };

@@ -14,6 +14,7 @@ import { useUnsavedChangesWarning } from '../../lib/hooks/useUnsavedChangesWarni
 import type { ArticleInput } from '../../lib/cms/articleService';
 import { RichBlockEditor } from '../../components/admin/editor/RichBlockEditor';
 import { SearchAppearancePreview } from '../../components/admin/editor/SearchAppearancePreview';
+import { SeoAssistantPanel } from '../../components/admin/editor/SeoAssistantPanel';
 import { RevisionHistoryModal } from '../../components/admin/editor/RevisionHistoryModal';
 import { RodeoRelationshipsPanel, RodeoRelationshipsData } from '../../components/admin/editor/RodeoRelationshipsPanel';
 import { ArticleSourcesPanel } from '../../components/admin/editor/ArticleSourcesPanel';
@@ -164,6 +165,7 @@ export const AdminArticleEditorShell: React.FC<AdminArticleEditorShellProps> = (
   const [historyOpen, setHistoryOpen] = useState(false);
   const [mediaPickerOpen, setMediaPickerOpen] = useState(false);
   const [validationGateOpen, setValidationGateOpen] = useState(false);
+  const [seoLastCheckedAt, setSeoLastCheckedAt] = useState<number | null>(null);
 
   // Warn on browser refresh / tab close while there are unsaved edits (Batch 20 §2).
   // Cleared automatically once a successful save sets isDirty=false; preserved on
@@ -277,10 +279,30 @@ export const AdminArticleEditorShell: React.FC<AdminArticleEditorShellProps> = (
     existingArticle,
   ]);
 
-  // Validation report
+  // Validation report (reactive: always reflects the current unsaved editor content).
   const validationReport = useMemo(() => {
     return validateArticle(currentArticleSnapshot);
   }, [currentArticleSnapshot]);
+
+  // Scroll to and focus the editor field a finding refers to ("Go to Field").
+  const goToField = (anchor: string) => {
+    if (!anchor || typeof document === 'undefined') return;
+    const el = document.getElementById(anchor);
+    if (!el) return;
+    el.scrollIntoView({ behavior: 'smooth', block: 'center' });
+    if (el instanceof HTMLInputElement || el instanceof HTMLTextAreaElement || el instanceof HTMLSelectElement) {
+      // Focus after the smooth scroll settles so the caret lands in view.
+      window.setTimeout(() => el.focus({ preventScroll: true }), 350);
+    }
+  };
+
+  // "Check SEO": re-stamp the review time and jump to the first blocking finding. Validation
+  // is already continuous, so this NEVER saves or publishes — it only re-surfaces results.
+  const handleCheckSeo = () => {
+    setSeoLastCheckedAt(Date.now());
+    const firstBlocking = [...validationReport.blockers, ...validationReport.compliance][0];
+    if (firstBlocking?.fieldAnchor) goToField(firstBlocking.fieldAnchor);
+  };
 
 
   const showNotification = (msg: string) => {
@@ -738,7 +760,7 @@ export const AdminArticleEditorShell: React.FC<AdminArticleEditorShellProps> = (
             </div>
 
             {/* FIELD 04 — ARTICLE BODY (RICH BLOCK EDITOR) */}
-            <div className="space-y-2 pt-2 border-t border-stone-100">
+            <div id="field-04-body" className="space-y-2 pt-2 border-t border-stone-100" tabIndex={-1}>
               <div className="flex items-center justify-between">
                 <label className="font-bold text-stone-900 uppercase tracking-wider text-[11px] flex items-center gap-1.5 font-sans">
                   <span>Field 04 &mdash; Article Body</span>
@@ -877,8 +899,14 @@ export const AdminArticleEditorShell: React.FC<AdminArticleEditorShellProps> = (
 
         {/* ======================================================== */}
         {/* RIGHT COLUMN: SECONDARY INSPECTOR PANELS */}
+        {/* Independent scroll (Batch 25 UX): the inspector sticks below the 64px topbar and
+            scrolls within its own area, so the SEO Assistant / gates stay in view while the
+            author scrolls the editorial fields on the left. Stacks normally on mobile. */}
         {/* ======================================================== */}
-        <div className="lg:col-span-4 space-y-6 font-sans text-xs">
+        {/* Outer grid item stretches to the (tall) row height so the inner sticky wrapper has
+            room to stick; inner wrapper pins below the 64px topbar and scrolls independently. */}
+        <div className="lg:col-span-4 lg:self-stretch">
+        <div data-testid="editor-inspector" className="space-y-6 font-sans text-xs lg:sticky lg:top-20 lg:max-h-[calc(100vh-6rem)] lg:overflow-y-auto lg:pr-1 editor-inspector-scroll">
           {/* PANEL 1: WORKFLOW & PUBLISHING CONTROLS */}
           <div className="bg-white border border-stone-200 rounded-sm p-5 shadow-2xs space-y-4">
             <div className="flex items-center justify-between pb-2 border-b border-stone-100">
@@ -974,6 +1002,7 @@ export const AdminArticleEditorShell: React.FC<AdminArticleEditorShellProps> = (
                 <div className="flex items-center bg-stone-50 border border-stone-200 rounded-xs px-2 py-1 focus-within:border-[#D4A757] focus-within:bg-white transition-all">
                   <span className="text-ink-muted font-mono text-[11px] select-none">/articles/</span>
                   <input
+                    id="editor-slug"
                     type="text"
                     value={slug}
                     onChange={(e) => {
@@ -1061,6 +1090,15 @@ export const AdminArticleEditorShell: React.FC<AdminArticleEditorShellProps> = (
               </button>
             )}
           </div>
+
+          {/* PANEL 2b: DETAILED SEO ASSISTANT (Batch 25) — renders the full validateArticle output */}
+          <SeoAssistantPanel
+            report={validationReport}
+            isDirty={isDirty}
+            lastCheckedAt={seoLastCheckedAt}
+            onCheck={handleCheckSeo}
+            onGoToField={goToField}
+          />
 
           {/* PANEL 3: ARTICLE CLASSIFICATION & BYLINE */}
           <div className="bg-white border border-stone-200 rounded-sm p-5 shadow-2xs space-y-4">
@@ -1309,30 +1347,35 @@ export const AdminArticleEditorShell: React.FC<AdminArticleEditorShellProps> = (
           </div>
 
           {/* PANEL 5: RODEO ENTITY RELATIONSHIPS */}
-          <RodeoRelationshipsPanel
-            relationships={relationships}
-            options={relationshipOptions}
-            onChange={(nextRel) => {
-              setRelationships(nextRel);
-              markDirty();
-            }}
-          />
+          <div id="editor-relationships" tabIndex={-1} className="scroll-mt-20">
+            <RodeoRelationshipsPanel
+              relationships={relationships}
+              options={relationshipOptions}
+              onChange={(nextRel) => {
+                setRelationships(nextRel);
+                markDirty();
+              }}
+            />
+          </div>
 
           {/* PANEL 6: SOURCES & EVIDENCE CITATIONS */}
-          <ArticleSourcesPanel
-            sources={sources}
-            directory={sourceDirectory}
-            onChange={(nextSources) => {
-              setSources(nextSources);
-              markDirty();
-            }}
-          />
+          <div id="editor-sources" tabIndex={-1} className="scroll-mt-20">
+            <ArticleSourcesPanel
+              sources={sources}
+              directory={sourceDirectory}
+              onChange={(nextSources) => {
+                setSources(nextSources);
+                markDirty();
+              }}
+            />
+          </div>
 
           {/* PANEL 7: SEARCH APPEARANCE PREVIEW */}
           <SearchAppearancePreview
             article={currentArticleSnapshot}
             slug={slug}
           />
+        </div>
         </div>
       </div>
 

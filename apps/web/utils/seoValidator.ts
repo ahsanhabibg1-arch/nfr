@@ -6,6 +6,33 @@ export type ValidationSeverity = 'blocker' | 'compliance' | 'warning' | 'notice'
 /** Image rights statuses that clear the publish gate. Anything else (incl. unknown values) blocks. */
 export const RESOLVED_IMAGE_RIGHTS = ['Staff Photo', 'Editorial Pool', 'PRCA Archive', 'Licensed Creative'] as const;
 
+/**
+ * Human-facing grouping for the editor SEO Assistant panel (Batch 25). These map the
+ * engine's existing rules onto reader-meaningful categories — they do NOT add new checks.
+ */
+export type DisplayCategory =
+  | 'Editorial Quality'
+  | 'SEO Metadata'
+  | 'Content Structure'
+  | 'Images & Accessibility'
+  | 'Internal & External Links'
+  | 'Entity Relationships'
+  | 'Structured Data'
+  | 'Rights, Safety & Compliance'
+  | 'Publication Readiness';
+
+export const DISPLAY_CATEGORIES: DisplayCategory[] = [
+  'Publication Readiness',
+  'Editorial Quality',
+  'SEO Metadata',
+  'Content Structure',
+  'Images & Accessibility',
+  'Internal & External Links',
+  'Entity Relationships',
+  'Structured Data',
+  'Rights, Safety & Compliance',
+];
+
 export interface ValidationFinding {
   id: string;
   group: SEOGroup;
@@ -15,21 +42,59 @@ export interface ValidationFinding {
   message: string;
   remediation: string;
   passed: boolean;
+  /** Batch 25 presentation metadata (derived from the rule, never fabricated). */
+  displayCategory: DisplayCategory;
+  /** DOM id the editor can scroll to / focus for "Go to Field" (empty when none applies). */
+  fieldAnchor: string;
+  /** Human label for the editorial field/section this check concerns. */
+  fieldLabel: string;
+  /** True when a failure of this check blocks publication (blocker | compliance). */
+  blocksPublication: boolean;
+  /** False for conditionally-applicable checks that did not run (e.g. schedule time when not scheduled). */
+  evaluated: boolean;
 }
 
 export interface ArticleValidationReport {
+  /** Every check, evaluated or not — the source for the detailed SEO Assistant panel. */
+  findings: ValidationFinding[];
   blockers: ValidationFinding[];
   compliance: ValidationFinding[];
   warnings: ValidationFinding[];
   notices: ValidationFinding[];
+  /** Conditionally-applicable checks that did not run for this article/state. */
+  notEvaluated: ValidationFinding[];
   canPublish: boolean;
   score: number;
   totalChecks: number;
   passedChecks: number;
 }
 
+/** Rule id → human field label + DOM anchor for Go-to-Field (uses real editor field ids). */
+const FIELD_META: Record<string, { category: DisplayCategory; anchor: string; label: string }> = {
+  'val-headline-req': { category: 'Editorial Quality', anchor: 'field-01-headline', label: 'Field 01 — Main Headline (H1)' },
+  'val-excerpt-req': { category: 'Editorial Quality', anchor: 'field-03-excerpt', label: 'Field 03 — Editorial Excerpt' },
+  'val-body-req': { category: 'Content Structure', anchor: 'field-04-body', label: 'Field 04 — Article Body' },
+  'val-slug-format': { category: 'SEO Metadata', anchor: 'editor-slug', label: 'URL Slug' },
+  'val-image-rights': { category: 'Rights, Safety & Compliance', anchor: 'editor-rights-status', label: 'Featured Image Usage Rights' },
+  'val-alt-required': { category: 'Images & Accessibility', anchor: 'field-08-imagealt', label: 'Field 08 — Image ALT Text' },
+  'val-monetization-disclosure': { category: 'Rights, Safety & Compliance', anchor: 'editor-disclosure', label: 'Commercial Disclosure' },
+  'val-scheduled-time': { category: 'Publication Readiness', anchor: 'editor-workflow-state', label: 'Workflow / Scheduled Time' },
+  'val-seo-title-len': { category: 'SEO Metadata', anchor: 'field-05-seotitle', label: 'Field 05 — SEO Title' },
+  'val-meta-desc-len': { category: 'SEO Metadata', anchor: 'field-06-metadesc', label: 'Field 06 — Meta Description' },
+  'val-image-seo-title': { category: 'Images & Accessibility', anchor: 'field-07-imageseotitle', label: 'Field 07 — Image SEO Title' },
+  'val-heading-hierarchy': { category: 'Content Structure', anchor: 'field-04-body', label: 'Field 04 — Article Body' },
+  'val-ai-readiness': { category: 'Content Structure', anchor: 'field-04-body', label: 'Field 04 — Article Body' },
+  'val-entity-association': { category: 'Entity Relationships', anchor: 'editor-relationships', label: 'Rodeo Relationships' },
+  'val-sources-provenance': { category: 'Structured Data', anchor: 'editor-sources', label: 'Sources & References' },
+  'val-internal-links': { category: 'Internal & External Links', anchor: 'editor-relationships', label: 'Editorial Relationships' },
+  'val-canonical-redirects': { category: 'SEO Metadata', anchor: 'field-06-metadesc', label: 'Canonical URL' },
+};
+
+type RawFinding = Omit<ValidationFinding, 'displayCategory' | 'fieldAnchor' | 'fieldLabel' | 'blocksPublication' | 'evaluated'>
+  & { evaluated?: boolean };
+
 export function validateArticle(article: Partial<Article>): ArticleValidationReport {
-  const findings: ValidationFinding[] = [];
+  const raw: RawFinding[] = [];
 
   // ==========================================
   // CATEGORY A: REQUIRED EDITORIAL BLOCKERS
@@ -37,7 +102,7 @@ export function validateArticle(article: Partial<Article>): ArticleValidationRep
 
   // Check 1: Main Headline (Field 01)
   const headline = (article.title || article.headline || '').trim();
-  findings.push({
+  raw.push({
     id: 'val-headline-req',
     group: 'On-page',
     severity: 'blocker',
@@ -50,7 +115,7 @@ export function validateArticle(article: Partial<Article>): ArticleValidationRep
 
   // Check 2: Excerpt / Summary (Field 03)
   const excerpt = (article.excerpt || '').trim();
-  findings.push({
+  raw.push({
     id: 'val-excerpt-req',
     group: 'Content & Topic',
     severity: 'blocker',
@@ -64,7 +129,7 @@ export function validateArticle(article: Partial<Article>): ArticleValidationRep
   // Check 3: Structured Article Body Blocks (Field 04)
   const blocks = article.structuredBody || [];
   const hasSubstantialBody = blocks.length >= 2;
-  findings.push({
+  raw.push({
     id: 'val-body-req',
     group: 'Content & Topic',
     severity: 'blocker',
@@ -80,7 +145,7 @@ export function validateArticle(article: Partial<Article>): ArticleValidationRep
   // Check 4: URL Slug Format
   const slug = (article.slug || '').trim();
   const validSlug = /^[a-z0-9]+(?:-[a-z0-9]+)*$/.test(slug);
-  findings.push({
+  raw.push({
     id: 'val-slug-format',
     group: 'Technical',
     severity: 'blocker',
@@ -97,11 +162,10 @@ export function validateArticle(article: Partial<Article>): ArticleValidationRep
   // CATEGORY B: RIGHTS, SAFETY & COMPLIANCE
   // ==========================================
 
-  // Check 5: Featured Image Usage Rights
-  // Fail closed: only an explicitly recognised, resolved rights status passes.
+  // Check 5: Featured Image Usage Rights — fail closed.
   const imageRights = article.imageRightsStatus || 'Unresolved';
   const hasRightsResolved = (RESOLVED_IMAGE_RIGHTS as readonly string[]).includes(imageRights);
-  findings.push({
+  raw.push({
     id: 'val-image-rights',
     group: 'Image SEO',
     severity: 'compliance',
@@ -116,7 +180,7 @@ export function validateArticle(article: Partial<Article>): ArticleValidationRep
 
   // Check 6: Image Contextual ALT Text (Field 08)
   const altText = (article.imageAltText || '').trim();
-  findings.push({
+  raw.push({
     id: 'val-alt-required',
     group: 'Image SEO',
     severity: 'compliance',
@@ -133,7 +197,7 @@ export function validateArticle(article: Partial<Article>): ArticleValidationRep
   const disclosure = article.disclosure || 'editorial-independent';
   const disclosureNote = (article.disclosureNote || '').trim();
   const disclosureValid = disclosure === 'editorial-independent' || Boolean(disclosureNote);
-  findings.push({
+  raw.push({
     id: 'val-monetization-disclosure',
     group: 'External Links',
     severity: 'compliance',
@@ -146,21 +210,23 @@ export function validateArticle(article: Partial<Article>): ArticleValidationRep
     passed: disclosureValid,
   });
 
-  // Check 8: Scheduled Timestamp Validity
-  if (article.workflowStatus === 'scheduled') {
-    const scheduledAt = article.scheduledAt ? new Date(article.scheduledAt).getTime() : 0;
-    const isFuture = scheduledAt > Date.now();
-    findings.push({
-      id: 'val-scheduled-time',
-      group: 'Freshness',
-      severity: 'compliance',
-      rule: 'Scheduled publication date must be in the future',
-      field: 'scheduledAt',
-      message: isFuture ? 'Valid future publication schedule' : 'Scheduled timestamp is missing or in the past.',
-      remediation: 'Pick a valid future date and time for publication.',
-      passed: isFuture,
-    });
-  }
+  // Check 8: Scheduled Timestamp Validity — ONLY applicable when the article is SCHEDULED.
+  const isScheduled = article.workflowStatus === 'scheduled';
+  const scheduledAt = article.scheduledAt ? new Date(article.scheduledAt).getTime() : 0;
+  const scheduledFuture = scheduledAt > Date.now();
+  raw.push({
+    id: 'val-scheduled-time',
+    group: 'Freshness',
+    severity: 'compliance',
+    rule: 'Scheduled publication date must be in the future',
+    field: 'scheduledAt',
+    message: !isScheduled
+      ? 'Not applicable — the article is not in a Scheduled state.'
+      : scheduledFuture ? 'Valid future publication schedule' : 'Scheduled timestamp is missing or in the past.',
+    remediation: 'Pick a valid future date and time for publication.',
+    passed: !isScheduled ? true : scheduledFuture,
+    evaluated: isScheduled, // not-evaluated (and excluded from tallies) when not scheduled
+  });
 
   // ==========================================
   // CATEGORY C: SEO & QUALITY RECOMMENDATIONS
@@ -170,7 +236,7 @@ export function validateArticle(article: Partial<Article>): ArticleValidationRep
   const seoTitle = (article.seo?.title || article.title || '').trim();
   const seoTitleLength = seoTitle.length;
   const seoTitleOptimal = seoTitleLength >= 35 && seoTitleLength <= 65;
-  findings.push({
+  raw.push({
     id: 'val-seo-title-len',
     group: 'Search Appearance',
     severity: 'warning',
@@ -187,7 +253,7 @@ export function validateArticle(article: Partial<Article>): ArticleValidationRep
   const metaDesc = (article.seo?.description || article.excerpt || '').trim();
   const metaDescLength = metaDesc.length;
   const metaDescOptimal = metaDescLength >= 110 && metaDescLength <= 165;
-  findings.push({
+  raw.push({
     id: 'val-meta-desc-len',
     group: 'Search Appearance',
     severity: 'warning',
@@ -202,7 +268,7 @@ export function validateArticle(article: Partial<Article>): ArticleValidationRep
 
   // Check 11: Image SEO Title (Field 07)
   const imageSeoTitle = (article.imageSeoTitle || '').trim();
-  findings.push({
+  raw.push({
     id: 'val-image-seo-title',
     group: 'Image SEO',
     severity: 'notice',
@@ -215,7 +281,7 @@ export function validateArticle(article: Partial<Article>): ArticleValidationRep
 
   // Check 12: Heading Hierarchy
   const hasH2 = blocks.some((b) => b.type === 'heading' && b.level === 2);
-  findings.push({
+  raw.push({
     id: 'val-heading-hierarchy',
     group: 'On-page',
     severity: 'notice',
@@ -229,7 +295,7 @@ export function validateArticle(article: Partial<Article>): ArticleValidationRep
   // Check 13: Direct Answer / AI Search Readiness
   const hasCalloutOrTakeaways =
     blocks.some((b) => b.type === 'callout') || (article.takeaways && article.takeaways.length > 0);
-  findings.push({
+  raw.push({
     id: 'val-ai-readiness',
     group: 'AI Search Readiness',
     severity: 'notice',
@@ -248,7 +314,7 @@ export function validateArticle(article: Partial<Article>): ArticleValidationRep
     (article.associatedHubIds && article.associatedHubIds.length > 0) ||
     (article.associatedEventIds && article.associatedEventIds.length > 0) ||
     Boolean(article.associatedDisciplineId || article.associatedHubId || article.associatedEventId);
-  findings.push({
+  raw.push({
     id: 'val-entity-association',
     group: 'Event SEO',
     severity: 'notice',
@@ -261,7 +327,7 @@ export function validateArticle(article: Partial<Article>): ArticleValidationRep
 
   // Check 15: Primary Source Provenance
   const hasSources = (article.sources && article.sources.length > 0) || blocks.some((b) => b.type === 'sourceLink');
-  findings.push({
+  raw.push({
     id: 'val-sources-provenance',
     group: 'Structured Data',
     severity: 'notice',
@@ -269,7 +335,7 @@ export function validateArticle(article: Partial<Article>): ArticleValidationRep
     field: 'sources',
     message: hasSources ? 'Citations and sources attached' : 'No primary sources attached to this article.',
     remediation: 'Link an official rulebook, scoring archive, or judicial manual in the Sources panel.',
-    passed: Boolean(hasSources),
+    passed: hasSources,
   });
 
   // Check 16: Internal Links & Reader Recirculation
@@ -277,7 +343,7 @@ export function validateArticle(article: Partial<Article>): ArticleValidationRep
     (article.relatedArticleIds && article.relatedArticleIds.length > 0) ||
     blocks.some((b) => b.type === 'sourceLink' && b.url.startsWith('/'))
   );
-  findings.push({
+  raw.push({
     id: 'val-internal-links',
     group: 'Internal Links',
     severity: 'notice',
@@ -288,10 +354,10 @@ export function validateArticle(article: Partial<Article>): ArticleValidationRep
     passed: hasRelated,
   });
 
-  // Check 17: Canonical URL Trailing-Slash Consistency (Avoid Redirect Churn)
+  // Check 17: Canonical URL Trailing-Slash Consistency
   const canonical = (article.seo?.canonicalUrl || '').trim();
   const validCanonicalFormat = !canonical || (canonical.startsWith('https://nfrguide.com/') && canonical.endsWith('/'));
-  findings.push({
+  raw.push({
     id: 'val-canonical-redirects',
     group: 'Redirects',
     severity: 'notice',
@@ -302,22 +368,39 @@ export function validateArticle(article: Partial<Article>): ArticleValidationRep
     passed: validCanonicalFormat,
   });
 
-  // Compile totals
-  const blockers = findings.filter((f) => f.severity === 'blocker' && !f.passed);
-  const compliance = findings.filter((f) => f.severity === 'compliance' && !f.passed);
-  const warnings = findings.filter((f) => f.severity === 'warning' && !f.passed);
-  const notices = findings.filter((f) => f.severity === 'notice' && !f.passed);
+  // Enrich with presentation metadata (derived, not fabricated).
+  const findings: ValidationFinding[] = raw.map((f) => {
+    const meta = FIELD_META[f.id] ?? { category: 'Publication Readiness' as DisplayCategory, anchor: '', label: f.field };
+    return {
+      ...f,
+      evaluated: f.evaluated ?? true,
+      displayCategory: meta.category,
+      fieldAnchor: meta.anchor,
+      fieldLabel: meta.label,
+      blocksPublication: f.severity === 'blocker' || f.severity === 'compliance',
+    };
+  });
+
+  // Tallies — only EVALUATED checks count toward pass/fail/gate.
+  const evaluated = findings.filter((f) => f.evaluated);
+  const blockers = evaluated.filter((f) => f.severity === 'blocker' && !f.passed);
+  const compliance = evaluated.filter((f) => f.severity === 'compliance' && !f.passed);
+  const warnings = evaluated.filter((f) => f.severity === 'warning' && !f.passed);
+  const notices = evaluated.filter((f) => f.severity === 'notice' && !f.passed);
+  const notEvaluated = findings.filter((f) => !f.evaluated);
 
   const canPublish = blockers.length === 0 && compliance.length === 0;
-  const passedChecks = findings.filter((f) => f.passed).length;
-  const totalChecks = findings.length;
-  const score = Math.round((passedChecks / totalChecks) * 100);
+  const passedChecks = evaluated.filter((f) => f.passed).length;
+  const totalChecks = evaluated.length;
+  const score = totalChecks > 0 ? Math.round((passedChecks / totalChecks) * 100) : 0;
 
   return {
+    findings,
     blockers,
     compliance,
     warnings,
     notices,
+    notEvaluated,
     canPublish,
     score,
     totalChecks,

@@ -7,7 +7,7 @@ import { AdminStatCard } from '../../components/admin/AdminStatCard';
 import { AdminTabs } from '../../components/admin/AdminTabs';
 import { AdminModal } from '../../components/admin/AdminModal';
 import type { StaffRow } from '../../lib/cms/teamService';
-import type { PermissionMatrixGroup, RoleKey } from '../../lib/auth/permissions';
+import type { PermissionMatrixGroup, RoleKey, StaffRoleKey } from '../../lib/auth/permissions';
 import { ALL_ROLES, ROLE_LABELS } from '../../lib/auth/permissions';
 import * as actions from '../../app/admin/team-actions';
 
@@ -99,7 +99,7 @@ export const AdminTeamPage: React.FC<AdminTeamPageProps> = ({ staff, invitations
                             aria-label={`Role for ${u.name}`}
                             defaultValue={primary}
                             disabled={pending}
-                            onChange={(e) => act(actions.assignRolesAction(u.id, [e.target.value as RoleKey]), 'Role updated (sessions revoked)')}
+                            onChange={(e) => act(actions.assignRolesAction(u.id, [e.target.value as StaffRoleKey]), 'Role updated (sessions revoked)')}
                             className="px-2 py-1 text-xs border border-stone-300 rounded-xs bg-white"
                           >
                             {assignable.map((r) => <option key={r} value={r}>{ROLE_LABELS[r]}</option>)}
@@ -190,7 +190,7 @@ export const AdminTeamPage: React.FC<AdminTeamPageProps> = ({ staff, invitations
 };
 
 function InviteForm({ assignable, onDone }: { assignable: RoleKey[]; onDone: (link: string | null, msg: string) => void }) {
-  const [f, setF] = useState({ name: '', email: '', roleKey: 'author' as RoleKey });
+  const [f, setF] = useState({ name: '', email: '', roleKey: 'author' as StaffRoleKey });
   const [pending, start] = useTransition();
   return (
     <form onSubmit={(e) => { e.preventDefault(); start(async () => {
@@ -200,7 +200,7 @@ function InviteForm({ assignable, onDone }: { assignable: RoleKey[]; onDone: (li
     }); }} className="space-y-3">
       <div><label htmlFor="invite-name" className="block text-xs font-mono uppercase text-ink-muted mb-1">Name</label><input id="invite-name" required value={f.name} onChange={(e) => setF({ ...f, name: e.target.value })} className="w-full px-3 py-2 text-xs border border-stone-300 rounded-xs" /></div>
       <div><label htmlFor="invite-email" className="block text-xs font-mono uppercase text-ink-muted mb-1">Email</label><input id="invite-email" type="email" required value={f.email} onChange={(e) => setF({ ...f, email: e.target.value })} className="w-full px-3 py-2 text-xs border border-stone-300 rounded-xs" /></div>
-      <div><label htmlFor="invite-role" className="block text-xs font-mono uppercase text-ink-muted mb-1">Role</label><select id="invite-role" value={f.roleKey} onChange={(e) => setF({ ...f, roleKey: e.target.value as RoleKey })} className="w-full px-3 py-2 text-xs border border-stone-300 rounded-xs bg-white">{assignable.map((r) => <option key={r} value={r}>{ROLE_LABELS[r]}</option>)}</select></div>
+      <div><label htmlFor="invite-role" className="block text-xs font-mono uppercase text-ink-muted mb-1">Role</label><select id="invite-role" value={f.roleKey} onChange={(e) => setF({ ...f, roleKey: e.target.value as StaffRoleKey })} className="w-full px-3 py-2 text-xs border border-stone-300 rounded-xs bg-white">{assignable.map((r) => <option key={r} value={r}>{ROLE_LABELS[r]}</option>)}</select></div>
       <p className="text-[11px] text-ink-muted font-mono bg-stone-50 border border-stone-200 p-2 rounded-xs">No email is sent. You will receive a single-use link to share manually. The account stays INVITED until the link is used to set a password.</p>
       <div className="flex justify-end gap-2 pt-2 border-t border-stone-200"><button type="submit" disabled={pending} className="px-4 py-2 text-xs font-semibold text-white bg-[#0F1115] rounded-xs disabled:opacity-50">Create Invitation</button></div>
     </form>

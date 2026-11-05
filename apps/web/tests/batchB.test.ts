@@ -48,11 +48,20 @@ describe('Batch B — accessibility regressions (static)', () => {
     expect(css).toMatch(/:focus-visible \{[^}]*outline: 2px solid var\(--color-gold\) !important;[^}]*box-shadow: 0 0 0 2px var\(--color-charcoal\) !important;/);
   });
 
-  it('the header search button takes its accessible name from its visible label', () => {
+  it('the header animated search shows a visible Search label, is accessible, and drops removed controls', () => {
     const header = read('components/SiteHeader.tsx');
-    expect(header).not.toContain('aria-label="Open search dialog"');
-    expect(header).toMatch(/aria-haspopup="dialog"/);
-    expect(header).toMatch(/<kbd aria-hidden="true"/);
+    // Visible "Search" text is the trigger's accessible name (WCAG 2.5.3), state via aria-expanded.
+    expect(header).toMatch(/<span className="font-sans">Search<\/span>/);
+    expect(header).toContain('aria-expanded={searchOpen}');
+    // The search input is labelled and lives in a search landmark.
+    expect(header).toContain('aria-label="Search NFRGuide"');
+    expect(header).toContain('role="search"');
+    // Reduced-motion respected on the expand transition; no kbd shortcut badge.
+    expect(header).toContain('motion-reduce:transition-none');
+    expect(header).not.toContain('<kbd');
+    // Removed Phase-0 / clutter controls.
+    expect(header).not.toContain('Independent Publication');
+    expect(header).not.toContain('Quick Access');
   });
 
   it('footer column titles and article sections no longer skip heading levels', () => {

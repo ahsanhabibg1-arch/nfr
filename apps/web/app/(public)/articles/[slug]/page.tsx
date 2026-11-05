@@ -7,6 +7,8 @@ import { ROUTES } from '@/config/routes';
 import { ViewBeacon } from '@/components/analytics/ViewBeacon';
 import { ArticleMonetization } from '@/components/monetization/ArticleMonetization';
 import { AdPlacementSlot } from '@/components/monetization/AdPlacementSlot';
+import { CommentSection } from '@/components/editorial/CommentSection';
+import { listApprovedForArticle } from '@/lib/cms/commentService';
 
 type Params = { params: Promise<{ slug: string }> };
 
@@ -71,6 +73,7 @@ export default async function ArticlePage({ params }: Params) {
       <ArticleView article={article} />
       <ArticleMonetization articleId={article.id} />
       <AdPlacementSlot pageScope="article" />
+      <CommentSection articleId={article.id} initialComments={await listApprovedForArticle(article.id)} />
       <ViewBeacon entityType="ARTICLE" entityId={article.id} path={ROUTES.ARTICLE(article.slug)} />
     </>
   );

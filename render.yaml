@@ -1,0 +1,60 @@
+# NFRGuide.com — Render Blueprint (Batch 23, Phase 3C staging).
+#
+# STAGING ONLY on Render's FREE Web Service; production is a separately-selected paid VPS.
+# This file contains NO secret values — every secret uses `sync: false` and is set in the
+# Render dashboard. Migrations are NOT run in the build (approval-gated; see
+# docs/batches/batch-23/07_STAGING_DATABASE_ISOLATION.md). Do not deploy without owner
+# approval (docs/batches/batch-23/09_DEPLOYMENT_APPROVAL_CHECKLIST.md).
+#
+# Free-tier notes (verified 2026-11, render.com/docs/free):
+#   - Service spins down after 15 min idle; ~1 min cold start on next request.
+#   - Ephemeral filesystem → local media is lost on redeploy/restart; MEDIA_STORAGE_PROVIDER
+#     MUST be `r2` (never `local`) so uploads persist in Cloudflare R2.
+#   - 750 free instance-hours / month / workspace.
+#   - Render's free PostgreSQL EXPIRES 30 days after creation and has no backups — prefer a
+#     dedicated Aiven STAGING database/role instead (see report 07).
+
+services:
+  - type: web
+    name: nfrguide-staging
+    runtime: node
+    plan: free
+    rootDir: apps/web
+    branch: main
+    autoDeploy: false            # owner triggers deploys explicitly (approval gate)
+    buildCommand: npm ci && npx prisma generate && npm run build
+    startCommand: npm run start  # `next start`; Node runtime (sharp needs it — not edge)
+    healthCheckPath: /api/health/
+    envVars:
+      # --- runtime (non-secret) ---
+      - key: NODE_VERSION
+        value: "22.23.4"         # matches .nvmrc
+      - key: NODE_ENV
+        value: production
+      - key: APP_ENV
+        value: production        # staging runs the production build + prod env guards
+      - key: MEDIA_STORAGE_PROVIDER
+        value: r2                # ephemeral FS → must use R2, never local
+      - key: LOG_LEVEL
+        value: info
+      # --- secrets / per-environment (set in the Render dashboard; never committed) ---
+      - key: NEXT_PUBLIC_SITE_URL      # https URL of the staging service (env guard requires https in prod)
+        sync: false
+      - key: DATABASE_URL              # dedicated Aiven STAGING DB via a least-privilege role (NOT prod, NOT localhost)
+        sync: false
+      - key: MEDIA_S3_ENDPOINT         # https://<account-id>.r2.cloudflarestorage.com
+        sync: false
+      - key: MEDIA_S3_BUCKET
+        sync: false
+      - key: MEDIA_S3_REGION           # "auto" for R2
+        sync: false
+      - key: MEDIA_S3_ACCESS_KEY_ID    # rotated, bucket-scoped R2 token
+        sync: false
+      - key: MEDIA_S3_SECRET_ACCESS_KEY
+        sync: false
+      # --- optional ---
+      - key: APP_VERSION
+        sync: false
+      - key: APP_COMMIT
+        sync: false
+      # SENTRY_DSN — add only when an owner-approved monitoring integration lands.

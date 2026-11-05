@@ -148,7 +148,7 @@ export const AdminAnalyticsPage: React.FC<AdminAnalyticsPageProps> = (props) => 
 
       {/* KPI cards — real counts for the selected range */}
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
-        <AdminStatCard title="Content Views" value={num(overview.contentViews.current)} description="First-party observed views" trend="neutral" />
+        <div data-testid="stat-content-views"><AdminStatCard title="Content Views" value={num(overview.contentViews.current)} description="First-party observed views" trend="neutral" /></div>
         <AdminStatCard title="Internal Searches" value={overview.searches ? num(overview.searches.current) : '—'} description={overview.searches ? 'Search submissions' : 'Requires search access'} trend="neutral" />
         <AdminStatCard title="Zero-Result Searches" value={overview.zeroResults ? num(overview.zeroResults.current) : '—'} description="Queries returning nothing" trend="neutral" />
         <AdminStatCard

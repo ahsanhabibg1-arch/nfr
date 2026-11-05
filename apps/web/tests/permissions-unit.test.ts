@@ -11,9 +11,9 @@ describe('Batch 09 — permission registry', () => {
     for (const m of CMS_MODULES) expect(allPerms.has(m.view), `${m.id}:${m.view}`).toBe(true);
   });
 
-  it('there are exactly the 15 CMS modules (12 base + venues/competitors + competition coverage)', () => {
+  it('there are exactly the 17 CMS modules (adds comment moderation + reader accounts in Batch 24)', () => {
     expect(CMS_MODULES.map((m) => m.id)).toEqual([
-      'overview', 'articles', 'rodeo-coverage', 'venues', 'competitors', 'competition', 'editorial-organization', 'media', 'sources',
+      'overview', 'articles', 'rodeo-coverage', 'venues', 'competitors', 'competition', 'editorial-organization', 'comments', 'readers', 'media', 'sources',
       'seo', 'website', 'analytics', 'monetization', 'team', 'settings',
     ]);
   });
@@ -22,18 +22,25 @@ describe('Batch 09 — permission registry', () => {
     const sa = visibleModuleIds(['super_admin']);
     expect(sa).toContain('team');
     expect(sa).toContain('settings');
-    expect(sa.length).toBe(15);
+    expect(sa).toContain('comments');
+    expect(sa).toContain('readers');
+    expect(sa.length).toBe(17);
 
     const admin = visibleModuleIds(['administrator']);
     expect(admin).toContain('team');
+    expect(admin).toContain('readers'); // reader administration is Admin/Super Admin
     expect(admin).not.toContain('settings'); // system.config is Super Admin only
 
     for (const role of ['editor', 'author', 'seo_manager'] as const) {
       const vis = visibleModuleIds([role]);
       expect(vis, role).not.toContain('team');
       expect(vis, role).not.toContain('settings');
+      expect(vis, role).not.toContain('readers'); // reader admin is not an editor/author capability
       expect(vis, role).toContain('overview');
     }
+    // Editors moderate comments but cannot administer reader accounts.
+    expect(visibleModuleIds(['editor'])).toContain('comments');
+    expect(visibleModuleIds(['reader'])).toEqual([]); // readers see no CMS modules at all
   });
 
   it('the permission matrix is generated from the enforced source of truth', () => {

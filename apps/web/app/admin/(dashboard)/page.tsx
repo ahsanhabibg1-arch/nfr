@@ -1,5 +1,5 @@
 import Link from 'next/link';
-import { requireUser } from '@/lib/auth/currentUser';
+import { requireCmsAccess } from '@/lib/auth/currentUser';
 import { roleHasPermission, primaryRoleLabel } from '@/lib/auth/rbac';
 import { getDashboardData } from '@/lib/cms/adminQueries';
 import { ROUTES } from '@/config/routes';
@@ -10,7 +10,7 @@ const STATUS_STYLE: Record<string, string> = {
 };
 
 export default async function OverviewPage() {
-  const user = await requireUser();
+  const user = await requireCmsAccess(); // staff-only: readers/no-role users are bounced to the public site
   const canViewAll = roleHasPermission(user.roles, 'article.edit.any');
   const d = await getDashboardData({ viewerId: user.id, canViewAll });
 

@@ -1,12 +1,13 @@
-import { requireUser } from '@/lib/auth/currentUser';
+import { requireCmsAccess } from '@/lib/auth/currentUser';
 import { getSessionToken } from '@/lib/auth/session';
 import { listOwnSessions } from '@/lib/cms/teamService';
 import { AdminPageHeader } from '@/components/admin/AdminPageHeader';
 import { AccountSecurity } from '@/components/admin/AccountSecurity';
 
-/** Personal account security — available to ANY authenticated staff member (§11/§13). */
+/** Personal account security — available to ANY authenticated staff member (§11/§13).
+ *  Staff-only: a non-staff (reader) session is bounced to the public site. */
 export default async function Page() {
-  const user = await requireUser();
+  const user = await requireCmsAccess();
   const token = await getSessionToken();
   const sessions = await listOwnSessions({ id: user.id, roles: user.roles }, token);
   return (

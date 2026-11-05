@@ -33,6 +33,41 @@ test.describe('admin smoke', () => {
     await expect(page).toHaveURL(/\/admin\/login\/$/);
   });
 
+  // Batch 24 security regression: a public reader (shared session system, but NO
+  // cms.access) must never reach the admin shell. The CMS layout requires cms.access,
+  // not merely authentication, so a reader session is bounced to the public site.
+  test('an authenticated reader is bounced OFF the admin shell (never into it)', async ({ page }) => {
+    const email = `e2e-reader-${Date.now()}@example.com`;
+    const db = testDb();
+    try {
+      // Register a reader through the real public sign-up flow (auto-logs-in).
+      await page.goto('/register/');
+      await page.locator('#name').fill('E2E Guard Reader');
+      await page.locator('#email').fill(email);
+      await page.locator('#password').fill('correct horse battery staple');
+      await page.locator('#confirm').fill('correct horse battery staple');
+      await page.locator('input[name="terms"]').check();
+      await page.locator('button[type="submit"]').click();
+      await page.waitForURL(/^http:\/\/localhost:3100\/$/); // sign-up lands on the public home, logged in
+
+      // The admin dashboard must NOT render for this session — it bounces to public home.
+      await page.goto('/admin/');
+      await expect(page).toHaveURL(/^http:\/\/localhost:3100\/$/);
+      // Admin-only chrome (the CMS breadcrumb) must be absent; the public header is shown.
+      await expect(page.getByText('CMS DASHBOARD', { exact: true })).toHaveCount(0);
+      await expect(page.getByRole('link', { name: 'NFRGuide' }).first()).toBeVisible();
+
+      // Gated admin sub-pages bounce too (not even the shell chrome shows).
+      await page.goto('/admin/readers/');
+      await expect(page).not.toHaveURL(/\/admin\//);
+      await page.goto('/admin/comments/');
+      await expect(page).not.toHaveURL(/\/admin\//);
+    } finally {
+      await db.user.deleteMany({ where: { email } }).catch(() => {});
+      await db.$disconnect();
+    }
+  });
+
   test('authorized admin reaches the editor; no Schedule control; source picker uses the DB directory', async ({ page }) => {
     await login(page);
     const id = await articleId(FIXTURE_SLUGS.publishedArticle);

@@ -111,6 +111,26 @@ const MODULE_GROUPS: NavGroup[] = [
         ),
       },
       {
+        id: 'comments',
+        name: 'Comment Moderation',
+        path: ROUTES.ADMIN_COMMENTS,
+        icon: (p) => (
+          <svg {...p} fill="none" viewBox="0 0 24 24" stroke="currentColor">
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.8} d="M8 12h.01M12 12h.01M16 12h.01M21 12c0 4.418-4.03 8-9 8a9.86 9.86 0 01-4-.84L3 20l1.09-3.27A7.98 7.98 0 013 12c0-4.418 4.03-8 9-8s9 3.582 9 8z" />
+          </svg>
+        ),
+      },
+      {
+        id: 'readers',
+        name: 'Reader Accounts',
+        path: ROUTES.ADMIN_READERS,
+        icon: (p) => (
+          <svg {...p} fill="none" viewBox="0 0 24 24" stroke="currentColor">
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.8} d="M17 20h5v-2a4 4 0 00-3-3.87M9 20H4v-2a4 4 0 013-3.87m6-1.13a4 4 0 10-4-4 4 4 0 004 4zm6 0a3 3 0 10-2.5-1.35" />
+          </svg>
+        ),
+      },
+      {
         id: 'media',
         name: 'Media Library',
         path: ROUTES.ADMIN_MEDIA,

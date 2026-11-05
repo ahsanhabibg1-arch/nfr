@@ -33,7 +33,10 @@ body {
   color: var(--color-navy);
   margin: 0;
   padding: 0;
-  overflow-x: hidden;
+  /* `clip` (not `hidden`) prevents horizontal scroll WITHOUT making <body> a scroll
+     container — `overflow-x: hidden` forces overflow-y to `auto`, which breaks every
+     `position: sticky` descendant (e.g. the article-editor inspector column). */
+  overflow-x: clip;
 }
 
 /* Focus rings (Batch B). A dual ring — charcoal inner, gold outer — stays visible on both

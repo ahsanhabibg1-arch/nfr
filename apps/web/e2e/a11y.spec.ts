@@ -193,11 +193,18 @@ test.describe('accessibility (automated subset)', () => {
     expect(ring.shadow).not.toBe('none');
   });
 
-  test('header search button: accessible name includes its visible label', async ({ page }) => {
+  test('header animated search: trigger + input are accessible; Escape returns focus', async ({ page }) => {
+    await page.setViewportSize({ width: 1440, height: 900 });
     await page.goto('/');
-    const button = page.locator('header button[aria-haspopup="dialog"]').first();
-    await expect(button).toHaveAccessibleName(/search/i);
-    await expect(button).not.toHaveAttribute('aria-label', /.*/);
+    const trigger = page.getByRole('button', { name: 'Search' });
+    await expect(trigger).toHaveAttribute('aria-expanded', 'false');
+    await trigger.click();
+    const input = page.getByRole('searchbox', { name: 'Search NFRGuide' });
+    await expect(input).toBeFocused();
+    await expect(trigger).toHaveAttribute('aria-expanded', 'true');
+    // Escape collapses and returns focus to the trigger (keyboard users never get trapped).
+    await page.keyboard.press('Escape');
+    await expect(trigger).toBeFocused();
   });
 
   test('keyboard: the mobile drawer opens and closes without a mouse', async ({ page }) => {

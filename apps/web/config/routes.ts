@@ -52,6 +52,15 @@ export const ROUTES = {
   ADMIN_VENUES: '/admin/venues/',
   ADMIN_COMPETITORS: '/admin/competitors/',
   ADMIN_COMPETITION: '/admin/competition/',
+  ADMIN_COMMENTS: '/admin/comments/',
+  ADMIN_READERS: '/admin/readers/',
+  // Public reader account routes (Batch 24)
+  LOGIN: '/login/',
+  REGISTER: '/register/',
+  FORGOT_PASSWORD: '/forgot-password/',
+  RESET_PASSWORD: '/reset-password/',
+  ACCOUNT: '/account/',
+  ACCOUNT_COMMENTS: '/account/comments/',
 } as const;
 
 export interface SectionMeta {

@@ -12,7 +12,7 @@ import {
   invalidateSessionToken,
   clearSessionCookie,
 } from '@/lib/auth/session';
-import { peekDurableRateLimit, recordDurableRateLimitFailure, resetDurableRateLimit } from '@/lib/auth/durableRateLimit';
+import { checkDurableRateLimit, resetDurableRateLimit } from '@/lib/auth/durableRateLimit';
 import { log, correlationIdFrom } from '@/lib/logger';
 
 const LoginSchema = z.object({
@@ -32,14 +32,16 @@ const TOO_MANY = (retryS: number) => `Too many attempts. Try again in about ${Ma
  *     an account it doesn't own.
  *   - per account/email across all IPs (50 / 60 min): bounds DISTRIBUTED brute force on a
  *     single account.
- * FAILURE-ONLY counting (Batch 22 §2): the limits are gated with a read-only `peek` BEFORE
- * the bcrypt verify, and a failure is `record`ed only when authentication actually fails.
- * A successful login records nothing and resets both buckets — so a legitimate user never
- * consumes their own budget (materially fewer false lockouts). The residual, bounded
- * attacker-driven lockout and the CAPTCHA/backoff recommendation are documented in
- * docs/batches/batch-22/01_AUTHENTICATION_RESILIENCE.md.
- * Both checks FAIL CLOSED: on a limiter storage error the attempt is refused with a generic
- * "temporarily unavailable" message (never a silent bypass; no enumeration).
+ * ATOMIC reserve-and-count gate (Batch 23 §4.1): each attempt is counted with a single
+ * atomic check-and-increment BEFORE the bcrypt verify. This strictly enforces the ceiling
+ * under concurrency — unlike a read-only peek, a burst of parallel requests cannot all pass
+ * a near-limit check (TOCTOU) — and fails closed on a storage error. A SUCCESSFUL login
+ * RESETS both buckets, so a legitimate user's own successful attempts never accumulate;
+ * failed attempts remain counted until the window rolls over. (Earlier Batch 22 used a
+ * peek→verify→record split that was failure-only but had a concurrency/failed-record gap;
+ * this restores strict, fail-closed counting with the same reset-on-success behavior.)
+ * Residual attacker-driven lockout + the CAPTCHA/backoff recommendation are documented in
+ * docs/batches/batch-23/02_SECURITY_AND_AUTH_AUDIT.md.
  */
 export async function loginAction(_prev: LoginState, formData: FormData): Promise<LoginState> {
   const parsed = LoginSchema.safeParse({
@@ -54,12 +56,12 @@ export async function loginAction(_prev: LoginState, formData: FormData): Promis
   const cid = correlationIdFrom(h);
   const ipKey = `login:${ip}:${email}`;
   const acctKey = `login-acct:${email}`;
-  // Gate on recorded FAILURES before the expensive verify (peek does not increment).
+  // Atomic check-and-increment BEFORE the expensive verify: concurrency-safe ceiling,
+  // fail-closed on storage error. A successful login resets both buckets below.
   const [rlIp, rlAcct] = await Promise.all([
-    peekDurableRateLimit(ipKey, 5),
-    peekDurableRateLimit(acctKey, 50),
+    checkDurableRateLimit(ipKey, 5, 15 * 60 * 1000),
+    checkDurableRateLimit(acctKey, 50, 60 * 60 * 1000),
   ]);
-  // Fail closed on limiter storage failure — generic, enumeration-safe message.
   if (rlIp.storageError || rlAcct.storageError) {
     log.warn('auth.login.limiter_degraded', { cid });
     return { error: 'Service temporarily unavailable. Please try again shortly.' };
@@ -78,16 +80,12 @@ export async function loginAction(_prev: LoginState, formData: FormData): Promis
     (await verifyPassword(password, user.passwordHash));
 
   if (!ok || !user) {
-    // Count only FAILURES, so legitimate successful logins never fill the bucket.
-    await Promise.all([
-      recordDurableRateLimitFailure(ipKey, 15 * 60 * 1000),
-      recordDurableRateLimitFailure(acctKey, 60 * 60 * 1000),
-    ]);
+    // The attempt was already counted atomically above; just log and return generically.
     log.warn('auth.login.failed', { cid });
-    // Generic message — do not reveal whether the email exists.
     return { error: 'Invalid email or password.' };
   }
 
+  // Success → clear both buckets so a legitimate user never accumulates a lockout.
   await Promise.all([resetDurableRateLimit(ipKey), resetDurableRateLimit(acctKey)]);
   const { token, expiresAt } = await createSession(user.id, { ip, ua: h.get('user-agent') });
   await setSessionCookie(token, expiresAt);

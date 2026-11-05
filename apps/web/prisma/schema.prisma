@@ -91,6 +91,7 @@ model Article {
   workflow            EditorialWorkflowHistory[]
   seoFindings         SeoFinding[]
   sponsorships        SponsoredContentRelationship[]
+  comments            ArticleComment[]
 
   @@index([workflowStatus])
   @@index([categoryId])
@@ -659,14 +660,65 @@ model User {
   createdAt       DateTime                   @default(now())
   lastLoginAt     DateTime?
   passwordHash    String?
+  // Reader identity (Batch 24). `emailVerifiedAt` records verification status; it is
+  // NOT required for login (no email provider configured — see docs). Staff vs reader
+  // is determined by assigned roles/permissions, never by these columns.
+  emailVerifiedAt DateTime?
   createdArticles Article[]                  @relation("ArticleCreatedBy")
   revisions       ArticleRevision[]
   auditLogs       AuditLog[]
   workflowEvents  EditorialWorkflowHistory[]
   uploadedMedia   MediaAsset[]               @relation("MediaUploader")
   passwordResets  PasswordResetToken[]
+  emailVerifications EmailVerificationToken[]
+  comments        ArticleComment[]           @relation("CommentAuthor")
+  moderatedComments ArticleComment[]         @relation("CommentModerator")
   sessions        Session[]
   roles           UserRole[]
+}
+
+/// Email verification token (Batch 24). Mirrors PasswordResetToken: only the SHA-256
+/// hash is stored, single-use, time-limited. Verification is gated behind a configured
+/// email provider (none yet) — accounts remain usable; `emailVerifiedAt` tracks state.
+model EmailVerificationToken {
+  id        String    @id @default(uuid())
+  userId    String
+  tokenHash String    @unique
+  expiresAt DateTime
+  usedAt    DateTime?
+  createdAt DateTime  @default(now())
+  user      User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+}
+
+/// Reader comment on a published article (Batch 24). Flat (no threads). Body is plain
+/// text, rendered escaped (no raw HTML). Defaults to PENDING; only APPROVED is public.
+model ArticleComment {
+  id               String        @id @default(uuid())
+  articleId        String
+  authorId         String
+  body             String
+  status           CommentStatus @default(PENDING)
+  createdAt        DateTime      @default(now())
+  updatedAt        DateTime      @updatedAt
+  moderatedById    String?
+  moderatedAt      DateTime?
+  moderationReason String?
+  article          Article       @relation(fields: [articleId], references: [id], onDelete: Cascade)
+  author           User          @relation("CommentAuthor", fields: [authorId], references: [id], onDelete: Cascade)
+  moderatedBy      User?         @relation("CommentModerator", fields: [moderatedById], references: [id])
+
+  @@index([articleId, status])
+  @@index([authorId])
+  @@index([status])
+}
+
+enum CommentStatus {
+  PENDING
+  APPROVED
+  REJECTED
+  HIDDEN
 }
 
 /// Server-side session (opaque token stored as a SHA-256 hash; validated and

@@ -43,6 +43,21 @@ export async function requirePermissionPage(perm: Permission): Promise<CurrentUs
   return user;
 }
 
+/**
+ * Entry gate for the WHOLE Admin CMS shell. Requires an authenticated STAFF user
+ * (one holding `cms.access`). A logged-in NON-staff user — e.g. a public `reader`
+ * (Batch 24) or a user with no/revoked roles — is sent to the public site; they must
+ * never see the admin shell or any admin page. Unauthenticated users go to login.
+ *
+ * This is deliberately NOT `requirePermissionPage('cms.access')`: that bounces to
+ * `/admin/?denied=1`, which is itself inside the gated shell and would loop.
+ */
+export async function requireCmsAccess(): Promise<CurrentUser> {
+  const user = await requireUser();
+  if (!roleHasPermission(user.roles, 'cms.access')) redirect('/');
+  return user;
+}
+
 export function userHasPermission(user: CurrentUser | null, perm: Permission): boolean {
   return !!user && roleHasPermission(user.roles, perm);
 }
