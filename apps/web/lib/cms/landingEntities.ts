@@ -4,6 +4,7 @@ import { prisma } from '../db';
 import { roleHasPermission, type Permission } from '../auth/rbac';
 import { Actor } from './guard';
 import { ServiceError } from './articleService';
+import { PRIMARY_SECTIONS } from '../../config/routes';
 
 /**
  * Shared polymorphic-integrity helpers for Batch 11 EntitySeo / EntityFaq
@@ -13,12 +14,14 @@ import { ServiceError } from './articleService';
  * (see deleteEntitySeoForEntity / deleteFaqsForEntity wired into rodeoService +
  * taxonomy delete).
  */
-export const LANDING_TYPES: LandingEntityType[] = ['DISCIPLINE', 'CATEGORY', 'RODEO_HUB', 'RODEO_EVENT', 'RODEO_EDITION', 'VENUE', 'COMPETITOR'];
+export const LANDING_TYPES: LandingEntityType[] = ['DISCIPLINE', 'CATEGORY', 'RODEO_HUB', 'RODEO_EVENT', 'RODEO_EDITION', 'VENUE', 'COMPETITOR', 'SECTION'];
 
 /** Owning permission per landing entity (reuses existing RBAC — no new permissions).
- *  CATEGORY → taxonomy.manage; everything else (incl. Batch 12 VENUE/COMPETITOR) → rodeo.manage. */
+ *  CATEGORY → taxonomy.manage; SECTION → system.config; everything else → rodeo.manage. */
 export function permForEntity(t: LandingEntityType): Permission {
-  return t === 'CATEGORY' ? 'taxonomy.manage' : 'rodeo.manage';
+  if (t === 'CATEGORY') return 'taxonomy.manage';
+  if (t === 'SECTION') return 'system.config';
+  return 'rodeo.manage';
 }
 
 export function requireEntityPerm(actor: Actor, t: LandingEntityType): void {
@@ -36,6 +39,7 @@ export async function entityExists(t: LandingEntityType, id: string): Promise<bo
     case 'RODEO_EDITION': return !!(await prisma.rodeoEventEdition.findUnique({ where: { id }, select: { id: true } }));
     case 'VENUE': return !!(await prisma.venue.findUnique({ where: { id }, select: { id: true } }));
     case 'COMPETITOR': return !!(await prisma.competitor.findUnique({ where: { id }, select: { id: true } }));
+    case 'SECTION': return id in PRIMARY_SECTIONS;
     default: return false;
   }
 }

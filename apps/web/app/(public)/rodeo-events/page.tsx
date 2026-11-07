@@ -14,12 +14,12 @@ import { listPublicHubs, listPublicEvents } from '@/lib/rodeoContent';
 export const revalidate = 300;
 
 export async function generateMetadata(): Promise<Metadata> {
-  const meta = getSectionMeta('rodeo-events')!;
+  const meta = (await getSectionMeta('rodeo-events'))!;
   return buildMetadata({ title: `${meta.name} — Coverage & Guides`, description: meta.description, path: meta.path });
 }
 
 export default async function Page() {
-  const meta = getSectionMeta('rodeo-events')!;
+  const meta = (await getSectionMeta('rodeo-events'))!;
   const [hubs, events] = await Promise.all([listPublicHubs(), listPublicEvents()]);
   return (
     <>

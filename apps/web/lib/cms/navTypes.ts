@@ -8,8 +8,17 @@ export interface NavLink {
   isExternal: boolean;
 }
 
-export const NAV_LOCATIONS = ['header', 'footer-sections', 'footer-academy'] as const;
+export const NAV_LOCATIONS = ['header', 'footer-sections', 'footer-academy', 'quick-access'] as const;
 export type NavLocation = (typeof NAV_LOCATIONS)[number];
+
+export interface QuickAccessLink {
+  id: string;
+  label: string;
+  url: string;
+  description: string;
+  sortOrder: number;
+  isExternal: boolean;
+}
 
 export interface PublicNavigation {
   header: NavLink[];

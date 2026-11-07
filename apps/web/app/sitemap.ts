@@ -24,7 +24,7 @@ export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
   ];
 
   for (const key of getAllSectionKeys()) {
-    const meta = getSectionMeta(key);
+    const meta = await getSectionMeta(key);
     if (!meta) continue;
     entries.push({
       url: `${SITE_URL}${meta.path}`,

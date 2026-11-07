@@ -787,16 +787,17 @@ model AuditLog {
 /// `isSystem` protects canonical primary-section links from deletion; the five
 /// section routes and seven discipline routes are never renamed/removed here.
 model NavigationItem {
-  id         String   @id @default(uuid())
-  location   String
-  label      String
-  url        String
-  sortOrder  Int      @default(0)
-  isExternal Boolean  @default(false)
-  isSystem   Boolean  @default(false)
-  visible    Boolean  @default(true)
-  createdAt  DateTime @default(now())
-  updatedAt  DateTime @updatedAt
+  id          String   @id @default(uuid())
+  location    String
+  label       String
+  url         String
+  description String?
+  sortOrder   Int      @default(0)
+  isExternal  Boolean  @default(false)
+  isSystem    Boolean  @default(false)
+  visible     Boolean  @default(true)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
 
   @@index([location, sortOrder])
 }
@@ -1544,4 +1545,46 @@ enum LandingEntityType {
   RODEO_EDITION
   VENUE
   COMPETITOR
+  SECTION
+}
+
+/// CMS-editable display metadata for the five primary sections (Batch 28 — G-01).
+/// Falls back to hardcoded defaults in config/routes.ts when no row exists.
+model SectionConfig {
+  id          String   @id @default(uuid())
+  sectionKey  String   @unique
+  displayName String?
+  tagline     String?
+  description String?
+  heroImage   String?
+  visible     Boolean  @default(true)
+  updatedById String?
+  updatedAt   DateTime @default(now()) @updatedAt
+}
+
+/// CMS-editable informational/legal pages (Batch 28 — G-03).
+/// Uses a workflow: DRAFT → PENDING_REVIEW → APPROVED → PUBLISHED.
+/// Hardcoded content in config/legalPages.ts serves as fallback until published.
+model InfoPage {
+  id              String         @id @default(uuid())
+  slug            String         @unique
+  title           String
+  body            String
+  seoTitle        String?
+  metaDescription String?
+  status          InfoPageStatus @default(DRAFT)
+  approvedById    String?
+  approvedAt      DateTime?
+  publishedAt     DateTime?
+  createdById     String?
+  updatedById     String?
+  createdAt       DateTime       @default(now())
+  updatedAt       DateTime       @updatedAt
+}
+
+enum InfoPageStatus {
+  DRAFT
+  PENDING_REVIEW
+  APPROVED
+  PUBLISHED
 }

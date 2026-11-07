@@ -35,6 +35,7 @@ export const CANONICAL: Record<NavLocation, NavLink[]> = {
     { label: 'Rodeo Events Directory', url: ROUTES.MORE_RODEO, isExternal: false },
     { label: 'Search NFRGuide', url: '/search/', isExternal: false },
   ],
+  'quick-access': [],
 };
 
 export interface CanonicalNavSeedRow { id: string; location: NavLocation; label: string; url: string; sortOrder: number; isExternal: boolean; }

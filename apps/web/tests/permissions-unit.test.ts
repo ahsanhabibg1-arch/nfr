@@ -11,10 +11,10 @@ describe('Batch 09 — permission registry', () => {
     for (const m of CMS_MODULES) expect(allPerms.has(m.view), `${m.id}:${m.view}`).toBe(true);
   });
 
-  it('there are exactly the 17 CMS modules (adds comment moderation + reader accounts in Batch 24)', () => {
+  it('there are exactly the 18 CMS modules (adds info-pages in Batch 28)', () => {
     expect(CMS_MODULES.map((m) => m.id)).toEqual([
       'overview', 'articles', 'rodeo-coverage', 'venues', 'competitors', 'competition', 'editorial-organization', 'comments', 'readers', 'media', 'sources',
-      'seo', 'website', 'analytics', 'monetization', 'team', 'settings',
+      'seo', 'website', 'analytics', 'monetization', 'team', 'info-pages', 'settings',
     ]);
   });
 
@@ -24,7 +24,8 @@ describe('Batch 09 — permission registry', () => {
     expect(sa).toContain('settings');
     expect(sa).toContain('comments');
     expect(sa).toContain('readers');
-    expect(sa.length).toBe(17);
+    expect(sa).toContain('info-pages');
+    expect(sa.length).toBe(18);
 
     const admin = visibleModuleIds(['administrator']);
     expect(admin).toContain('team');

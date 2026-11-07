@@ -7,19 +7,33 @@ import { AdminPageHeader } from '../../components/admin/AdminPageHeader';
 import { AdminTabs } from '../../components/admin/AdminTabs';
 import type { SystemSettings, OperationalStatus, AuditResult } from '../../lib/cms/settingsService';
 import { updateSiteIdentityAction, updateEditorialDefaultsAction, updateRodeoDefaultsAction } from '../../app/admin/settings-actions';
+import { updateSectionConfigAction } from '../../app/admin/section-config-actions';
+
+export interface SectionRow {
+  sectionKey: string;
+  defaultName: string;
+  defaultTagline: string;
+  defaultDescription: string;
+  displayName: string;
+  tagline: string;
+  description: string;
+  heroImage: string;
+  visible: boolean;
+}
 
 export interface AdminSettingsPageProps {
   settings: SystemSettings;
   operational: OperationalStatus;
   audit: AuditResult;
   auditFilters: { action?: string; actorId?: string; page: number };
+  sections: SectionRow[];
 }
 
-type Tab = 'identity' | 'editorial' | 'rodeo' | 'operational' | 'audit';
+type Tab = 'identity' | 'editorial' | 'rodeo' | 'sections' | 'operational' | 'audit';
 const inputCls = 'w-full px-3 py-2 text-xs border border-stone-300 rounded-xs bg-white text-stone-900 focus:outline-none focus:border-[#D4A757]';
 const labelCls = 'block text-xs font-mono uppercase text-ink-muted font-medium mb-1';
 
-export const AdminSettingsPage: React.FC<AdminSettingsPageProps> = ({ settings, operational, audit, auditFilters }) => {
+export const AdminSettingsPage: React.FC<AdminSettingsPageProps> = ({ settings, operational, audit, auditFilters, sections }) => {
   const router = useRouter();
   const [tab, setTab] = useState<Tab>('identity');
   const [toast, setToast] = useState<string | null>(null);
@@ -38,7 +52,7 @@ export const AdminSettingsPage: React.FC<AdminSettingsPageProps> = ({ settings, 
       <AdminPageHeader title="System Settings" description="Typed, validated site configuration. Domain settings (SEO, Analytics, Monetization) stay owned by their modules; security-critical values are not editable here." breadcrumbs={[{ label: 'Admin', path: '/admin/' }, { label: 'System Settings' }]} />
 
       <AdminTabs
-        tabs={[{ id: 'identity', label: 'Site Identity' }, { id: 'editorial', label: 'Editorial Defaults' }, { id: 'rodeo', label: 'Rodeo Defaults' }, { id: 'operational', label: 'Operational' }, { id: 'audit', label: 'Audit Log', count: audit.total }]}
+        tabs={[{ id: 'identity', label: 'Site Identity' }, { id: 'editorial', label: 'Editorial Defaults' }, { id: 'rodeo', label: 'Rodeo Defaults' }, { id: 'sections', label: 'Sections' }, { id: 'operational', label: 'Operational' }, { id: 'audit', label: 'Audit Log', count: audit.total }]}
         activeTab={tab}
         onChange={(id) => setTab(id as Tab)}
       />
@@ -86,6 +100,15 @@ export const AdminSettingsPage: React.FC<AdminSettingsPageProps> = ({ settings, 
           <label className="flex items-center gap-2 text-xs"><input type="checkbox" className="accent-[#0F1115]" checked={rodeo.editionSourceReminder} onChange={(e) => setRodeo({ ...rodeo, editionSourceReminder: e.target.checked })} /><span>Remind editors to re-verify edition sources each year</span></label>
           <p className="text-[11px] text-ink-muted">Display preferences only. Event-vs-edition separation is preserved; edition-specific data is never auto-carried to future editions.</p>
           <button disabled={pending} onClick={() => save(updateRodeoDefaultsAction(rodeo))} className="px-4 py-2 bg-[#0F1115] text-[#D4A757] text-xs font-semibold rounded-xs disabled:opacity-50">Save Rodeo Defaults</button>
+        </div>
+      )}
+
+      {tab === 'sections' && (
+        <div className="space-y-4 max-w-3xl">
+          <p className="text-xs text-ink-muted">Override display names, taglines, and descriptions for the five primary sections. Empty fields fall back to defaults.</p>
+          {sections.map((s) => (
+            <SectionEditor key={s.sectionKey} section={s} pending={pending} onSave={(data) => save(updateSectionConfigAction(data))} />
+          ))}
         </div>
       )}
 
@@ -149,6 +172,34 @@ export const AdminSettingsPage: React.FC<AdminSettingsPageProps> = ({ settings, 
     </div>
   );
 };
+
+function SectionEditor({ section, pending, onSave }: { section: SectionRow; pending: boolean; onSave: (data: { sectionKey: string; displayName: string | null; tagline: string | null; description: string | null; heroImage: string | null }) => void }) {
+  const [open, setOpen] = useState(false);
+  const [displayName, setDisplayName] = useState(section.displayName);
+  const [tagline, setTagline] = useState(section.tagline);
+  const [description, setDescription] = useState(section.description);
+  const [heroImage, setHeroImage] = useState(section.heroImage);
+  return (
+    <div className="bg-white border border-stone-200 rounded-xs">
+      <button type="button" onClick={() => setOpen(!open)} className="w-full px-4 py-3 flex items-center justify-between text-left">
+        <div>
+          <span className="text-sm font-serif font-bold text-stone-900">{section.defaultName}</span>
+          <span className="ml-2 text-[11px] text-ink-muted font-mono">/{section.sectionKey}/</span>
+        </div>
+        <span className="text-xs text-ink-muted">{open ? '▾' : '▸'}</span>
+      </button>
+      {open && (
+        <div className="px-4 pb-4 space-y-3 border-t border-stone-100 pt-3">
+          <div><label className={labelCls}>Display name <span className="text-ink-muted font-normal">(default: {section.defaultName})</span></label><input aria-label={`Display name for ${section.defaultName}`} className={inputCls} value={displayName} onChange={(e) => setDisplayName(e.target.value)} placeholder={section.defaultName} /></div>
+          <div><label className={labelCls}>Tagline <span className="text-ink-muted font-normal">(default: {section.defaultTagline})</span></label><input aria-label={`Tagline for ${section.defaultName}`} className={inputCls} value={tagline} onChange={(e) => setTagline(e.target.value)} placeholder={section.defaultTagline} /></div>
+          <div><label className={labelCls}>Description</label><textarea aria-label={`Description for ${section.defaultName}`} rows={2} className={inputCls} value={description} onChange={(e) => setDescription(e.target.value)} placeholder={section.defaultDescription} /></div>
+          <div><label className={labelCls}>Hero image URL</label><input aria-label={`Hero image URL for ${section.defaultName}`} className={inputCls} value={heroImage} onChange={(e) => setHeroImage(e.target.value)} placeholder="https://…" /></div>
+          <button disabled={pending} onClick={() => onSave({ sectionKey: section.sectionKey, displayName: displayName || null, tagline: tagline || null, description: description || null, heroImage: heroImage || null })} className="px-4 py-2 bg-[#0F1115] text-[#D4A757] text-xs font-semibold rounded-xs disabled:opacity-50">Save Section</button>
+        </div>
+      )}
+    </div>
+  );
+}
 
 function Row({ k, v, ok }: { k: string; v: string; ok?: boolean }) {
   return (

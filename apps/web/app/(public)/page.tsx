@@ -10,6 +10,7 @@ import {
   getEvergreenArticles,
 } from '@/lib/content';
 import { listPublicHubs, listPublicEvents } from '@/lib/rodeoContent';
+import { getQuickAccessLinks } from '@/lib/cms/navigationService';
 import { PRIMARY_SECTIONS } from '@/config/routes';
 
 export const revalidate = 60; // ISR: re-render homepage feeds at most once a minute.
@@ -33,13 +34,14 @@ export default async function HomePage() {
   const disciplines = await getAllDisciplines();
   const section = async (key: string, n: number) =>
     (await getPublishedArticlesBySection(PRIMARY_SECTIONS[key].categoryKey)).slice(0, n);
-  const [planWatch, entertainment, eventsShopping, evergreen, hubs, events] = await Promise.all([
+  const [planWatch, entertainment, eventsShopping, evergreen, hubs, events, quickAccess] = await Promise.all([
     section('plan-watch', 4),
     section('entertainment', 3),
     section('events-shopping', 3),
     getEvergreenArticles(4),
     listPublicHubs(),
     listPublicEvents(),
+    getQuickAccessLinks(),
   ]);
 
   if (!hero) {
@@ -65,6 +67,7 @@ export default async function HomePage() {
       evergreenArticles={evergreen}
       hubs={hubs}
       recurringEvents={events}
+      quickAccessLinks={quickAccess}
     />
   );
 }

@@ -12,10 +12,8 @@ import { EventsShoppingSection } from '../components/sections/EventsShoppingSect
 import { MoreRodeoSection, MoreRodeoHubCard, MoreRodeoEventCard } from '../components/sections/MoreRodeoSection';
 import { LearningSection } from '../components/sections/LearningSection';
 
-// Every module is fed from the database by the server page (published articles and
-// the rodeo directory). Quick-access is plain navigation. No static mock content.
-import { QUICK_ACCESS_LINKS } from '../config/quickAccess';
 import { Article, Discipline } from '../types';
+import type { QuickAccessLink } from '../lib/cms/navTypes';
 import { ROUTES } from '../config/routes';
 
 export interface HomeViewProps {
@@ -29,6 +27,7 @@ export interface HomeViewProps {
   evergreenArticles: Article[];
   hubs: MoreRodeoHubCard[];
   recurringEvents: MoreRodeoEventCard[];
+  quickAccessLinks: QuickAccessLink[];
 }
 
 export const HomeView: React.FC<HomeViewProps> = ({
@@ -42,6 +41,7 @@ export const HomeView: React.FC<HomeViewProps> = ({
   evergreenArticles,
   hubs,
   recurringEvents,
+  quickAccessLinks,
 }) => {
   const router = useRouter();
 
@@ -61,7 +61,7 @@ export const HomeView: React.FC<HomeViewProps> = ({
 
       <LatestCoverage articles={latestArticles} onSelectArticle={handleSelectArticle} />
 
-      <QuickAccess items={QUICK_ACCESS_LINKS} onNavigateSection={handleNavigateSection} />
+      <QuickAccess items={quickAccessLinks.map((qa) => ({ id: qa.id, title: qa.label, description: qa.description, category: '', targetSectionId: '', targetRoute: qa.url }))} onNavigateSection={handleNavigateSection} />
 
       <CompetitionSection disciplines={disciplines} onSelectDiscipline={handleSelectDiscipline} />
 

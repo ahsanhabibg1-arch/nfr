@@ -20,7 +20,7 @@ export function generateStaticParams() {
 
 export async function generateMetadata({ params }: Params): Promise<Metadata> {
   const { section } = await params;
-  const meta = getSectionMeta(section);
+  const meta = await getSectionMeta(section);
   if (!meta) return {};
   return buildMetadata({
     title: `${meta.name} — Coverage & Guides`,
@@ -31,7 +31,7 @@ export async function generateMetadata({ params }: Params): Promise<Metadata> {
 
 export default async function SectionPage({ params }: Params) {
   const { section } = await params;
-  const meta = getSectionMeta(section);
+  const meta = await getSectionMeta(section);
   if (!meta) notFound();
 
   return (

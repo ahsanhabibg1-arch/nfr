@@ -34,6 +34,7 @@ export const CMS_MODULES: CmsModule[] = [
   { id: 'analytics', label: 'Analytics & Search', path: '/admin/analytics/', view: 'analytics.view' },
   { id: 'monetization', label: 'Monetization & Ads', path: '/admin/monetization/', view: 'monetization.view' },
   { id: 'team', label: 'Team & Permissions', path: '/admin/team/', view: 'user.manage' },
+  { id: 'info-pages', label: 'Info & Legal Pages', path: '/admin/info-pages/', view: 'system.config' },
   { id: 'settings', label: 'System Settings', path: '/admin/settings/', view: 'system.config' },
 ];
 

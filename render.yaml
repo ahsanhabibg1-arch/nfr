@@ -52,6 +52,9 @@ services:
         sync: false
       - key: MEDIA_S3_SECRET_ACCESS_KEY
         sync: false
+      # --- staging SEO protection (Batch 29) ---
+      - key: STAGING_NOINDEX
+        value: "true"              # X-Robots-Tag: noindex on all HTML responses; prevents indexing
       # --- optional ---
       - key: APP_VERSION
         sync: false

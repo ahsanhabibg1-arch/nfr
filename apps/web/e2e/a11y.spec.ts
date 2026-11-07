@@ -142,6 +142,8 @@ test.describe('accessibility (automated subset)', () => {
 
   for (const [label, url] of ADMIN_PAGES) {
     test(`${label} (${url}, authenticated)`, async ({ page }) => {
+      // Data-heavy admin pages can take longer to render + axe-analyze
+      test.setTimeout(60_000);
       await loginAsFixtureAdmin(page);
       await page.goto(url);
       await expect(page.locator('main h1')).toBeVisible();

@@ -72,7 +72,8 @@ test.describe('admin smoke', () => {
     await login(page);
     const id = await articleId(FIXTURE_SLUGS.publishedArticle);
     await page.goto(`/admin/articles/${id}/edit/`);
-    await expect(page.getByRole('heading', { name: /Sources/ })).toBeVisible();
+    // The article editor is a heavy client component with 6 panels; wait for hydration
+    await expect(page.getByRole('heading', { name: /Sources/ })).toBeVisible({ timeout: 15_000 });
 
     await expect(page.getByRole('button', { name: 'Schedule', exact: true })).toHaveCount(0);
     const scheduledOption = page.locator('select option[value="scheduled"]');

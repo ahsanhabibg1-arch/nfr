@@ -1,21 +1,14 @@
 import React from 'react';
 import Link from 'next/link';
-import {
-  PRIMARY_SECTIONS,
-  ROUTES
-} from '../config/routes';
-import { getPublishedArticlesBySection, getAllDisciplines } from '../lib/content';
+import { ROUTES } from '../config/routes';
+import { getSectionMeta, getPublishedArticlesBySection, getAllDisciplines } from '../lib/content';
 import { SectionLandingHero } from '../components/editorial/SectionLandingHero';
 import { EditorialArticleGrid } from '../components/editorial/EditorialArticleGrid';
 import { ContentEmptyState } from '../components/editorial/ContentEmptyState';
 import { ImageWithCredit } from '../components/ImageWithCredit';
 
-// Async server component: the section article feed and the discipline grid come from
-// the database. The Phase 0 static modules (plan/watch guides, entertainment, shopping,
-// hubs, events) were removed in Phase 2 — they presented unverified facts. The
-// /rodeo-events/ page renders the DB-backed directory below this view.
 export async function SectionLandingView({ sectionKey }: { sectionKey: string }) {
-  const sectionMeta = PRIMARY_SECTIONS[sectionKey];
+  const sectionMeta = (await getSectionMeta(sectionKey))!;
 
   const sectionArticles = await getPublishedArticlesBySection(sectionMeta.categoryKey);
   const disciplines = await getAllDisciplines();

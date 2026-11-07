@@ -4,8 +4,9 @@ import { prisma } from '../db';
 import { Actor, audit } from './guard';
 import { roleHasPermission } from '../auth/rbac';
 import { ServiceError } from './articleService';
-import { NavLink, NavLocation, NAV_LOCATIONS, PublicNavigation } from './navTypes';
+import { NavLink, NavLocation, NAV_LOCATIONS, PublicNavigation, type QuickAccessLink } from './navTypes';
 import { CANONICAL, seedCanonicalNavigation } from './navCanonical';
+import { QUICK_ACCESS_LINKS } from '../../config/quickAccess';
 
 /**
  * Website & Navigation (Batch 04 §F). Requires `navigation.manage` to mutate;
@@ -45,16 +46,17 @@ export async function getPublicNavigation(): Promise<PublicNavigation> {
 }
 
 // ---- Admin ----
-export interface NavItemRow { id: string; location: string; label: string; url: string; sortOrder: number; isExternal: boolean; isSystem: boolean; visible: boolean; }
+export interface NavItemRow { id: string; location: string; label: string; url: string; description: string | null; sortOrder: number; isExternal: boolean; isSystem: boolean; visible: boolean; }
 export async function listNavItems(): Promise<NavItemRow[]> {
   const rows = await prisma.navigationItem.findMany({ orderBy: [{ location: 'asc' }, { sortOrder: 'asc' }] });
-  return rows.map((r) => ({ id: r.id, location: r.location, label: r.label, url: r.url, sortOrder: r.sortOrder, isExternal: r.isExternal, isSystem: r.isSystem, visible: r.visible }));
+  return rows.map((r) => ({ id: r.id, location: r.location, label: r.label, url: r.url, description: r.description, sortOrder: r.sortOrder, isExternal: r.isExternal, isSystem: r.isSystem, visible: r.visible }));
 }
 
 const NavInput = z.object({
   location: z.enum(NAV_LOCATIONS),
   label: z.string().min(1).max(120),
   url: z.string().min(1).max(500),
+  description: z.string().max(500).optional(),
   sortOrder: z.number().int().optional(),
   isExternal: z.boolean().optional(),
   visible: z.boolean().optional(),
@@ -65,7 +67,7 @@ export async function createNavItem(actor: Actor, raw: NavInput): Promise<{ id: 
   requireNav(actor);
   const v = NavInput.parse(raw);
   const url = validateUrl(v.url, v.isExternal ?? false);
-  const r = await prisma.navigationItem.create({ data: { location: v.location, label: v.label, url, sortOrder: v.sortOrder ?? 99, isExternal: v.isExternal ?? false, visible: v.visible ?? true, isSystem: false } });
+  const r = await prisma.navigationItem.create({ data: { location: v.location, label: v.label, url, description: v.description ?? null, sortOrder: v.sortOrder ?? 99, isExternal: v.isExternal ?? false, visible: v.visible ?? true, isSystem: false } });
   await audit(actor.id, 'navigation.create', 'navigation_item', r.id, `${v.location}:${v.label}`);
   return { id: r.id };
 }
@@ -83,6 +85,7 @@ export async function updateNavItem(actor: Actor, id: string, raw: NavInput): Pr
       label: v.label,
       sortOrder: v.sortOrder ?? existing.sortOrder,
       visible: v.visible ?? existing.visible,
+      description: v.description ?? existing.description,
       ...(existing.isSystem ? {} : { location: v.location, url, isExternal: v.isExternal ?? false }),
     },
   });
@@ -116,4 +119,34 @@ export async function restoreCanonicalNav(actor: Actor): Promise<{ created: numb
   const r = await seedCanonicalNavigation(prisma);
   await audit(actor.id, 'navigation.restore_canonical', 'navigation_item', undefined, `created ${r.created}, skipped ${r.skipped}`);
   return r;
+}
+
+/**
+ * Quick-access links for the homepage (Batch 28). Returns DB-managed items
+ * from `location = 'quick-access'`; falls back to the hardcoded config when
+ * no DB rows exist for that location.
+ */
+export async function getQuickAccessLinks(): Promise<QuickAccessLink[]> {
+  const rows = await prisma.navigationItem.findMany({
+    where: { location: 'quick-access', visible: true },
+    orderBy: { sortOrder: 'asc' },
+  });
+  if (rows.length > 0) {
+    return rows.map((r) => ({
+      id: r.id,
+      label: r.label,
+      url: r.url,
+      description: r.description ?? '',
+      sortOrder: r.sortOrder,
+      isExternal: r.isExternal,
+    }));
+  }
+  return QUICK_ACCESS_LINKS.map((qa) => ({
+    id: qa.id,
+    label: qa.title,
+    url: qa.targetRoute ?? '/',
+    description: qa.description,
+    sortOrder: 0,
+    isExternal: false,
+  }));
 }

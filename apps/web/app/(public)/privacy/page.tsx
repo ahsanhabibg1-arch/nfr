@@ -1,7 +1,6 @@
 import { LegalPageView, legalPageMetadata } from '@/views/LegalPageView';
 
-export const dynamic = 'force-static';
-export const metadata = legalPageMetadata('privacy');
+export async function generateMetadata() { return legalPageMetadata('privacy'); }
 
 export default function Page() {
   return <LegalPageView slug="privacy" />;

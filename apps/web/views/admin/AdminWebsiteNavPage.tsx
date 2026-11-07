@@ -15,8 +15,9 @@ const LOCATION_LABELS: Record<NavLocation, string> = {
   header: 'Header — Primary Navigation',
   'footer-sections': 'Footer — Editorial Sections',
   'footer-academy': 'Footer — Spectator Academy',
+  'quick-access': 'Homepage — Quick Access',
 };
-const LOCATIONS: NavLocation[] = ['header', 'footer-sections', 'footer-academy'];
+const LOCATIONS: NavLocation[] = ['header', 'footer-sections', 'footer-academy', 'quick-access'];
 const inp = 'w-full p-2 bg-stone-50 border border-stone-200 rounded-xs';
 const lbl = 'block text-[10px] font-mono uppercase text-stone-500 mb-1';
 
@@ -33,12 +34,12 @@ export const AdminWebsiteNavPage: React.FC<Props> = ({ items, canManage }) => {
   const [modal, setModal] = useState(false);
   const [editId, setEditId] = useState<string | null>(null);
   const [isSystem, setIsSystem] = useState(false);
-  const [form, setForm] = useState<{ location: NavLocation; label: string; url: string; sortOrder: number; isExternal: boolean; visible: boolean }>({
-    location: 'header', label: '', url: '', sortOrder: 99, isExternal: false, visible: true,
+  const [form, setForm] = useState<{ location: NavLocation; label: string; url: string; description: string; sortOrder: number; isExternal: boolean; visible: boolean }>({
+    location: 'header', label: '', url: '', description: '', sortOrder: 99, isExternal: false, visible: true,
   });
 
-  const openNew = (location: NavLocation) => { setEditId(null); setIsSystem(false); setForm({ location, label: '', url: '', sortOrder: 99, isExternal: false, visible: true }); setModal(true); };
-  const openEdit = (r: NavItemRow) => { setEditId(r.id); setIsSystem(r.isSystem); setForm({ location: r.location as NavLocation, label: r.label, url: r.url, sortOrder: r.sortOrder, isExternal: r.isExternal, visible: r.visible }); setModal(true); };
+  const openNew = (location: NavLocation) => { setEditId(null); setIsSystem(false); setForm({ location, label: '', url: '', description: '', sortOrder: 99, isExternal: false, visible: true }); setModal(true); };
+  const openEdit = (r: NavItemRow) => { setEditId(r.id); setIsSystem(r.isSystem); setForm({ location: r.location as NavLocation, label: r.label, url: r.url, description: r.description ?? '', sortOrder: r.sortOrder, isExternal: r.isExternal, visible: r.visible }); setModal(true); };
   const save = () => startTransition(async () => {
     const r = editId ? await updateNavItemAction(editId, form) : await createNavItemAction(form);
     if (r.ok) { setModal(false); flash('Saved.'); router.refresh(); } else flash(r.error || 'Error');
@@ -110,6 +111,7 @@ export const AdminWebsiteNavPage: React.FC<Props> = ({ items, canManage }) => {
             </div>
             <div><label className={lbl}>Label</label><input value={form.label} onChange={(e) => setForm({ ...form, label: e.target.value })} className={inp} /></div>
             <div><label className={lbl}>URL (internal path like /plan-watch/ or full https:// link)</label><input value={form.url} disabled={isSystem} onChange={(e) => setForm({ ...form, url: e.target.value })} className={`${inp} disabled:opacity-60`} /></div>
+            {form.location === 'quick-access' && <div><label className={lbl}>Description (shown on the homepage card)</label><input value={form.description} onChange={(e) => setForm({ ...form, description: e.target.value })} className={inp} /></div>}
             <div className="flex items-center gap-4">
               <label className="flex items-center gap-2"><input type="checkbox" disabled={isSystem} checked={form.isExternal} onChange={(e) => setForm({ ...form, isExternal: e.target.checked })} /> External link</label>
               <label className="flex items-center gap-2"><input type="checkbox" checked={form.visible} onChange={(e) => setForm({ ...form, visible: e.target.checked })} /> Visible</label>

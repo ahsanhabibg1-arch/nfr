@@ -243,10 +243,19 @@ export async function getRodeoDisciplineBySlug(slug: string): Promise<Discipline
 /** Batch 01 compatibility alias. */
 export const getDisciplineBySlug = getRodeoDisciplineBySlug;
 
-// ---- Section route metadata (static routing config, not DB) ----------------
+// ---- Section route metadata (config defaults merged with DB overrides) ------
 
-export function getSectionMeta(sectionKey: string): SectionMeta | undefined {
-  return PRIMARY_SECTIONS[sectionKey];
+export async function getSectionMeta(sectionKey: string): Promise<SectionMeta | undefined> {
+  const base = PRIMARY_SECTIONS[sectionKey];
+  if (!base) return undefined;
+  const override = await prisma.sectionConfig.findUnique({ where: { sectionKey } });
+  if (!override) return base;
+  return {
+    ...base,
+    name: override.displayName || base.name,
+    tagline: override.tagline || base.tagline,
+    description: override.description || base.description,
+  };
 }
 
 export function getAllSectionKeys(): string[] {

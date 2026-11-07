@@ -7,6 +7,7 @@ import { ServiceError } from './articleService';
 import { assertEntityExists, requireEntityPerm } from './landingEntities';
 import { getEntitySeo } from './entitySeoService';
 import { listFaqsAdmin } from './faqService';
+import { PRIMARY_SECTIONS } from '../../config/routes';
 
 /**
  * Read model for the Landing-Page SEO & FAQ admin manager (Batch 11). Listing requires
@@ -30,7 +31,7 @@ export interface LandingEntityGroup { type: LandingEntityType; label: string; it
 
 const GROUP_LABEL: Record<LandingEntityType, string> = {
   RODEO_HUB: 'Rodeo Hubs', RODEO_EVENT: 'Rodeo Events', RODEO_EDITION: 'Event Editions', DISCIPLINE: 'Disciplines', CATEGORY: 'Categories',
-  VENUE: 'Venues', COMPETITOR: 'Competitors',
+  VENUE: 'Venues', COMPETITOR: 'Competitors', SECTION: 'Primary Sections',
 };
 
 export async function listLandingEntities(actor: Actor): Promise<LandingEntityGroup[]> {
@@ -60,6 +61,7 @@ export async function listLandingEntities(actor: Actor): Promise<LandingEntityGr
     { type: 'CATEGORY', label: GROUP_LABEL.CATEGORY, items: categories.map((c) => row('CATEGORY', c.id, c.name, `/categories/${c.slug}/`)) },
     { type: 'VENUE', label: GROUP_LABEL.VENUE, items: venues.map((v) => row('VENUE', v.id, v.name, `/venues/${v.slug}/`)) },
     { type: 'COMPETITOR', label: GROUP_LABEL.COMPETITOR, items: competitors.map((c) => row('COMPETITOR', c.id, c.fullName, `/competitors/${c.slug}/`)) },
+    { type: 'SECTION', label: GROUP_LABEL.SECTION, items: Object.values(PRIMARY_SECTIONS).map((s) => row('SECTION', s.id, s.name, s.path)) },
   ];
 }
 
@@ -89,6 +91,7 @@ export async function getLandingDetail(actor: Actor, entityType: LandingEntityTy
   else if (entityType === 'CATEGORY') { const c = await prisma.category.findUniqueOrThrow({ where: { id: entityId }, select: { name: true, slug: true } }); label = c.name; publicUrl = `/categories/${c.slug}/`; }
   else if (entityType === 'VENUE') { const v = await prisma.venue.findUniqueOrThrow({ where: { id: entityId }, select: { name: true, slug: true } }); label = v.name; publicUrl = `/venues/${v.slug}/`; }
   else if (entityType === 'COMPETITOR') { const c = await prisma.competitor.findUniqueOrThrow({ where: { id: entityId }, select: { fullName: true, slug: true } }); label = c.fullName; publicUrl = `/competitors/${c.slug}/`; }
+  else if (entityType === 'SECTION') { const s = PRIMARY_SECTIONS[entityId]; if (s) { label = s.name; publicUrl = s.path; } }
   // canEdit = holds the entity's owning permission.
   let canEdit = true;
   try { requireEntityPerm(actor, entityType); } catch { canEdit = false; }
