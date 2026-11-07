@@ -2,7 +2,6 @@
 
 import React, { useState, useTransition } from 'react';
 import { useRouter } from 'next/navigation';
-import { AdminPageHeader } from '../../components/admin/AdminPageHeader';
 import { AdminModal } from '../../components/admin/AdminModal';
 import type { NavItemRow } from '../../lib/cms/navigationService';
 import type { NavLocation } from '../../lib/cms/navTypes';
@@ -47,7 +46,6 @@ export const AdminWebsiteNavPage: React.FC<Props> = ({ items, canManage }) => {
 
   return (
     <div className="space-y-6">
-      <AdminPageHeader title="Website & Navigation" description="Database-backed header and footer menus with a built-in static fallback. Canonical primary-section links are protected and can be hidden but not deleted." />
       {notice && <div className="p-3 bg-emerald-50 border border-emerald-200 text-emerald-800 text-xs rounded-xs">{notice}</div>}
       {!canManage && <div className="p-3 bg-stone-50 border border-stone-200 text-stone-600 text-xs rounded-xs">Read-only. Managing navigation requires the <code>navigation.manage</code> permission (Admin).</div>}
 

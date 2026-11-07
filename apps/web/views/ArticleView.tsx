@@ -10,13 +10,23 @@ import { SourceList } from '../components/editorial/SourceList';
 import { RelatedArticles } from '../components/editorial/RelatedArticles';
 import { DisclosureBanner } from '../components/editorial/DisclosureBanner';
 import { ROUTES } from '../config/routes';
+import { getPublishedSections } from '../lib/cms/pageLayoutService';
+import type { SectionSlot } from '../lib/cms/sectionRegistry';
 
-/**
- * Server component (Batch 01 §10). Receives an already-eligibility-checked,
- * published article from the route. The Phase 0 "Phase 0 Route" prototype banner
- * has been removed (Batch 01 §14).
- */
+function getSlot(sections: SectionSlot[], type: string): SectionSlot | undefined {
+  return sections.find((s) => s.sectionType === type);
+}
+
+function slotProp<T = string>(slot: SectionSlot | undefined, key: string, fallback: T): T {
+  if (!slot) return fallback;
+  const v = slot.props[key];
+  if (v === undefined || v === null || v === '') return fallback;
+  return v as T;
+}
+
 export async function ArticleView({ article }: { article: Article }) {
+  const layoutSections = await getPublishedSections('template:article');
+
   const tocItems: TOCItem[] = (article.structuredBody || [])
     .filter(
       (block): block is { type: 'heading'; level: 2 | 3; text: string; id?: string } =>
@@ -28,7 +38,14 @@ export async function ArticleView({ article }: { article: Article }) {
       level: block.level,
     }));
 
-  const related = await getRelatedPublishedArticles(article.id, 3);
+  const relatedSlot = getSlot(layoutSections, 'detail-related');
+  const relatedVisible = relatedSlot?.visible !== false;
+  const relatedCount = slotProp(relatedSlot, 'articleCount', 3);
+  const related = relatedVisible ? await getRelatedPublishedArticles(article.id, Number(relatedCount)) : [];
+  const ctaSlot = getSlot(layoutSections, 'detail-cta');
+  const ctaVisible = ctaSlot?.visible !== false;
+  const faqSlot = getSlot(layoutSections, 'detail-faq');
+  const faqVisible = faqSlot?.visible !== false;
 
   return (
     <div className="w-full bg-[#F7F3EA] text-[#0F1115] py-8 sm:py-12">
@@ -124,7 +141,17 @@ export async function ArticleView({ article }: { article: Article }) {
         </div>
 
         {/* Related Championship Articles */}
-        <RelatedArticles articles={related} />
+        {relatedVisible && <RelatedArticles articles={related} />}
+
+        {/* CTA from layout */}
+        {ctaVisible && slotProp(ctaSlot, 'ctaText', '') && (
+          <div className="mt-10 py-8 border-t border-stone-200 text-center">
+            <Link href={slotProp(ctaSlot, 'ctaUrl', '/')}
+              className="inline-block px-6 py-3 bg-[#0F1115] text-[#D4A757] font-semibold text-sm rounded-xs hover:bg-stone-800 transition-colors">
+              {slotProp(ctaSlot, 'ctaText', 'Continue Reading')}
+            </Link>
+          </div>
+        )}
       </div>
     </div>
   );

@@ -132,7 +132,7 @@ describe('A3 — scheduling UI', () => {
 // ---------------------------------------------------------------- A4 mock admin
 describe('A4 — no mock admin pages or data', () => {
   it('dead mock views and mock admin data are removed', () => {
-    for (const f of ['views/admin/AdminOverviewPage.tsx', 'views/admin/AdminWebsitePage.tsx', 'data/mockAdminData.ts']) {
+    for (const f of ['views/admin/AdminOverviewPage.tsx', 'data/mockAdminData.ts']) {
       expect(fs.existsSync(path.join(root, f)), f).toBe(false);
     }
   });

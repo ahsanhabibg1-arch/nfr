@@ -11,6 +11,11 @@ import {
 } from '@/lib/content';
 import { listPublicHubs, listPublicEvents } from '@/lib/rodeoContent';
 import { getQuickAccessLinks } from '@/lib/cms/navigationService';
+import { getPublishedSections } from '@/lib/cms/pageLayoutService';
+import { getActiveAnnouncements } from '@/lib/cms/announcementService';
+import { getActiveBlocksForPlacement } from '@/lib/cms/globalBlockService';
+import { getPublished } from '@/lib/cms/siteConfigService';
+import type { AppearanceConfig } from '@/lib/cms/siteConfigService';
 import { PRIMARY_SECTIONS } from '@/config/routes';
 
 export const revalidate = 60; // ISR: re-render homepage feeds at most once a minute.
@@ -34,7 +39,7 @@ export default async function HomePage() {
   const disciplines = await getAllDisciplines();
   const section = async (key: string, n: number) =>
     (await getPublishedArticlesBySection(PRIMARY_SECTIONS[key].categoryKey)).slice(0, n);
-  const [planWatch, entertainment, eventsShopping, evergreen, hubs, events, quickAccess] = await Promise.all([
+  const [planWatch, entertainment, eventsShopping, evergreen, hubs, events, quickAccess, layoutSections, announcements, topBlocks, bottomBlocks, appearance] = await Promise.all([
     section('plan-watch', 4),
     section('entertainment', 3),
     section('events-shopping', 3),
@@ -42,6 +47,11 @@ export default async function HomePage() {
     listPublicHubs(),
     listPublicEvents(),
     getQuickAccessLinks(),
+    getPublishedSections('homepage'),
+    getActiveAnnouncements(5),
+    getActiveBlocksForPlacement('homepage-top'),
+    getActiveBlocksForPlacement('homepage-bottom'),
+    getPublished<AppearanceConfig>('appearance'),
   ]);
 
   if (!hero) {
@@ -68,6 +78,11 @@ export default async function HomePage() {
       hubs={hubs}
       recurringEvents={events}
       quickAccessLinks={quickAccess}
+      layoutSections={layoutSections}
+      announcements={announcements}
+      topBlocks={topBlocks}
+      bottomBlocks={bottomBlocks}
+      appearance={appearance}
     />
   );
 }

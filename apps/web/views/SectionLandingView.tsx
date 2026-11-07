@@ -6,33 +6,64 @@ import { SectionLandingHero } from '../components/editorial/SectionLandingHero';
 import { EditorialArticleGrid } from '../components/editorial/EditorialArticleGrid';
 import { ContentEmptyState } from '../components/editorial/ContentEmptyState';
 import { ImageWithCredit } from '../components/ImageWithCredit';
+import { getPublishedSections } from '../lib/cms/pageLayoutService';
+import type { SectionSlot } from '../lib/cms/sectionRegistry';
+
+function getSlot(sections: SectionSlot[], type: string): SectionSlot | undefined {
+  return sections.find((s) => s.sectionType === type);
+}
+
+function slotProp(slot: SectionSlot | undefined, key: string, fallback: string): string {
+  if (!slot) return fallback;
+  const v = slot.props[key];
+  return typeof v === 'string' && v.length > 0 ? v : fallback;
+}
 
 export async function SectionLandingView({ sectionKey }: { sectionKey: string }) {
   const sectionMeta = (await getSectionMeta(sectionKey))!;
+  const layoutSections = await getPublishedSections(`section:${sectionKey}`);
 
   const sectionArticles = await getPublishedArticlesBySection(sectionMeta.categoryKey);
   const disciplines = await getAllDisciplines();
   const featuredStory = sectionArticles[0];
   const secondaryStories = sectionArticles.slice(1);
 
+  const heroSlot = getSlot(layoutSections, 'landing-hero');
+  const featuredSlot = getSlot(layoutSections, 'landing-featured');
+  const gridSlot = getSlot(layoutSections, 'landing-grid');
+  const pillsSlot = getSlot(layoutSections, 'landing-stat-pills');
+
+  const heroVisible = heroSlot?.visible !== false;
+  const featuredVisible = featuredSlot?.visible !== false;
+  const gridVisible = gridSlot?.visible !== false;
+  const pillsVisible = pillsSlot?.visible !== false;
+
+  const heroKicker = slotProp(heroSlot, 'kicker', 'Primary Department');
+  const heroTitle = slotProp(heroSlot, 'title', sectionMeta.name);
+  const heroDescription = slotProp(heroSlot, 'description', sectionMeta.description);
+
+  const featuredCtaText = slotProp(featuredSlot, 'ctaText', 'Read Full Story');
+  const gridCtaText = slotProp(gridSlot, 'ctaText', 'View Category Archive');
+
   return (
     <div className="w-full bg-[#F7F3EA] text-[#0F1115]">
-      {/* Editorial Section Hero */}
-      <SectionLandingHero
-        sectionTitle={sectionMeta.name}
-        tagline={sectionMeta.tagline}
-        description={sectionMeta.description}
-        kicker="Primary Department"
-        breadcrumbs={[{ label: sectionMeta.name }]}
-        statPills={[
-          { label: 'Published articles', value: String(sectionArticles.length) },
-          { label: 'Publisher', value: 'Independent' },
-        ]}
-      />
+      {heroVisible && (
+        <SectionLandingHero
+          sectionTitle={heroTitle}
+          tagline={sectionMeta.tagline}
+          description={heroDescription}
+          kicker={heroKicker}
+          breadcrumbs={[{ label: sectionMeta.name }]}
+          statPills={pillsVisible ? [
+            { label: 'Published articles', value: String(sectionArticles.length) },
+            { label: 'Publisher', value: 'Independent' },
+          ] : undefined}
+        />
+      )}
 
       <div className="max-w-[1280px] mx-auto px-4 sm:px-6 lg:px-8 py-12 space-y-14">
         {/* Lead Featured Story */}
-        {featuredStory && (
+        {featuredVisible && featuredStory && (
           <section className="bg-white border border-stone-200 rounded-sm overflow-hidden shadow-xs">
             <div className="grid grid-cols-1 lg:grid-cols-12 items-stretch">
               <div className="lg:col-span-7">
@@ -72,7 +103,7 @@ export async function SectionLandingView({ sectionKey }: { sectionKey: string })
                     href={ROUTES.ARTICLE(featuredStory.slug)}
                     className="text-[#8B5E3C] font-semibold hover:text-stone-900 transition-colors inline-flex items-center gap-1"
                   >
-                    Read Full Story &rarr;
+                    {featuredCtaText} &rarr;
                   </Link>
                 </div>
               </div>
@@ -130,7 +161,7 @@ export async function SectionLandingView({ sectionKey }: { sectionKey: string })
         )}
 
         {/* Remaining Secondary Stories Grid */}
-        {secondaryStories.length > 0 && (
+        {gridVisible && secondaryStories.length > 0 && (
           <section className="pt-8 border-t border-stone-200">
             <div className="flex items-center justify-between mb-6">
               <h3 className="text-xl font-serif font-bold text-[#0F1115]">
@@ -140,7 +171,7 @@ export async function SectionLandingView({ sectionKey }: { sectionKey: string })
                 href={ROUTES.CATEGORY(sectionKey)}
                 className="text-xs font-semibold uppercase tracking-wider text-[#8B5E3C] hover:text-stone-950 font-sans"
               >
-                View Category Archive &rarr;
+                {gridCtaText} &rarr;
               </Link>
             </div>
             <EditorialArticleGrid articles={secondaryStories} columns={3} />

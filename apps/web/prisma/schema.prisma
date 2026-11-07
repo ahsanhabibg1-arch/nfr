@@ -1588,3 +1588,89 @@ enum InfoPageStatus {
   APPROVED
   PUBLISHED
 }
+
+/// Admin-controlled page composition layout (Batch 31).
+/// One row per page template (e.g. "homepage", "section:competition").
+/// `draftSections` is the working copy; `publishedSections` is what the public site reads.
+/// Both store a JSON array of SectionSlot objects — see lib/cms/sectionRegistry.ts.
+model PageLayout {
+  id                  String    @id @default(uuid())
+  pageKey             String    @unique
+  draftSections       Json      @default("[]")
+  publishedSections   Json      @default("[]")
+  scheduledSections   Json?
+  scheduledAt         DateTime?
+  publishedAt         DateTime?
+  publishedById       String?
+  updatedById         String?
+  version             Int       @default(1)
+  createdAt           DateTime  @default(now())
+  updatedAt           DateTime  @updatedAt
+}
+
+/// Global announcement banner (Batch 33). Displayed at the top of public pages.
+/// Supports breaking/info types, date-windowed visibility, and priority ordering.
+model Announcement {
+  id          String           @id @default(uuid())
+  type        AnnouncementType @default(INFO)
+  text        String
+  linkUrl     String?
+  linkLabel   String?
+  articleId   String?
+  priority    Int              @default(0)
+  enabled     Boolean          @default(false)
+  startsAt    DateTime?
+  endsAt      DateTime?
+  createdById String?
+  updatedById String?
+  createdAt   DateTime         @default(now())
+  updatedAt   DateTime         @updatedAt
+}
+
+enum AnnouncementType {
+  BREAKING
+  INFO
+}
+
+/// Global reusable blocks (Batch 33). A block may appear in multiple placements.
+/// Supports date-windowed visibility and CMS content references.
+model GlobalBlock {
+  id          String          @id @default(uuid())
+  internalName String
+  type        GlobalBlockType @default(MESSAGE)
+  enabled     Boolean         @default(false)
+  content     String          @default("")
+  mediaUrl    String?
+  mediaAlt    String?
+  ctaLabel    String?
+  ctaUrl      String?
+  articleId   String?
+  placements  String[]        @default([])
+  priority    Int             @default(0)
+  startsAt    DateTime?
+  endsAt      DateTime?
+  createdById String?
+  updatedById String?
+  createdAt   DateTime        @default(now())
+  updatedAt   DateTime        @updatedAt
+}
+
+enum GlobalBlockType {
+  MESSAGE
+  CTA
+  FEATURED_STORY
+}
+
+/// Site-wide configuration (Batch 33). Stores draft/published JSON for
+/// footer, appearance, and other global settings as keyed documents.
+model SiteConfig {
+  key               String    @id
+  draft             Json      @default("{}")
+  published         Json      @default("{}")
+  publishedAt       DateTime?
+  publishedById     String?
+  updatedById       String?
+  version           Int       @default(1)
+  createdAt         DateTime  @default(now())
+  updatedAt         DateTime  @updatedAt
+}
