@@ -12,6 +12,8 @@ import { DisclosureBanner } from '../components/editorial/DisclosureBanner';
 import { ROUTES } from '../config/routes';
 import { getPublishedSections } from '../lib/cms/pageLayoutService';
 import type { SectionSlot } from '../lib/cms/sectionRegistry';
+import { getActiveBlocksForPlacement } from '../lib/cms/globalBlockService';
+import { GlobalBlockRenderer } from '../components/public/GlobalBlockRenderer';
 
 function getSlot(sections: SectionSlot[], type: string): SectionSlot | undefined {
   return sections.find((s) => s.sectionType === type);
@@ -25,7 +27,10 @@ function slotProp<T = string>(slot: SectionSlot | undefined, key: string, fallba
 }
 
 export async function ArticleView({ article }: { article: Article }) {
-  const layoutSections = await getPublishedSections('template:article');
+  const [layoutSections, articleEndBlocks] = await Promise.all([
+    getPublishedSections('template:article'),
+    getActiveBlocksForPlacement('article-end'),
+  ]);
 
   const tocItems: TOCItem[] = (article.structuredBody || [])
     .filter(
@@ -139,6 +144,13 @@ export async function ArticleView({ article }: { article: Article }) {
             </div>
           </aside>
         </div>
+
+        {/* Global blocks placed at "End of every article" */}
+        {articleEndBlocks.length > 0 && (
+          <div className="mt-10">
+            <GlobalBlockRenderer blocks={articleEndBlocks} />
+          </div>
+        )}
 
         {/* Related Championship Articles */}
         {relatedVisible && <RelatedArticles articles={related} />}

@@ -4,10 +4,15 @@ import React, { useState, useMemo } from 'react';
 import { Article, PrimarySection } from '../../types';
 import { SectionHeading } from '../SectionHeading';
 import { ImageWithCredit } from '../ImageWithCredit';
+import { type SectionCopy, copyOr } from './sectionCopy';
 
 interface LatestCoverageProps {
   articles: Article[];
   onSelectArticle: (article: Article) => void;
+  /** Page Builder copy overrides. */
+  copy?: SectionCopy;
+  /** DOM id — must be unique when the block is used more than once. */
+  anchorId?: string;
 }
 
 const CATEGORIES: ('All' | PrimarySection)[] = [
@@ -22,6 +27,8 @@ const CATEGORIES: ('All' | PrimarySection)[] = [
 export const LatestCoverage: React.FC<LatestCoverageProps> = ({
   articles,
   onSelectArticle,
+  copy = {},
+  anchorId = 'latest-coverage',
 }) => {
   const [selectedCategory, setSelectedCategory] = useState<'All' | PrimarySection>('All');
 
@@ -34,13 +41,14 @@ export const LatestCoverage: React.FC<LatestCoverageProps> = ({
   const standardStories = filteredArticles.slice(1);
 
   return (
-    <section id="latest-coverage" className="w-full bg-[#F7F3EA] text-[#0F1115] py-14 border-b border-stone-300">
+    <section id={anchorId} className="w-full bg-[#F7F3EA] text-[#0F1115] py-14 border-b border-stone-300">
       <div className="max-w-[1280px] mx-auto px-4 sm:px-6 lg:px-8">
         <SectionHeading
-          kicker="Latest"
-          title="Latest NFR Coverage"
-          description="The most recently published articles."
-          actionLabel="View All Coverage"
+          kicker={copyOr(copy.kicker, 'Latest')}
+          title={copyOr(copy.title, 'Latest NFR Coverage')}
+          description={copyOr(copy.description, 'The most recently published articles.')}
+          actionLabel={copyOr(copy.ctaText, 'View All Coverage')}
+          actionHref={copy.ctaUrl?.trim() || undefined}
           onActionClick={() => setSelectedCategory('All')}
         />
 

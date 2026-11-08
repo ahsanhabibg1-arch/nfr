@@ -3,15 +3,19 @@
 import React from 'react';
 import Link from 'next/link';
 import { QuickLinkItem } from '../../types';
+import { type SectionCopy, copyOr } from './sectionCopy';
 
 interface QuickAccessProps {
   items: QuickLinkItem[];
   onNavigateSection?: (sectionId: string) => void;
+  /** Page Builder copy overrides. */
+  copy?: SectionCopy;
 }
 
 export const QuickAccess: React.FC<QuickAccessProps> = ({
   items,
   onNavigateSection,
+  copy = {},
 }) => {
   return (
     <section id="quick-access" className="w-full bg-[#1E293B] text-white py-12 border-b border-white/10">
@@ -20,14 +24,14 @@ export const QuickAccess: React.FC<QuickAccessProps> = ({
         <div className="flex flex-col md:flex-row md:items-end justify-between mb-8 pb-4 border-b border-white/10 gap-3">
           <div>
             <span className="text-xs font-semibold uppercase tracking-widest text-[#D4A757] font-sans block mb-1">
-              Quick Links
+              {copyOr(copy.kicker, 'Quick Links')}
             </span>
             <h2 className="text-2xl sm:text-3xl font-serif font-bold text-white">
-              NFR Quick Access
+              {copyOr(copy.title, 'NFR Quick Access')}
             </h2>
           </div>
           <div className="text-xs text-stone-400 font-sans max-w-md">
-            Independent editorial reference links. NFRGuide is not a ticketing or streaming vendor.
+            {copyOr(copy.description, 'Independent editorial reference links. NFRGuide is not a ticketing or streaming vendor.')}
           </div>
         </div>
 

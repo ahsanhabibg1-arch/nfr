@@ -4,6 +4,7 @@ import React, { useState } from 'react';
 import Link from 'next/link';
 import { SectionHeading } from '../SectionHeading';
 import { ROUTES } from '../../config/routes';
+import { type SectionCopy, copyOr } from './sectionCopy';
 
 /** Database-backed hub / recurring-event cards (lib/rodeoContent listPublicHubs / listPublicEvents). */
 export interface MoreRodeoHubCard {
@@ -23,6 +24,8 @@ export interface MoreRodeoEventCard {
 interface MoreRodeoSectionProps {
   hubs: MoreRodeoHubCard[];
   recurringEvents: MoreRodeoEventCard[];
+  /** Page Builder copy overrides. */
+  copy?: SectionCopy;
 }
 
 /**
@@ -30,7 +33,7 @@ interface MoreRodeoSectionProps {
  * their canonical pages. Edition dates, purses and attendance are NOT shown here — those
  * belong on edition pages, sourced and verified (Requirements v2.0 §1, WEB-07).
  */
-export const MoreRodeoSection: React.FC<MoreRodeoSectionProps> = ({ hubs, recurringEvents }) => {
+export const MoreRodeoSection: React.FC<MoreRodeoSectionProps> = ({ hubs, recurringEvents, copy = {} }) => {
   const [activeTab, setActiveTab] = useState<'events' | 'hubs'>('events');
   const tabClass = (active: boolean) =>
     `px-3.5 py-1.5 text-xs font-semibold uppercase tracking-wider rounded-sm transition-colors ${
@@ -42,9 +45,9 @@ export const MoreRodeoSection: React.FC<MoreRodeoSectionProps> = ({ hubs, recurr
     <section id="more-rodeo" className="w-full bg-[#F7F3EA] text-[#0F1115] py-16 border-b border-stone-300">
       <div className="max-w-[1280px] mx-auto px-4 sm:px-6 lg:px-8">
         <SectionHeading
-          kicker="More Rodeo"
-          title="More Rodeo: Hubs &amp; Recurring Events"
-          description="Rodeo beyond the NFR: regional and thematic hubs, recurring events and their annual editions."
+          kicker={copyOr(copy.kicker, 'More Rodeo')}
+          title={copyOr(copy.title, 'More Rodeo: Hubs & Recurring Events')}
+          description={copyOr(copy.description, 'Rodeo beyond the NFR: regional and thematic hubs, recurring events and their annual editions.')}
         />
 
         <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 mb-8 pb-3 border-b border-stone-200">

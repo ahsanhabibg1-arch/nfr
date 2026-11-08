@@ -7,13 +7,24 @@ interface EditorialHeroProps {
   leadArticle: Article;
   secondaryStories: Article[];
   onSelectArticle: (article: Article) => void;
+  /** Page Builder overrides. */
+  heroImageUrl?: string;
+  heroImageAlt?: string;
+  kicker?: string;
+  ctaText?: string;
 }
 
 export const EditorialHero: React.FC<EditorialHeroProps> = ({
   leadArticle,
   secondaryStories,
   onSelectArticle,
+  heroImageUrl,
+  heroImageAlt,
+  kicker,
+  ctaText,
 }) => {
+  const imageSrc = heroImageUrl?.trim() || leadArticle.heroImage;
+  const imageAlt = heroImageUrl?.trim() ? (heroImageAlt?.trim() || leadArticle.title) : (leadArticle.imageAltText || leadArticle.title);
   return (
     <section className="relative w-full bg-[#0F1115] text-white pt-4 pb-14 border-b border-white/10 overflow-hidden">
       <div className="max-w-[1280px] mx-auto px-4 sm:px-6 lg:px-8">
@@ -21,7 +32,7 @@ export const EditorialHero: React.FC<EditorialHeroProps> = ({
         <div className="flex items-center justify-between text-xs font-sans text-stone-400 pb-3 border-b border-white/10 mb-6">
           <div className="flex items-center gap-2">
             <span className="font-semibold uppercase tracking-widest text-[#D4A757]">
-              Lead Editorial Feature
+              {kicker?.trim() || 'Lead Editorial Feature'}
             </span>
           </div>
         </div>
@@ -31,8 +42,8 @@ export const EditorialHero: React.FC<EditorialHeroProps> = ({
           {/* Background Image Layer */}
           <div className="absolute inset-0 z-0">
             <img
-              src={leadArticle.heroImage}
-              alt={leadArticle.title}
+              src={imageSrc}
+              alt={imageAlt}
               referrerPolicy="no-referrer"
               className="w-full h-full object-cover object-right md:object-center brightness-90 transform scale-100 hover:scale-[1.01] transition-transform duration-700 ease-out"
             />
@@ -83,19 +94,22 @@ export const EditorialHero: React.FC<EditorialHeroProps> = ({
                   onClick={() => onSelectArticle(leadArticle)}
                   className="px-5 py-2.5 bg-[#D4A757] hover:bg-[#C59642] text-[#0F1115] font-sans font-bold text-xs uppercase tracking-wider rounded-sm shadow-md transition-all duration-200 cursor-pointer"
                 >
-                  Read Full Article &rarr;
+                  {ctaText?.trim() || 'Read Full Article'} &rarr;
                 </button>
               </div>
             </div>
 
-            {/* Image Credit Tag */}
-            <div className="mt-4 text-[10px] font-sans text-stone-400 italic">
-              Photo: {leadArticle.imageCredit}
-            </div>
+            {/* Image Credit Tag (the article's credit does not apply to an override image) */}
+            {!heroImageUrl?.trim() && leadArticle.imageCredit && (
+              <div className="mt-4 text-[10px] font-sans text-stone-400 italic">
+                Photo: {leadArticle.imageCredit}
+              </div>
+            )}
           </div>
         </div>
 
         {/* Secondary Editorial Stories Row */}
+        {secondaryStories.length > 0 && (
         <div className="mt-6 grid grid-cols-1 md:grid-cols-2 gap-6">
           {secondaryStories.map((story) => (
             <article
@@ -133,6 +147,7 @@ export const EditorialHero: React.FC<EditorialHeroProps> = ({
             </article>
           ))}
         </div>
+        )}
       </div>
     </section>
   );

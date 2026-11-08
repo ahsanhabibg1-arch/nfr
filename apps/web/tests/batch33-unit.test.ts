@@ -255,9 +255,12 @@ describe('Batch 33 — Unified Site Experience', () => {
 
   // ── Homepage Integration ────────────────────────────────────────
   describe('Homepage Integration', () => {
-    it('homepage server page fetches announcements and global blocks', () => {
+    it('announcements are site-wide (public layout); homepage fetches its global blocks', () => {
+      const layout = read('app/(public)/layout.tsx');
+      expect(layout).toContain('getActiveAnnouncements');
+      expect(layout).toContain("getActiveBlocksForPlacement('footer-top')");
+      expect(layout).toContain("getPublished<FooterConfig>('footer')");
       const src = read('app/(public)/page.tsx');
-      expect(src).toContain('getActiveAnnouncements');
       expect(src).toContain('getActiveBlocksForPlacement');
       expect(src).toContain("'homepage-top'");
       expect(src).toContain("'homepage-bottom'");

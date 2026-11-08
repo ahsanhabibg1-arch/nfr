@@ -1,22 +1,14 @@
 import type { Metadata } from 'next';
+import { draftMode } from 'next/headers';
 import { HomeView } from '@/views/HomeView';
 import { buildMetadata } from '@/lib/seo';
-import {
-  getHeroArticle,
-  getSecondaryHeroStories,
-  getLatestArticles,
-  getAllDisciplines,
-  getPublishedArticlesBySection,
-  getEvergreenArticles,
-} from '@/lib/content';
-import { listPublicHubs, listPublicEvents } from '@/lib/rodeoContent';
-import { getQuickAccessLinks } from '@/lib/cms/navigationService';
-import { getPublishedSections } from '@/lib/cms/pageLayoutService';
-import { getActiveAnnouncements } from '@/lib/cms/announcementService';
+import { getHeroArticle } from '@/lib/content';
+import { getPublishedSections, getDraftSections } from '@/lib/cms/pageLayoutService';
+import { resolveHomepageSlots } from '@/lib/cms/homepageData';
 import { getActiveBlocksForPlacement } from '@/lib/cms/globalBlockService';
 import { getPublished } from '@/lib/cms/siteConfigService';
 import type { AppearanceConfig } from '@/lib/cms/siteConfigService';
-import { PRIMARY_SECTIONS } from '@/config/routes';
+import { getCurrentUser, userHasPermission } from '@/lib/auth/currentUser';
 
 export const revalidate = 60; // ISR: re-render homepage feeds at most once a minute.
 
@@ -31,30 +23,27 @@ export async function generateMetadata(): Promise<Metadata> {
   });
 }
 
+/** Draft preview is only honoured for signed-in staff who can edit the site layout. */
+async function isStaffDraftPreview(): Promise<boolean> {
+  const { isEnabled } = await draftMode();
+  if (!isEnabled) return false;
+  return userHasPermission(await getCurrentUser(), 'system.config');
+}
+
 export default async function HomePage() {
-  const hero = await getHeroArticle();
-  const secondary = await getSecondaryHeroStories(2, hero?.id);
-  const exclude = [hero?.id, ...secondary.map((a) => a.id)].filter(Boolean) as string[];
-  const latest = await getLatestArticles(6, exclude);
-  const disciplines = await getAllDisciplines();
-  const section = async (key: string, n: number) =>
-    (await getPublishedArticlesBySection(PRIMARY_SECTIONS[key].categoryKey)).slice(0, n);
-  const [planWatch, entertainment, eventsShopping, evergreen, hubs, events, quickAccess, layoutSections, announcements, topBlocks, bottomBlocks, appearance] = await Promise.all([
-    section('plan-watch', 4),
-    section('entertainment', 3),
-    section('events-shopping', 3),
-    getEvergreenArticles(4),
-    listPublicHubs(),
-    listPublicEvents(),
-    getQuickAccessLinks(),
-    getPublishedSections('homepage'),
-    getActiveAnnouncements(5),
+  const preview = await isStaffDraftPreview();
+  const layoutSlots = preview ? await getDraftSections('homepage') : await getPublishedSections('homepage');
+
+  // Announcements are rendered site-wide by the public layout (PublicChrome).
+  const [slots, topBlocks, bottomBlocks, appearance, anyArticle] = await Promise.all([
+    resolveHomepageSlots(layoutSlots),
     getActiveBlocksForPlacement('homepage-top'),
     getActiveBlocksForPlacement('homepage-bottom'),
     getPublished<AppearanceConfig>('appearance'),
+    getHeroArticle(),
   ]);
 
-  if (!hero) {
+  if (!anyArticle) {
     return (
       <div className="max-w-[1280px] mx-auto px-4 py-24 text-center">
         <h1 className="text-2xl font-serif font-bold text-stone-900">No published coverage yet</h1>
@@ -67,22 +56,11 @@ export default async function HomePage() {
 
   return (
     <HomeView
-      heroArticle={hero}
-      secondaryStories={secondary}
-      latestArticles={latest}
-      disciplines={disciplines}
-      planWatchArticles={planWatch}
-      entertainmentArticles={entertainment}
-      eventsShoppingArticles={eventsShopping}
-      evergreenArticles={evergreen}
-      hubs={hubs}
-      recurringEvents={events}
-      quickAccessLinks={quickAccess}
-      layoutSections={layoutSections}
-      announcements={announcements}
+      slots={slots}
       topBlocks={topBlocks}
       bottomBlocks={bottomBlocks}
       appearance={appearance}
+      isDraftPreview={preview}
     />
   );
 }

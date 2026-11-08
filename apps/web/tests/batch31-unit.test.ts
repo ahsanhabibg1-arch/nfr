@@ -132,11 +132,22 @@ describe('Batch 31 — Page Layout System', () => {
   });
 
   // ---- Homepage integration ----
-  it('HomeView uses layoutSections for rendering order', () => {
+  it('HomeView renders each slot with its own props (no fixed section map)', () => {
     const src = read('views/HomeView.tsx');
-    expect(src).toContain('layoutSections');
-    expect(src).toContain('sectionMap');
-    expect(src).toContain('visibleSections');
+    expect(src).toContain('slots.map');
+    expect(src).toContain('copyFromProps(slot.props)');
+    expect(src).toContain("p(slot, 'heroImageUrl')");
+    expect(src).not.toContain('sectionMap');
+  });
+
+  it('homepage route resolves per-slot data and honours draft preview', () => {
+    const page = read('app/(public)/page.tsx');
+    expect(page).toContain('resolveHomepageSlots');
+    expect(page).toContain('draftMode');
+    expect(page).toContain("getDraftSections('homepage')");
+    const data = read('lib/cms/homepageData.ts');
+    expect(data).toContain("numProp(slot.props, 'articleCount'");
+    expect(data).toContain("idListProp(props, 'featuredIds')");
   });
 
   // ---- Section landing integration ----
@@ -274,6 +285,7 @@ describe('Batch 31 — Page Layout System', () => {
   // ---- Service validates image props ----
   it('service validates image URL props', () => {
     const src = read('lib/cms/pageLayoutService.ts');
-    expect(src).toContain("key.toLowerCase().includes('image')");
+    // Only *Url props are URL-validated, so alt text / position props are not rejected.
+    expect(src).toContain('const isUrlProp = /url$/i.test(key);');
   });
 });

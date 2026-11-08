@@ -116,7 +116,7 @@ export const AdminGlobalBlocksEditor: React.FC<Props> = ({ blocks, canManage }) 
       </div>
 
       {modal && (
-        <AdminModal title={editId ? 'Edit Global Block' : 'New Global Block'} onClose={() => setModal(false)}>
+        <AdminModal isOpen={modal} title={editId ? 'Edit Global Block' : 'New Global Block'} onClose={() => setModal(false)}>
           <div className="space-y-3 max-h-[70vh] overflow-y-auto pr-1">
             <div><label className={lbl}>Internal Name</label><input value={form.internalName} onChange={(e) => setForm({ ...form, internalName: e.target.value })} className={inp} placeholder="e.g. Holiday CTA Banner" /></div>
             <div><label className={lbl}>Type</label><select value={form.type} onChange={(e) => setForm({ ...form, type: e.target.value as FormState['type'] })} className={inp}>

@@ -105,7 +105,7 @@ export const AdminAnnouncementsEditor: React.FC<Props> = ({ announcements, canMa
       </div>
 
       {modal && (
-        <AdminModal title={editId ? 'Edit Announcement' : 'New Announcement'} onClose={() => setModal(false)}>
+        <AdminModal isOpen={modal} title={editId ? 'Edit Announcement' : 'New Announcement'} onClose={() => setModal(false)}>
           <div className="space-y-3">
             <div><label className={lbl}>Type</label><select value={form.type} onChange={(e) => setForm({ ...form, type: e.target.value as FormState['type'] })} className={inp}><option value="INFO">Informational</option><option value="BREAKING">Breaking</option></select></div>
             <div><label className={lbl}>Text</label><textarea value={form.text} onChange={(e) => setForm({ ...form, text: e.target.value })} className={inp} rows={2} /></div>

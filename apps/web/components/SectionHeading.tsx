@@ -1,6 +1,7 @@
 'use client';
 
 import React from 'react';
+import Link from 'next/link';
 
 interface SectionHeadingProps {
   kicker?: string;
@@ -8,6 +9,8 @@ interface SectionHeadingProps {
   description?: string;
   actionLabel?: string;
   onActionClick?: () => void;
+  /** When set, the action renders as a link instead of a button. */
+  actionHref?: string;
   dark?: boolean;
 }
 
@@ -17,8 +20,12 @@ export const SectionHeading: React.FC<SectionHeadingProps> = ({
   description,
   actionLabel,
   onActionClick,
+  actionHref,
   dark = false,
 }) => {
+  const actionClass = `group inline-flex items-center gap-1.5 text-xs font-semibold tracking-wider uppercase font-sans py-2 px-1 transition-colors whitespace-nowrap self-start md:self-end ${
+    dark ? 'text-[#D4A757] hover:text-white' : 'text-[#8B5E3C] hover:text-[#0F1115]'
+  }`;
   return (
     <div className="flex flex-col md:flex-row md:items-end justify-between mb-8 pb-4 border-b border-current/10 gap-4">
       <div className="max-w-2xl">
@@ -43,14 +50,16 @@ export const SectionHeading: React.FC<SectionHeadingProps> = ({
         )}
       </div>
 
-      {actionLabel && (
+      {actionLabel && actionHref && (
+        <Link href={actionHref} className={actionClass}>
+          <span>{actionLabel}</span>
+          <span className="transition-transform group-hover:translate-x-1" aria-hidden="true">&rarr;</span>
+        </Link>
+      )}
+      {actionLabel && !actionHref && (
         <button
           onClick={onActionClick}
-          className={`group inline-flex items-center gap-1.5 text-xs font-semibold tracking-wider uppercase font-sans py-2 px-1 transition-colors whitespace-nowrap self-start md:self-end ${
-            dark 
-              ? 'text-[#D4A757] hover:text-white' 
-              : 'text-[#8B5E3C] hover:text-[#0F1115]'
-          }`}
+          className={actionClass}
         >
           <span>{actionLabel}</span>
           <span className="transition-transform group-hover:translate-x-1" aria-hidden="true">&rarr;</span>

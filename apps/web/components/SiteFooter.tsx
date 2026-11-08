@@ -6,6 +6,7 @@ import { ROUTES } from '../config/routes';
 import { LEGAL_PAGES } from '../config/legalPages';
 import type { NavLink } from '../lib/cms/navTypes';
 import { CANONICAL } from '../lib/cms/navCanonical';
+import type { FooterConfig } from '../lib/cms/siteConfigService';
 
 // Static fallbacks mirror the original footer menus; used when the DB-backed
 // navigation is empty or unavailable.
@@ -49,18 +50,38 @@ const POLICY_LINKS: NavLink[] = LEGAL_PAGES.map((p) => ({ label: p.label, url: p
 interface SiteFooterProps {
   sections?: NavLink[];
   academy?: NavLink[];
+  /** Published Site Experience → Footer config. Blank fields keep the built-in defaults. */
+  config?: FooterConfig;
 }
 
-export const SiteFooter: React.FC<SiteFooterProps> = ({ sections, academy }) => {
+const DEFAULT_DESCRIPTION = 'An independent editorial publication covering the National Finals Rodeo, rodeo competition, Western culture and rodeo events worldwide.';
+const DEFAULT_COPYRIGHT = `© ${new Date().getFullYear()} NFRGuide.com. Independent rodeo publication.`;
+
+const text = (v: string | undefined, fallback: string) => (v && v.trim() ? v : fallback);
+
+export const SiteFooter: React.FC<SiteFooterProps> = ({ sections, academy, config = {} }) => {
   const sectionLinks = sections && sections.length > 0 ? sections : SECTIONS_FALLBACK;
   const baseAcademy = academy && academy.length > 0 ? academy : ACADEMY_FALLBACK;
   const academyLinks = [...baseAcademy, ...DIRECTORY_LINKS.filter((d) => !baseAcademy.some((a) => a.url === d.url))];
+
+  // Columns: the CMS footer columns replace the two menu-driven columns when configured.
+  // Publication Policies always stays (required legal links).
+  const customColumns = (config.columns ?? []).filter((c) => c.title && c.links?.length);
+  const menuColumns = customColumns.length > 0
+    ? customColumns.map((c) => ({ title: c.title, links: c.links.map((l) => ({ label: l.label, url: l.url, isExternal: Boolean(l.isExternal) })) }))
+    : [
+        { title: 'Editorial Sections', links: sectionLinks },
+        { title: 'Spectator Academy', links: academyLinks },
+      ];
+  const socialLinks = (config.socialLinks ?? []).filter((s) => s.platform && /^https:\/\//.test(s.url));
+  const gridCols = menuColumns.length + 1 + 2; // menu columns + policies + 2-wide brand block
+  const lgGrid = gridCols >= 6 ? 'lg:grid-cols-6' : gridCols === 4 ? 'lg:grid-cols-4' : 'lg:grid-cols-5';
 
   return (
     <footer className="w-full bg-[#0F1115] text-stone-400 font-sans border-t border-white/10 pt-16 pb-12">
       <div className="max-w-[1280px] mx-auto px-4 sm:px-6 lg:px-8">
         {/* Main Footer Grid */}
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-5 gap-10 pb-12 border-b border-white/10">
+        <div className={`grid grid-cols-1 md:grid-cols-2 ${lgGrid} gap-10 pb-12 border-b border-white/10`}>
           {/* Col 1 & 2: Brand Lockup & Independent Mission */}
           <div className="lg:col-span-2 space-y-4">
             <div className="flex items-baseline gap-2">
@@ -69,9 +90,25 @@ export const SiteFooter: React.FC<SiteFooterProps> = ({ sections, academy }) => 
               </Link>
             </div>
             
-            <p className="text-sm text-stone-300 leading-relaxed max-w-sm">
-              An independent editorial publication covering the National Finals Rodeo, rodeo competition, Western culture and rodeo events worldwide.
+            {config.tagline?.trim() && (
+              <p className="text-xs uppercase tracking-widest font-semibold text-[#D4A757]">{config.tagline}</p>
+            )}
+            <p className="text-sm text-stone-300 leading-relaxed max-w-sm whitespace-pre-line">
+              {text(config.description, DEFAULT_DESCRIPTION)}
             </p>
+
+            {socialLinks.length > 0 && (
+              <ul className="flex flex-wrap gap-3" aria-label="Social profiles">
+                {socialLinks.map((s) => (
+                  <li key={s.platform + s.url}>
+                    <a href={s.url} target="_blank" rel="noopener noreferrer"
+                      className="inline-block px-3 py-1.5 text-[11px] font-semibold uppercase tracking-wider border border-white/15 rounded-sm text-stone-300 hover:text-white hover:border-[#D4A757] transition-colors">
+                      {s.platform}
+                    </a>
+                  </li>
+                ))}
+              </ul>
+            )}
 
             {/* Independent Disclaimer Callout Box */}
             <div className="p-4 bg-white/5 border border-white/10 rounded-sm text-xs text-stone-400 space-y-1.5 max-w-md">
@@ -84,21 +121,15 @@ export const SiteFooter: React.FC<SiteFooterProps> = ({ sections, academy }) => 
             </div>
           </div>
 
-          {/* Col 3: Primary Navigation */}
-          <div>
-            <h2 className="text-xs uppercase tracking-widest font-bold text-[#D4A757] mb-4">
-              Editorial Sections
-            </h2>
-            <FooterLinks links={sectionLinks} />
-          </div>
-
-          {/* Col 4: Spectator Guides & Learning */}
-          <div>
-            <h2 className="text-xs uppercase tracking-widest font-bold text-[#D4A757] mb-4">
-              Spectator Academy
-            </h2>
-            <FooterLinks links={academyLinks} />
-          </div>
+          {/* Menu columns: CMS footer columns when configured, else the navigation menus */}
+          {menuColumns.map((col) => (
+            <div key={col.title}>
+              <h2 className="text-xs uppercase tracking-widest font-bold text-[#D4A757] mb-4">
+                {col.title}
+              </h2>
+              <FooterLinks links={col.links} />
+            </div>
+          ))}
 
           {/* Col 5: Institutional & Policy */}
           <div>
@@ -112,9 +143,12 @@ export const SiteFooter: React.FC<SiteFooterProps> = ({ sections, academy }) => 
         {/* Bottom Bar: Copyright & Compliance */}
         <div className="pt-8 flex flex-col md:flex-row items-center justify-between text-xs text-ink-inverse-muted gap-4">
           <p>
-            &copy; 2026 NFRGuide.com. Independent rodeo publication.
+            {text(config.copyright, DEFAULT_COPYRIGHT)}
           </p>
           <div className="flex items-center gap-6">
+            {config.statusText?.trim() && (
+              <span className="font-mono text-[11px] text-stone-400">{config.statusText}</span>
+            )}
             <span className="font-mono text-[11px] text-stone-400">Domain: nfrguide.com</span>
             <Link href={ROUTES.ADMIN} className="font-mono text-[11px] text-[#D4A757] hover:text-white transition-colors flex items-center gap-1 font-semibold">
               Editorial CMS →

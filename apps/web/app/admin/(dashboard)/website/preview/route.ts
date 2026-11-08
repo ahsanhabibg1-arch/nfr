@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
+import { draftMode } from 'next/headers';
 import { requireUser } from '@/lib/auth/currentUser';
 import { roleHasPermission } from '@/lib/auth/rbac';
 import { prisma } from '@/lib/db';
@@ -8,6 +9,12 @@ export async function GET(req: NextRequest) {
   const user = await requireUser();
   if (!roleHasPermission(user.roles, 'system.config')) {
     return NextResponse.json({ error: 'Forbidden' }, { status: 403 });
+  }
+
+  // ?exit=1 turns draft preview off and returns to the editor.
+  if (req.nextUrl.searchParams.get('exit') === '1') {
+    (await draftMode()).disable();
+    return NextResponse.redirect(new URL('/admin/website/', req.url));
   }
 
   const pageKey = req.nextUrl.searchParams.get('pageKey');
@@ -21,6 +28,10 @@ export async function GET(req: NextRequest) {
   }
 
   const targetUrl = pageKeyToUrl(pageKey);
+
+  // Next.js draft mode: public pages render the saved *draft* layout for this staff session
+  // (pages re-check the system.config permission before honouring it). Visitors are unaffected.
+  (await draftMode()).enable();
 
   const html = `<!DOCTYPE html>
 <html lang="en">
@@ -44,6 +55,7 @@ export async function GET(req: NextRequest) {
     <span>Page: ${pageKey}</span>
     <span>This is a draft preview — not visible to the public.</span>
     <a href="/admin/website/">← Back to editor</a>
+    <a href="/admin/website/preview?exit=1">Exit draft preview</a>
   </div>
   <iframe src="${targetUrl}?_preview=draft&_pk=${encodeURIComponent(pageKey)}" sandbox="allow-same-origin allow-scripts"></iframe>
 </body>

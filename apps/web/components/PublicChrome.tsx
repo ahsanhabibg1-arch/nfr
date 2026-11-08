@@ -8,6 +8,9 @@ import { SearchModal } from './SearchModal';
 import { Discipline, SearchIndexItem } from '../types';
 import { ROUTES } from '../config/routes';
 import type { PublicNavigation } from '../lib/cms/navTypes';
+import type { FooterConfig } from '../lib/cms/siteConfigService';
+import { AnnouncementBanner, type PublicAnnouncement } from './public/AnnouncementBanner';
+import { GlobalBlockRenderer, type PublicGlobalBlock } from './public/GlobalBlockRenderer';
 
 /**
  * Client chrome for the public site: owns the search-modal state and the global
@@ -19,6 +22,12 @@ export interface PublicChromeProps {
   searchArticles?: SearchIndexItem[];
   searchDisciplines?: Discipline[];
   nav?: PublicNavigation;
+  /** Published Site Experience → Footer config. */
+  footer?: FooterConfig;
+  /** Active announcements, shown under the header on every public page. */
+  announcements?: PublicAnnouncement[];
+  /** Global blocks placed "above the footer (all pages)". */
+  footerTopBlocks?: PublicGlobalBlock[];
 }
 
 export const PublicChrome: React.FC<PublicChromeProps> = ({
@@ -26,6 +35,9 @@ export const PublicChrome: React.FC<PublicChromeProps> = ({
   searchArticles = [],
   searchDisciplines = [],
   nav,
+  footer,
+  announcements = [],
+  footerTopBlocks = [],
 }) => {
   const [searchOpen, setSearchOpen] = useState(false);
   const router = useRouter();
@@ -44,8 +56,10 @@ export const PublicChrome: React.FC<PublicChromeProps> = ({
   return (
     <div className="min-h-screen flex flex-col bg-[#F7F3EA]">
       <SiteHeader onOpenSearch={() => setSearchOpen(true)} navItems={nav?.header} />
+      {announcements.length > 0 && <AnnouncementBanner announcements={announcements} />}
       <main className="flex-1">{children}</main>
-      <SiteFooter sections={nav?.footerSections} academy={nav?.footerAcademy} />
+      {footerTopBlocks.length > 0 && <GlobalBlockRenderer blocks={footerTopBlocks} />}
+      <SiteFooter sections={nav?.footerSections} academy={nav?.footerAcademy} config={footer} />
       <SearchModal
         isOpen={searchOpen}
         onClose={() => setSearchOpen(false)}

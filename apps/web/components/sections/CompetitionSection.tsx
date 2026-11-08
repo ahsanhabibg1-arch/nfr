@@ -4,15 +4,19 @@ import React, { useState, useMemo } from 'react';
 import { Discipline } from '../../types';
 import { SectionHeading } from '../SectionHeading';
 import { ImageWithCredit } from '../ImageWithCredit';
+import { type SectionCopy, copyOr } from './sectionCopy';
 
 interface CompetitionSectionProps {
   disciplines: Discipline[];
   onSelectDiscipline: (discipline: Discipline) => void;
+  /** Page Builder copy overrides. */
+  copy?: SectionCopy;
 }
 
 export const CompetitionSection: React.FC<CompetitionSectionProps> = ({
   disciplines,
   onSelectDiscipline,
+  copy = {},
 }) => {
   const [filter, setFilter] = useState<'all' | 'Roughstock' | 'Timed Event'>('all');
 
@@ -25,9 +29,9 @@ export const CompetitionSection: React.FC<CompetitionSectionProps> = ({
     <section id="competition" className="w-full bg-[#FFFFFF] text-[#0F1115] py-16 border-b border-stone-300">
       <div className="max-w-[1280px] mx-auto px-4 sm:px-6 lg:px-8">
         <SectionHeading
-          kicker="Competition"
-          title="The Seven NFR Disciplines"
-          description="Guides to the seven disciplines contested at the NFR: what each event involves and how it is scored."
+          kicker={copyOr(copy.kicker, 'Competition')}
+          title={copyOr(copy.title, 'The Seven NFR Disciplines')}
+          description={copyOr(copy.description, 'Guides to the seven disciplines contested at the NFR: what each event involves and how it is scored.')}
         />
 
         {/* Filter Toggle */}

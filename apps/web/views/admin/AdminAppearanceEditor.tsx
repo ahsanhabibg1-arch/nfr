@@ -177,13 +177,13 @@ export const AdminAppearanceEditor: React.FC<Props> = ({ config, canManage }) =>
         <div className="grid grid-cols-3 gap-3">
           <div>
             <label className={lbl}>Text Align</label>
-            <select value={textAlign} onChange={(e) => setTextAlign(e.target.value)} className={inp}>
+            <select value={textAlign} onChange={(e) => setTextAlign(e.target.value as typeof textAlign)} className={inp}>
               <option value="left">Left</option><option value="center">Center</option><option value="right">Right</option>
             </select>
           </div>
           <div>
             <label className={lbl}>Vertical Align</label>
-            <select value={verticalAlign} onChange={(e) => setVerticalAlign(e.target.value)} className={inp}>
+            <select value={verticalAlign} onChange={(e) => setVerticalAlign(e.target.value as typeof verticalAlign)} className={inp}>
               <option value="top">Top</option><option value="center">Center</option><option value="bottom">Bottom</option>
             </select>
           </div>

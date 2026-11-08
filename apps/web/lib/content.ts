@@ -43,13 +43,33 @@ export async function getPublishedArticleBySlug(slug: string): Promise<Article |
   return row ? toArticle(row) : null;
 }
 
-export async function getPublishedArticlesBySection(categoryKey: string): Promise<Article[]> {
+export async function getPublishedArticlesBySection(
+  categoryKey: string,
+  opts: { limit?: number; excludeIds?: string[] } = {},
+): Promise<Article[]> {
   const rows = await prisma.article.findMany({
-    where: { ...publicArticleWhere(), category: { name: categoryKey } },
+    where: {
+      ...publicArticleWhere(),
+      category: { name: categoryKey },
+      ...(opts.excludeIds?.length ? { id: { notIn: opts.excludeIds } } : {}),
+    },
     include: articleInclude,
     orderBy: { publishedAt: 'desc' },
+    ...(opts.limit ? { take: opts.limit } : {}),
   });
   return rows.map(toArticle);
+}
+
+/** Published articles for hand-picked IDs, returned in the given order (unpublished/missing IDs are dropped). */
+export async function getPublishedArticlesByIds(ids: string[]): Promise<Article[]> {
+  const unique = [...new Set(ids.filter(Boolean))].slice(0, 50);
+  if (unique.length === 0) return [];
+  const rows = await prisma.article.findMany({
+    where: { ...publicArticleWhere(), id: { in: unique } },
+    include: articleInclude,
+  });
+  const byId = new Map(rows.map((r) => [r.id, toArticle(r)]));
+  return unique.map((id) => byId.get(id)).filter((a): a is Article => Boolean(a));
 }
 
 export async function getPublishedArticlesByCategory(categorySlug: string): Promise<Article[]> {

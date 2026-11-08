@@ -38,7 +38,9 @@ function validateSectionTypes(pageKey: string, slots: SectionSlot[]): void {
       if (typeof val === 'string') {
         if (val.length > 2000) throw new ServiceError('validation', `Prop "${key}" exceeds 2000 characters.`);
         if (/<script/i.test(val)) throw new ServiceError('validation', `Prop "${key}" contains disallowed content.`);
-        const isUrlProp = key.toLowerCase().includes('url') || key.toLowerCase().includes('image');
+        // URL-bearing props are named *Url (heroImageUrl, ctaUrl, imageUrl). Matching on
+        // "image" also caught heroImageAlt / imageAlt / imagePosition and rejected plain text.
+        const isUrlProp = /url$/i.test(key);
         if (isUrlProp && val.length > 0) {
           if (!/^(\/[^\s]*|https?:\/\/[^\s]+)$/.test(val)) {
             throw new ServiceError('validation', `Prop "${key}" must be a relative path or https URL.`);

@@ -17,46 +17,31 @@ import { IntroBanner } from '../components/public/IntroBanner';
 import type { AppearanceConfig } from '../lib/cms/siteConfigService';
 
 import { Article, Discipline } from '../types';
-import type { QuickAccessLink } from '../lib/cms/navTypes';
 import type { SectionSlot } from '../lib/cms/sectionRegistry';
+import type { ResolvedHomeSlot } from '../lib/cms/homepageData';
+import { copyFromProps } from '../components/sections/sectionCopy';
 import { ROUTES } from '../config/routes';
 
 export interface HomeViewProps {
-  heroArticle: Article;
-  secondaryStories: Article[];
-  latestArticles: Article[];
-  disciplines: Discipline[];
-  planWatchArticles: Article[];
-  entertainmentArticles: Article[];
-  eventsShoppingArticles: Article[];
-  evergreenArticles: Article[];
-  hubs: MoreRodeoHubCard[];
-  recurringEvents: MoreRodeoEventCard[];
-  quickAccessLinks: QuickAccessLink[];
-  layoutSections: SectionSlot[];
+  /** Visible Page Builder slots, in order, each with the data its props asked for. */
+  slots: ResolvedHomeSlot[];
   announcements?: PublicAnnouncement[];
   topBlocks?: PublicGlobalBlock[];
   bottomBlocks?: PublicGlobalBlock[];
   appearance?: AppearanceConfig;
+  /** True when rendering the staff-only draft preview. */
+  isDraftPreview?: boolean;
 }
 
+export type { MoreRodeoHubCard, MoreRodeoEventCard };
+
 export const HomeView: React.FC<HomeViewProps> = ({
-  heroArticle,
-  secondaryStories,
-  latestArticles,
-  disciplines,
-  planWatchArticles,
-  entertainmentArticles,
-  eventsShoppingArticles,
-  evergreenArticles,
-  hubs,
-  recurringEvents,
-  quickAccessLinks,
-  layoutSections,
+  slots,
   announcements = [],
   topBlocks = [],
   bottomBlocks = [],
   appearance,
+  isDraftPreview = false,
 }) => {
   const router = useRouter();
 
@@ -66,39 +51,50 @@ export const HomeView: React.FC<HomeViewProps> = ({
     document.getElementById(sectionId)?.scrollIntoView({ behavior: 'smooth' });
   };
 
-  const sectionMap: Record<string, React.ReactNode> = {
-    'editorial-hero': (
-      <EditorialHero leadArticle={heroArticle} secondaryStories={secondaryStories} onSelectArticle={handleSelectArticle} />
-    ),
-    'latest-coverage': (
-      <LatestCoverage articles={latestArticles} onSelectArticle={handleSelectArticle} />
-    ),
-    'quick-access': (
-      <QuickAccess items={quickAccessLinks.map((qa) => ({ id: qa.id, title: qa.label, description: qa.description, category: '', targetSectionId: '', targetRoute: qa.url }))} onNavigateSection={handleNavigateSection} />
-    ),
-    'competition': (
-      <CompetitionSection disciplines={disciplines} onSelectDiscipline={handleSelectDiscipline} />
-    ),
-    'plan-and-watch': (
-      <PlanAndWatchSection articles={planWatchArticles} />
-    ),
-    'entertainment': (
-      <EntertainmentSection articles={entertainmentArticles} />
-    ),
-    'events-shopping': (
-      <EventsShoppingSection articles={eventsShoppingArticles} />
-    ),
-    'more-rodeo': (
-      <MoreRodeoSection hubs={hubs} recurringEvents={recurringEvents} />
-    ),
-    'learning': (
-      <LearningSection articles={evergreenArticles} />
-    ),
+  /** Core editorial sections — every one now reads its own slot props. */
+  const renderCore = ({ slot, data }: ResolvedHomeSlot): React.ReactNode | undefined => {
+    const copy = copyFromProps(slot.props);
+    switch (slot.sectionType) {
+      case 'editorial-hero':
+        if (!data.lead) return null;
+        return (
+          <EditorialHero
+            leadArticle={data.lead}
+            secondaryStories={data.secondary ?? []}
+            onSelectArticle={handleSelectArticle}
+            heroImageUrl={p(slot, 'heroImageUrl')}
+            heroImageAlt={p(slot, 'heroImageAlt')}
+            kicker={copy.kicker}
+            ctaText={copy.ctaText}
+          />
+        );
+      case 'latest-coverage':
+        if (!data.articles?.length) return null;
+        return <LatestCoverage articles={data.articles} onSelectArticle={handleSelectArticle} copy={copy} anchorId={`latest-coverage-${slot.id}`} />;
+      case 'quick-access':
+        return (
+          <QuickAccess
+            copy={copy}
+            items={(data.quickAccessLinks ?? []).map((qa) => ({ id: qa.id, title: qa.label, description: qa.description, category: '', targetSectionId: '', targetRoute: qa.url }))}
+            onNavigateSection={handleNavigateSection}
+          />
+        );
+      case 'competition':
+        return <CompetitionSection disciplines={data.disciplines ?? []} onSelectDiscipline={handleSelectDiscipline} copy={copy} />;
+      case 'plan-and-watch':
+        return <PlanAndWatchSection articles={data.articles ?? []} copy={copy} />;
+      case 'entertainment':
+        return <EntertainmentSection articles={data.articles ?? []} copy={copy} />;
+      case 'events-shopping':
+        return <EventsShoppingSection articles={data.articles ?? []} copy={copy} />;
+      case 'more-rodeo':
+        return <MoreRodeoSection hubs={(data.hubs ?? []) as MoreRodeoHubCard[]} recurringEvents={(data.recurringEvents ?? []) as MoreRodeoEventCard[]} copy={copy} />;
+      case 'learning':
+        return <LearningSection articles={data.articles ?? []} copy={copy} />;
+      default:
+        return undefined; // not a core section — try premium blocks
+    }
   };
-
-  const visibleSections = layoutSections
-    .filter((s) => s.visible)
-    .sort((a, b) => a.order - b.order);
 
   const p = (slot: SectionSlot, key: string, fallback = '') => {
     const v = slot.props[key];
@@ -214,15 +210,21 @@ export const HomeView: React.FC<HomeViewProps> = ({
 
   return (
     <div className="w-full flex flex-col">
+      {isDraftPreview && (
+        <div className="w-full bg-[#D4A757] text-[#0F1115] text-xs font-semibold text-center py-1.5" role="status">
+          DRAFT PREVIEW — you are seeing unpublished Page Builder changes. Visitors still see the published homepage.
+        </div>
+      )}
       {announcements.length > 0 && <AnnouncementBanner announcements={announcements} />}
       {topBlocks.length > 0 && <GlobalBlockRenderer blocks={topBlocks} />}
       {appearance?.introBannerStyle && appearance.introBannerHeadline && <IntroBanner config={appearance} />}
-      {visibleSections.map((slot) => {
-        const node = sectionMap[slot.sectionType];
-        if (node) return <React.Fragment key={slot.id || slot.sectionType}>{node}</React.Fragment>;
+      {slots.map((resolved) => {
+        const { slot } = resolved;
+        const key = slot.id || `${slot.sectionType}-${slot.order}`;
+        const core = renderCore(resolved);
+        if (core !== undefined) return core ? <React.Fragment key={key}>{core}</React.Fragment> : null;
         const premium = renderPremiumBlock(slot);
-        if (premium) return <React.Fragment key={slot.id || `${slot.sectionType}-${slot.order}`}>{premium}</React.Fragment>;
-        return null;
+        return premium ? <React.Fragment key={key}>{premium}</React.Fragment> : null;
       })}
       {bottomBlocks.length > 0 && <GlobalBlockRenderer blocks={bottomBlocks} />}
     </div>
