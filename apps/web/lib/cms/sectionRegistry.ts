@@ -653,4 +653,8 @@ export const PAGE_KEY_LABELS: Record<string, string> = {
   'directory:venues': 'Directory — Venues',
 };
 
+const DEAD_PAGE_KEYS = new Set(['template:rodeo-hub', 'template:rodeo-edition', 'template:discipline', 'template:category']);
+
+export const ADMIN_VISIBLE_PAGE_KEYS = KNOWN_PAGE_KEYS.filter((k) => !DEAD_PAGE_KEYS.has(k));
+
 export { HOMEPAGE_SECTIONS, SECTION_LANDING_SECTIONS, DETAIL_TEMPLATE_SECTIONS, DIRECTORY_SECTIONS };

@@ -258,19 +258,18 @@ describe('Batch 32 — Premium Visual Page Builder', () => {
 
   // ── Public rendering of premium blocks ─────────────────────────
   describe('Public rendering', () => {
-    it('HomeView renders premium blocks', () => {
-      const src = read('views/HomeView.tsx');
-      expect(src).toContain('renderPremiumBlock');
-      expect(src).toContain("'rich-text-block'");
-      expect(src).toContain("'image-text-block'");
-      expect(src).toContain("'stats-banner'");
-      expect(src).toContain("'cta-banner'");
-      expect(src).toContain("'faq-block'");
-      expect(src).toContain("'newsletter-signup'");
+    it('block registry maps all premium block types', () => {
+      const registry = read('components/blocks/registry.tsx');
+      expect(registry).toContain("'rich-text-block'");
+      expect(registry).toContain("'image-text-block'");
+      expect(registry).toContain("'stats-banner'");
+      expect(registry).toContain("'cta-banner'");
+      expect(registry).toContain("'faq-block'");
+      expect(registry).toContain("'newsletter-signup'");
     });
 
-    it('premium block rendering uses slot IDs as keys', () => {
-      const src = read('views/HomeView.tsx');
+    it('PageRenderer uses slot IDs as keys', () => {
+      const src = read('components/blocks/PageRenderer.tsx');
       expect(src).toContain('slot.id');
     });
   });

@@ -4,7 +4,7 @@ import { listNavItems } from '@/lib/cms/navigationService';
 import { listPageLayouts } from '@/lib/cms/pageLayoutService';
 import {
   HOMEPAGE_SECTIONS, SECTION_LANDING_SECTIONS, DETAIL_TEMPLATE_SECTIONS, DIRECTORY_SECTIONS,
-  KNOWN_PAGE_KEYS, PAGE_KEY_LABELS, ensureSlotIds,
+  ADMIN_VISIBLE_PAGE_KEYS, PAGE_KEY_LABELS, ensureSlotIds,
 } from '@/lib/cms/sectionRegistry';
 import { listAnnouncements } from '@/lib/cms/announcementService';
 import { listGlobalBlocks } from '@/lib/cms/globalBlockService';
@@ -50,7 +50,7 @@ export default async function Page() {
     'directory': toReg(DIRECTORY_SECTIONS),
   };
 
-  const knownPageKeys = KNOWN_PAGE_KEYS.map((k) => ({ key: k, label: PAGE_KEY_LABELS[k] ?? k }));
+  const knownPageKeys = ADMIN_VISIBLE_PAGE_KEYS.map((k) => ({ key: k, label: PAGE_KEY_LABELS[k] ?? k }));
 
   return (
     <AdminWebsitePage

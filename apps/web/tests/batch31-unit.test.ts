@@ -132,12 +132,13 @@ describe('Batch 31 — Page Layout System', () => {
   });
 
   // ---- Homepage integration ----
-  it('HomeView renders each slot with its own props (no fixed section map)', () => {
-    const src = read('views/HomeView.tsx');
-    expect(src).toContain('slots.map');
-    expect(src).toContain('copyFromProps(slot.props)');
-    expect(src).toContain("p(slot, 'heroImageUrl')");
-    expect(src).not.toContain('sectionMap');
+  it('HomeView renders each slot with its own props via PageRenderer (no fixed section map)', () => {
+    const home = read('views/HomeView.tsx');
+    expect(home).toContain('PageRenderer');
+    expect(home).not.toContain('sectionMap');
+    const registry = read('components/blocks/registry.tsx');
+    expect(registry).toContain('copyFromProps(slot.props)');
+    expect(registry).toContain("slotStr(slot, 'heroImageUrl')");
   });
 
   it('homepage route resolves per-slot data and honours draft preview', () => {
@@ -151,14 +152,14 @@ describe('Batch 31 — Page Layout System', () => {
   });
 
   // ---- Section landing integration ----
-  it('SectionLandingView reads published layout sections', () => {
-    const src = read('views/SectionLandingView.tsx');
-    expect(src).toContain('getPublishedSections');
-    expect(src).toContain('section:${sectionKey}');
-    expect(src).toContain('heroVisible');
-    expect(src).toContain('featuredVisible');
-    expect(src).toContain('gridVisible');
-    expect(src).toContain('slotProp');
+  it('SectionLandingView uses registry-driven slot rendering via PageRenderer', () => {
+    const view = read('views/SectionLandingView.tsx');
+    expect(view).toContain('resolveSectionLandingSlots');
+    const resolver = read('lib/cms/sectionLandingData.ts');
+    expect(resolver).toContain('getPublishedSections');
+    expect(resolver).toContain('section:${sectionKey}');
+    const slotsView = read('views/SectionLandingSlots.tsx');
+    expect(slotsView).toContain('PageRenderer');
   });
 
   // ---- Admin actions ----
@@ -173,7 +174,7 @@ describe('Batch 31 — Page Layout System', () => {
   // ---- Admin page ----
   it('website admin page provides enriched registries and knownPageKeys', () => {
     const src = read('app/admin/(dashboard)/website/page.tsx');
-    expect(src).toContain('KNOWN_PAGE_KEYS');
+    expect(src).toContain('ADMIN_VISIBLE_PAGE_KEYS');
     expect(src).toContain('PAGE_KEY_LABELS');
     expect(src).toContain('DETAIL_TEMPLATE_SECTIONS');
     expect(src).toContain('DIRECTORY_SECTIONS');
