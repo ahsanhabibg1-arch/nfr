@@ -2,6 +2,7 @@ import type { Metadata } from 'next';
 import Link from 'next/link';
 import { listPublicCompetitors } from '@/lib/batch12Content';
 import { buildMetadata, breadcrumbJsonLd, JsonLd } from '@/lib/seo';
+import { directoryListingRobots } from '@/lib/seo/robots';
 import { ROUTES } from '@/config/routes';
 import { getPublishedSections } from '@/lib/cms/pageLayoutService';
 import type { SectionSlot } from '@/lib/cms/sectionRegistry';
@@ -13,9 +14,10 @@ export const revalidate = 300;
 export async function generateMetadata({ searchParams }: { searchParams: SP }): Promise<Metadata> {
   const sp = await searchParams; const page = Number(str(sp.page)) || 1;
   // Only the first, unfiltered page is a canonical indexable directory URL; filtered/paged
-  // variants are noindex to avoid thin duplicate filter pages.
+  // variants are noindex to avoid thin duplicate filter pages, but still follow their
+  // links to real competitor pages (noindex, follow — Batch S3 follow-up).
   const filtered = !!(str(sp.q) || str(sp.discipline) || page > 1);
-  return buildMetadata({ title: 'Rodeo Competitors Directory', description: 'Browse rodeo competitors and contestants covered by NFRGuide — search by name and filter by discipline.', path: '/competitors/', noindex: filtered });
+  return buildMetadata({ title: 'Rodeo Competitors Directory', description: 'Browse rodeo competitors and contestants covered by NFRGuide — search by name and filter by discipline.', path: '/competitors/', robots: directoryListingRobots(filtered) });
 }
 
 function slotProp(sections: SectionSlot[], type: string, key: string, fallback: string): string {

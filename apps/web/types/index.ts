@@ -79,7 +79,15 @@ export interface SEOMetadata {
   canonicalUrl?: string;
   ogImage?: string;
   structuredDataType?: 'Article' | 'NewsArticle' | 'Guide' | 'BreadcrumbList';
-  robots?: 'index, follow' | 'noindex, follow' | 'noindex, nofollow';
+  /** Stored robots directive (free text, e.g. "index, follow"); parsed by lib/seo/articleMeta.ts. */
+  robots?: string;
+  /**
+   * Raw stored overrides (undefined when the column is null/blank). `title` / `description`
+   * above already include fallbacks for editor/validator use; public metadata needs to know
+   * whether an override exists so it can keep the page's own fallback order.
+   */
+  storedTitle?: string;
+  storedDescription?: string;
 }
 
 export interface ArticleRevision {

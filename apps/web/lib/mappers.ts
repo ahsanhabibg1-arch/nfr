@@ -128,6 +128,9 @@ export function toArticle(row: ArticleWithRelations): Article {
           description: row.seo.metaDescription ?? row.excerpt,
           canonicalUrl: row.seo.canonicalUrl ?? undefined,
           ogImage: row.seo.ogImage ?? undefined,
+          robots: row.seo.robots ?? undefined,
+          storedTitle: row.seo.seoTitle?.trim() || undefined,
+          storedDescription: row.seo.metaDescription?.trim() || undefined,
         }
       : undefined,
     disclosure: (row.disclosureType as Article['disclosure']) ?? undefined,

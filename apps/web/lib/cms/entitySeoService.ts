@@ -6,6 +6,8 @@ import { Actor, audit } from './guard';
 import { ServiceError } from './articleService';
 import { requireEntityPerm, assertEntityExists } from './landingEntities';
 import { SITE_URL, buildMetadata } from '../seo';
+import { combineRobots, EDITOR_NOINDEX, INDEX_FOLLOW, LEGACY_NOINDEX } from '../seo/robots';
+import { normalizeSameSiteCanonical } from '../seo/canonical';
 
 /**
  * Editor-controlled SEO overrides for landing entities (Batch 11). Public reads are
@@ -18,14 +20,14 @@ export async function getEntitySeo(entityType: LandingEntityType, entityId: stri
   return prisma.entitySeo.findUnique({ where: { entityType_entityId: { entityType, entityId } } });
 }
 
-/** Resolve a stored canonical override to an absolute, same-site URL, or null. */
+/**
+ * Resolve a stored canonical override to an absolute, same-site URL, or null.
+ * Batch S5: uses the single normalizer (lib/seo/canonical.ts) — same-site only (off-site /
+ * malformed → null, never emitted), re-based on SITE_URL, one trailing slash, no query or
+ * fragment — so render, save validation, sitemap and audit all agree.
+ */
 export function resolveCanonical(override: string | null | undefined): string | null {
-  if (!override) return null;
-  const v = override.trim();
-  if (!v) return null;
-  if (v.startsWith('/')) return `${SITE_URL}${v}`;
-  if (v.startsWith(`${SITE_URL}/`) || v === SITE_URL) return v;
-  return null; // off-site/invalid overrides are ignored (never emitted)
+  return normalizeSameSiteCanonical(override, SITE_URL);
 }
 
 const Input = z.object({
@@ -40,9 +42,8 @@ export type EntitySeoInput = z.input<typeof Input>;
 
 function validateCanonicalOverride(v: string | null | undefined): void {
   if (!v || !v.trim()) return;
-  const t = v.trim();
-  const ok = t.startsWith('/') || t === SITE_URL || t.startsWith(`${SITE_URL}/`);
-  if (!ok) throw new ServiceError('validation', 'Canonical override must be a path or a URL on this site (prevents duplicate/off-site canonicals).');
+  // Same rule as rendering (resolveCanonical): a value is accepted only if it would be emitted.
+  if (!normalizeSameSiteCanonical(v, SITE_URL)) throw new ServiceError('validation', 'Canonical override must be a path or a URL on this site (prevents duplicate/off-site canonicals).');
 }
 
 export async function upsertEntitySeo(actor: Actor, entityType: LandingEntityType, entityId: string, raw: EntitySeoInput): Promise<EntitySeo> {
@@ -72,6 +73,11 @@ export async function upsertEntitySeo(actor: Actor, entityType: LandingEntityTyp
  * Merge editor SEO overrides onto a page's derived metadata, for `buildMetadata`.
  * Overrides fall back to derived values; `noindex` is additive-only (derived OR editor),
  * so an editor can never force-index a content-based-noindex page (Safeguard 2).
+ *
+ * Robots (Batch S3), combined most-restrictively:
+ *   - editor `EntitySeo.noindex`  → noindex, FOLLOW (EDITOR_NOINDEX — must not block links)
+ *   - content `derivedNoindex`    → noindex, nofollow (LEGACY_NOINDEX — unchanged route policy)
+ *   - neither                     → index, follow
  */
 export interface DerivedMeta {
   title: string;
@@ -89,7 +95,10 @@ export function mergeSeoMeta(seo: EntitySeo | null, d: DerivedMeta): Parameters<
     path: d.path,
     image: seo?.ogImage?.trim() || d.image,
     type: d.type,
-    noindex: !!d.derivedNoindex || !!seo?.noindex,
+    robots: combineRobots(
+      d.derivedNoindex ? LEGACY_NOINDEX : INDEX_FOLLOW,
+      seo?.noindex ? EDITOR_NOINDEX : INDEX_FOLLOW,
+    ),
     canonical,
   };
 }

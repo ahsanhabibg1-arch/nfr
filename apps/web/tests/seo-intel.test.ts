@@ -196,10 +196,22 @@ suite('Batch 06 — SEO Intelligence integration', () => {
   });
 
   // ---- Concurrency + scope (21, 22) ----
-  it('concurrent audit prevention: a running audit blocks a new one', async () => {
+  it('concurrent audit prevention: a LIVE audit (holding the lock) blocks a new one', async () => {
+    // Batch S7: liveness is the PostgreSQL advisory lock, not a `running` row.
+    const { acquireAuditLock } = await import('../lib/seo-intel/auditLock');
+    const acq = await acquireAuditLock(prisma, 'full');
+    if (!acq.ok) throw new Error('expected to acquire the audit lock');
+    try {
+      await expect(seo.runSeoAudit(actors.admin, { kind: 'full' })).rejects.toMatchObject({ code: 'conflict' });
+    } finally { await acq.handle.release(); }
+  });
+  it('a `running` row with no live owner (crashed audit) no longer blocks: it is recovered as abandoned', async () => {
     const stuck = await prisma.seoAuditRun.create({ data: { scope: 'full', engineVersion: 'x', status: 'running' } });
-    await expect(seo.runSeoAudit(actors.admin, { kind: 'full' })).rejects.toMatchObject({ code: 'conflict' });
-    await prisma.seoAuditRun.update({ where: { id: stuck.id }, data: { status: 'completed', completedAt: new Date() } });
+    const r = await seo.runSeoAudit(actors.admin, { kind: 'full' });
+    expect(r.auditRunId).toBeTruthy();
+    const after = await prisma.seoAuditRun.findUniqueOrThrow({ where: { id: stuck.id } });
+    expect(after.status).toBe('failed');
+    expect(after.summary).toMatchObject({ reason: 'abandoned' });
   });
   it('scope restriction: an article-scoped audit only writes findings for that article', async () => {
     const r = await seo.runSeoAudit(actors.admin, { kind: 'article', articleId: artIds.bad });

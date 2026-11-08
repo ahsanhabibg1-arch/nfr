@@ -4,6 +4,8 @@ import { SectionLandingView } from '@/views/SectionLandingView';
 import { getSectionMeta, getAllSectionKeys } from '@/lib/content';
 import { buildMetadata, breadcrumbJsonLd, JsonLd } from '@/lib/seo';
 import { ViewBeacon } from '@/components/analytics/ViewBeacon';
+import { getEntitySeo } from '@/lib/cms/entitySeoService';
+import { sectionMetadataInput, sectionSeoEntityId } from '@/lib/seo/sectionMeta';
 
 type Params = { params: Promise<{ section: string }> };
 
@@ -22,11 +24,9 @@ export async function generateMetadata({ params }: Params): Promise<Metadata> {
   const { section } = await params;
   const meta = await getSectionMeta(section);
   if (!meta) return {};
-  return buildMetadata({
-    title: `${meta.name} — Coverage & Guides`,
-    description: meta.description,
-    path: meta.path,
-  });
+  // Batch S2: EntitySeo(SECTION) search overrides on top of the SectionConfig-derived defaults.
+  const seo = await getEntitySeo('SECTION', sectionSeoEntityId(meta));
+  return buildMetadata(sectionMetadataInput(meta, seo));
 }
 
 export default async function SectionPage({ params }: Params) {

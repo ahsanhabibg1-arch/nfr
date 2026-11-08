@@ -3,6 +3,7 @@ import { notFound, permanentRedirect, redirect } from 'next/navigation';
 import { getPublishedArticleBySlug, getPublishedArticleSlugs, resolveArticleRedirect } from '@/lib/content';
 import { ArticleView } from '@/views/ArticleView';
 import { buildMetadata, articleJsonLd, breadcrumbJsonLd, JsonLd } from '@/lib/seo';
+import { articleMetadataInput, unavailableArticleMetadataInput } from '@/lib/seo/articleMeta';
 import { ROUTES } from '@/config/routes';
 import { ViewBeacon } from '@/components/analytics/ViewBeacon';
 import { ArticleMonetization } from '@/components/monetization/ArticleMonetization';
@@ -25,26 +26,11 @@ export async function generateStaticParams() {
 export async function generateMetadata({ params }: Params): Promise<Metadata> {
   const { slug } = await params;
   const article = await getPublishedArticleBySlug(slug);
-  if (!article) {
-    return buildMetadata({
-      title: 'Dispatch Unavailable',
-      description: 'The requested editorial dispatch is currently unavailable.',
-      path: `/articles/${slug}/`,
-      noindex: true,
-    });
-  }
-  return buildMetadata({
-    title: article.title,
-    description:
-      article.deck ||
-      article.excerpt ||
-      'Independent rodeo journalism and championship analysis from NFRGuide.',
-    path: ROUTES.ARTICLE(article.slug),
-    image: article.heroImage,
-    type: 'article',
-    publishedTime: article.publishedAt,
-    authorName: article.author.name,
-  });
+  // Unavailable article: noindex, follow (owner-approved route policy, Batch S3 follow-up).
+  if (!article) return buildMetadata(unavailableArticleMetadataInput(slug));
+  // Batch S1: stored ArticleSeo overrides (title, description, same-site canonical,
+  // OG image, robots) with the previous title/deck/excerpt/hero fallbacks for blanks.
+  return buildMetadata(articleMetadataInput(article));
 }
 
 export default async function ArticlePage({ params }: Params) {
