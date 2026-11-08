@@ -21,6 +21,7 @@ import { LearningSection } from '@/components/sections/LearningSection';
 
 import { RichTextBlock, ImageTextBlock, StatsBanner, CtaBanner, FaqBlock, NewsletterSignup } from './PremiumBlocks';
 import { LandingHeroBlock, LandingFeaturedBlock, LandingEmptyState, LandingGridBlock, CompetitionDisciplinesBlock } from './LandingBlocks';
+import { DetailRelatedBlock, DetailCtaBlock } from './DetailBlocks';
 
 type BlockComponent = React.FC<BlockProps>;
 
@@ -150,4 +151,7 @@ export const blockRegistry: Record<string, BlockComponent> = {
   'landing-empty': LandingEmptyState,
   'landing-grid': LandingGridBlock,
   'landing-competition-disciplines': CompetitionDisciplinesBlock,
+
+  'detail-related': DetailRelatedBlock,
+  'detail-cta': DetailCtaBlock,
 };

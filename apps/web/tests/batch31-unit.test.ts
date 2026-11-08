@@ -245,12 +245,16 @@ describe('Batch 31 — Page Layout System', () => {
   });
 
   // ---- Dynamic template integration ----
-  it('ArticleView reads layout sections from template:article', () => {
-    const src = read('views/ArticleView.tsx');
-    expect(src).toContain('getPublishedSections');
-    expect(src).toContain("'template:article'");
-    expect(src).toContain('relatedVisible');
-    expect(src).toContain('ctaVisible');
+  it('ArticleView uses resolver and PageRenderer for template:article appendage slots', () => {
+    const view = read('views/ArticleView.tsx');
+    expect(view).toContain('resolveArticleTemplateSlots');
+    expect(view).toContain('ArticleAppendageSlots');
+    expect(view).not.toContain('getSlot(');
+    const resolver = read('lib/cms/detailTemplateData.ts');
+    expect(resolver).toContain('getPublishedSections');
+    expect(resolver).toContain("'template:article'");
+    const bridge = read('views/ArticleAppendageSlots.tsx');
+    expect(bridge).toContain('PageRenderer');
   });
 
   it('competitors directory reads layout from directory:competitors', () => {
