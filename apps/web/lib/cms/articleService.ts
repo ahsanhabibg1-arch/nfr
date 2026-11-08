@@ -6,6 +6,7 @@ import { RoleKey, Permission, roleHasPermission } from '../auth/rbac';
 import { validateArticle } from '../../utils/seoValidator';
 import type { Article, ContentBlock } from '../../types';
 import { safeHref } from '../url';
+import { productionCanonicalUrl } from '../seo/canonical';
 
 /**
  * Authenticated, RBAC-enforced CMS article operations (Batch 03 §6/§7/§8).
@@ -325,11 +326,14 @@ async function writeChildren(
   if (rel.hubIds.length) await tx.articleHub.createMany({ data: rel.hubIds.map((hubId) => ({ articleId, hubId })) });
   if (rel.eventIds.length) await tx.articleEvent.createMany({ data: rel.eventIds.map((eventId) => ({ articleId, eventId })) });
   if (rel.editionIds.length) await tx.articleEdition.createMany({ data: rel.editionIds.map((editionId) => ({ articleId, editionId })) });
-  // SEO 1:1
+  // SEO 1:1. Batch S5: the system canonical is stored as the article's PRODUCTION URL via
+  // the shared constant (environment-independent; never the dev/staging host). Rendering
+  // re-bases it onto the current SITE_URL (lib/seo/canonical.ts). Same value as before.
+  const canonicalUrl = productionCanonicalUrl(`/articles/${v.slug}/`);
   await tx.articleSeo.upsert({
     where: { articleId },
-    update: { seoTitle: v.seoTitle || v.title, metaDescription: v.metaDescription || v.excerpt, canonicalUrl: `https://nfrguide.com/articles/${v.slug}/`, ogImage: v.heroImage || null },
-    create: { articleId, seoTitle: v.seoTitle || v.title, metaDescription: v.metaDescription || v.excerpt, canonicalUrl: `https://nfrguide.com/articles/${v.slug}/`, ogImage: v.heroImage || null },
+    update: { seoTitle: v.seoTitle || v.title, metaDescription: v.metaDescription || v.excerpt, canonicalUrl, ogImage: v.heroImage || null },
+    create: { articleId, seoTitle: v.seoTitle || v.title, metaDescription: v.metaDescription || v.excerpt, canonicalUrl, ogImage: v.heroImage || null },
   });
 }
 

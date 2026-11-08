@@ -2,6 +2,7 @@ import type { Metadata } from 'next';
 import Link from 'next/link';
 import { listPublicVenues } from '@/lib/batch12Content';
 import { buildMetadata, breadcrumbJsonLd, JsonLd } from '@/lib/seo';
+import { directoryListingRobots } from '@/lib/seo/robots';
 import { ROUTES } from '@/config/routes';
 import { getPublishedSections } from '@/lib/cms/pageLayoutService';
 import type { SectionSlot } from '@/lib/cms/sectionRegistry';
@@ -12,8 +13,9 @@ export const revalidate = 300;
 
 export async function generateMetadata({ searchParams }: { searchParams: SP }): Promise<Metadata> {
   const sp = await searchParams; const page = Number(str(sp.page)) || 1;
+  // Filtered/paged variants: noindex (thin duplicates), follow (Batch S3 follow-up).
   const filtered = !!(str(sp.q) || str(sp.country) || page > 1);
-  return buildMetadata({ title: 'Rodeo Venues Directory', description: 'Browse rodeo venues and arenas covered by NFRGuide — search by name and filter by country.', path: '/venues/', noindex: filtered });
+  return buildMetadata({ title: 'Rodeo Venues Directory', description: 'Browse rodeo venues and arenas covered by NFRGuide — search by name and filter by country.', path: '/venues/', robots: directoryListingRobots(filtered) });
 }
 
 function slotProp(sections: SectionSlot[], type: string, key: string, fallback: string): string {

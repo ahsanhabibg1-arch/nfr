@@ -62,11 +62,17 @@ export async function getAllVenueSlugs(): Promise<string[]> {
   return rows.map((r) => r.slug);
 }
 
+/** Venues meeting the existing content-eligibility rule (have real content). Batch S4:
+ *  the sitemap applies EntitySeo noindex/canonical via lib/seo/policy.ts on these rows. */
+export async function getContentEligibleVenues(): Promise<{ id: string; slug: string }[]> {
+  return prisma.venue.findMany({ where: { OR: [{ summary: { not: null } }, { description: { not: null } }, { editions: { some: {} } }] }, select: { id: true, slug: true } });
+}
+
 /** Slugs of venues eligible for the sitemap (have real content). Editor `noindex` is
  *  also honored by excluding any venue with an EntitySeo noindex override. */
 export async function getIndexableVenueSlugs(): Promise<string[]> {
   const [rows, noindex] = await Promise.all([
-    prisma.venue.findMany({ where: { OR: [{ summary: { not: null } }, { description: { not: null } }, { editions: { some: {} } }] }, select: { id: true, slug: true } }),
+    getContentEligibleVenues(),
     prisma.entitySeo.findMany({ where: { entityType: 'VENUE', noindex: true }, select: { entityId: true } }),
   ]);
   const blocked = new Set(noindex.map((n) => n.entityId));
@@ -113,10 +119,15 @@ export async function getAllCompetitorSlugs(): Promise<string[]> {
   return rows.map((r) => r.slug);
 }
 
+/** Competitors meeting the existing content-eligibility rule (Batch S4 sitemap candidates). */
+export async function getContentEligibleCompetitors(): Promise<{ id: string; slug: string }[]> {
+  return prisma.competitor.findMany({ where: { OR: [{ summary: { not: null } }, { disciplines: { some: {} } }, { editions: { some: {} } }, { articles: { some: { article: { workflowStatus: PUBLISHED } } } }] }, select: { id: true, slug: true } });
+}
+
 /** Slugs of competitors eligible for the sitemap (have real content), honoring editor noindex. */
 export async function getIndexableCompetitorSlugs(): Promise<string[]> {
   const [rows, noindex] = await Promise.all([
-    prisma.competitor.findMany({ where: { OR: [{ summary: { not: null } }, { disciplines: { some: {} } }, { editions: { some: {} } }, { articles: { some: { article: { workflowStatus: PUBLISHED } } } }] }, select: { id: true, slug: true } }),
+    getContentEligibleCompetitors(),
     prisma.entitySeo.findMany({ where: { entityType: 'COMPETITOR', noindex: true }, select: { entityId: true } }),
   ]);
   const blocked = new Set(noindex.map((n) => n.entityId));

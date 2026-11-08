@@ -35,7 +35,8 @@ describe('Batch 11 — landing SEO logic', () => {
     const none = mergeSeoMeta(null, base);
     expect(none.title).toBe('Derived');
     expect(none.description).toBe('DerivedD');
-    expect(none.noindex).toBe(false);
+    // Batch S3: robots is an independent { index, follow } policy (was a `noindex` boolean).
+    expect(none.robots).toEqual({ index: true, follow: true });
 
     const over = mergeSeoMeta(seo({ seoTitle: 'Override', metaDescription: 'OverD' }), base);
     expect(over.title).toBe('Override');
@@ -43,8 +44,10 @@ describe('Batch 11 — landing SEO logic', () => {
   });
 
   it('noindex is additive-only (cannot force-index a content-noindex page)', () => {
-    expect(mergeSeoMeta(seo({ noindex: true }), { title: 't', description: 'd', path: '/p/', derivedNoindex: false }).noindex).toBe(true);
-    expect(mergeSeoMeta(seo({ noindex: false }), { title: 't', description: 'd', path: '/p/', derivedNoindex: true }).noindex).toBe(true);
+    // Batch S3: still additive (index:false either way); an editor noindex keeps follow,
+    // a content-based noindex keeps its existing nofollow.
+    expect(mergeSeoMeta(seo({ noindex: true }), { title: 't', description: 'd', path: '/p/', derivedNoindex: false }).robots).toEqual({ index: false, follow: true });
+    expect(mergeSeoMeta(seo({ noindex: false }), { title: 't', description: 'd', path: '/p/', derivedNoindex: true }).robots).toEqual({ index: false, follow: false });
     expect(isLandingIndexable(null, true)).toBe(true);
     expect(isLandingIndexable(seo({ noindex: true }), true)).toBe(false);
     expect(isLandingIndexable(null, false)).toBe(false);

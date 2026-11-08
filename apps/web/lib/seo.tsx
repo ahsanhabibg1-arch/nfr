@@ -12,9 +12,11 @@
 
 import type { Metadata } from 'next';
 import { Article, Discipline } from '../types';
+import { INDEX_FOLLOW, LEGACY_NOINDEX, type RobotsPolicy } from './seo/robots';
+import { PRODUCTION_SITE_URL } from './seo/canonical';
 
 export const SITE_URL = (
-  process.env.NEXT_PUBLIC_SITE_URL || 'https://nfrguide.com'
+  process.env.NEXT_PUBLIC_SITE_URL || PRODUCTION_SITE_URL
 ).replace(/\/$/, '');
 
 const DEFAULT_OG_IMAGE = '/assets/images/hero_bull_riding_1793166440262.jpg';
@@ -26,8 +28,16 @@ interface BuildMetaInput {
   path: string;
   image?: string;
   type?: 'website' | 'article';
-  /** When true, emit noindex (e.g. unavailable/unpublished states). */
+  /**
+   * Route-level shorthand: when true, emit noindex, nofollow (unavailable / not-found /
+   * thin / filtered states). Unchanged pre-S3 behaviour. Ignored when `robots` is given.
+   */
   noindex?: boolean;
+  /**
+   * Independent index/follow policy (Batch S3). Takes precedence over `noindex`.
+   * Used for stored editorial directives (ArticleSeo.robots, EntitySeo.noindex).
+   */
+  robots?: RobotsPolicy;
   publishedTime?: string;
   authorName?: string;
   /** Absolute canonical URL overriding the path-derived one (same-site only, validated upstream). */
@@ -47,10 +57,12 @@ export function buildMetadata({
   image,
   type = 'website',
   noindex = false,
+  robots: robotsPolicy,
   publishedTime,
   authorName,
   canonical: canonicalOverride,
 }: BuildMetaInput): Metadata {
+  const robots = robotsPolicy ?? (noindex ? LEGACY_NOINDEX : INDEX_FOLLOW);
   const canonical = canonicalOverride || `${SITE_URL}${path}`;
   const ogImage = absolute(image);
   // Mirror the Phase 0 suffix behaviour without double-appending when the brand
@@ -61,9 +73,7 @@ export function buildMetadata({
     description,
     metadataBase: new URL(SITE_URL),
     alternates: { canonical },
-    robots: noindex
-      ? { index: false, follow: false }
-      : { index: true, follow: true },
+    robots: { index: robots.index, follow: robots.follow },
     openGraph: {
       title: fullTitle,
       description,

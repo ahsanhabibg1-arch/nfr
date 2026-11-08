@@ -1,4 +1,9 @@
 import { RawFinding, AuditScope } from './types';
+import { SITE_URL } from '../seo';
+import { classifyStoredCanonical, normalizeSameSiteCanonical } from '../seo/canonical';
+import { sitemapExclusionReason, effectiveRobots, type SeoSubject } from '../seo/policy';
+import { robotsToString } from '../seo/robots';
+import { type RouteIndex, type RouteInfo, resolveRoute, classifyLink, safeNormalizePath, RENDERS_PUBLICLY } from '../seo/routeIndex';
 import { Thresholds } from './rules';
 
 /**
@@ -20,12 +25,19 @@ export interface ArticleInv {
   headings: string[]; bodyWords: number; internalLinks: string[];
   disciplineSlugs: string[]; hubIds: string[]; eventIds: string[]; editions: { id: string; eventId: string }[];
   sourceCount: number; relatedIds: string[];
+  /** Fixture slug hidden from public reads in production (Batch S6). */
+  hiddenFixture?: boolean;
 }
 export interface Inventory {
   articles: ArticleInv[];
   articleStatusBySlug: Map<string, string>;
+  /** Paths that render a public page (derived from `routes` when present). */
   validPaths: Set<string>;
   redirectSources: Map<string, string>;
+  /** Batch S6: public route index (S4 evaluation + other valid routes). Optional for hand-built inventories. */
+  routes?: RouteIndex;
+  /** Batch S6: actual sitemap state from evaluateSitemap (S4 authority). */
+  sitemap?: { urls: Set<string>; duplicates: { path: string; family: string }[] };
   hubs: { id: string; slug: string; title: string; articleCount: number }[];
   events: { id: string; slug: string; name: string; editionCount: number }[];
   editions: { id: string; slug: string; eventId: string; eventName: string; year: number | null; venueId: string | null; articleCount: number }[];
@@ -37,6 +49,25 @@ export interface Inventory {
 }
 
 const norm = (p: string) => { let s = p.split('#')[0].split('?')[0].trim(); if (!s.startsWith('/')) return s; if (!s.endsWith('/')) s += '/'; return s; };
+
+/**
+ * Route outcome for a site path. Uses the S6 route index when the inventory has one;
+ * otherwise falls back to the legacy validPaths/articleStatusBySlug data (hand-built inventories).
+ */
+export function routeFor(inv: Inventory, path: string): RouteInfo {
+  if (inv.routes) return resolveRoute(inv.routes, path);
+  const p = safeNormalizePath(path);
+  if (!p) return { status: 'invalid', family: 'unknown', detail: 'malformed percent-encoding' };
+  const art = /^\/articles\/([^/]+)\/$/.exec(p);
+  if (art) {
+    const st = inv.articleStatusBySlug.get(art[1]);
+    if (st && st !== 'PUBLISHED') return { status: 'unpublished', family: 'article', detail: `article is ${st.toLowerCase()} (404)` };
+    if (st === 'PUBLISHED') return { status: 'indexable', family: 'article' };
+  }
+  if (inv.redirectSources.has(p)) return { status: 'redirect', family: 'redirect', redirectTo: inv.redirectSources.get(p) };
+  if (inv.validPaths.has(p)) return { status: 'indexable', family: 'known' };
+  return { status: 'not-found', family: 'unknown', detail: 'no public route matches' };
+}
 const isPublished = (a: ArticleInv) => a.status === 'PUBLISHED';
 const wordish = (s: string | null | undefined) => (s || '').trim();
 
@@ -99,30 +130,51 @@ export function analyzeEditorial(inv: Inventory): RawFinding[] {
 }
 
 // ---------------- Technical SEO (§8, DB/static) ----------------
-export function analyzeTechnical(inv: Inventory): RawFinding[] {
+export function analyzeTechnical(inv: Inventory, siteUrl: string = SITE_URL): RawFinding[] {
   const out: RawFinding[] = [];
   for (const a of inv.articles) {
     if (!isPublished(a)) continue;
     const url = `/articles/${a.slug}/`;
     const F = (ruleCode: string, evidence: string): RawFinding => ({ ruleCode, entityType: 'article', entityId: a.id, articleId: a.id, affectedUrl: url, evidence });
-    const expected = `https://nfrguide.com/articles/${a.slug}/`;
-    if (!wordish(a.canonicalUrl)) out.push(F('TECH_NO_CANONICAL', 'Published article has no canonical URL recorded.'));
-    else if (a.canonicalUrl!.replace(/\/+$/, '/') !== expected) out.push(F('TECH_CANONICAL_MISMATCH', `Canonical "${a.canonicalUrl}" ≠ expected "${expected}".`));
+    // Batch S5: same classifier as rendering/sitemap (lib/seo/canonical.ts), on SITE_URL —
+    // no hard-coded host. Stored production URLs count as this site in every environment.
+    const canon = classifyStoredCanonical(a.canonicalUrl, url, siteUrl);
+    if (canon === 'absent') out.push(F('TECH_NO_CANONICAL', 'Published article has no canonical URL recorded.'));
+    else if (canon === 'same-site-other') out.push(F('TECH_CANONICAL_MISMATCH', `Canonical "${a.canonicalUrl}" points to another page; the page renders it as its canonical (canonical-away, excluded from the sitemap).`));
+    else if (canon === 'ignored-off-site') out.push(F('TECH_CANONICAL_MISMATCH', `Stored canonical "${a.canonicalUrl}" is off-site and is ignored; the page renders its own URL (${url}).`));
+    else if (canon === 'ignored-malformed') out.push(F('TECH_CANONICAL_MISMATCH', `Stored canonical "${a.canonicalUrl}" is malformed and is ignored; the page renders its own URL (${url}).`));
     if (/noindex/i.test(a.robots)) out.push(F('TECH_PUBLISHED_NOINDEX', `Published article robots = "${a.robots}".`));
-    if (!/noindex/i.test(a.robots) && !inv.validPaths.has(url)) out.push(F('TECH_SITEMAP_EXCLUDED', 'Published indexable article is not in the sitemap inventory.'));
+    // Batch S6: sitemap consistency against the S4 authority. The audit's own article data is
+    // evaluated with the S4 policy and compared with the ACTUAL evaluateSitemap output, both
+    // ways. Correctly excluded articles (noindex, canonical-away, hidden) produce no finding.
+    if (inv.sitemap) {
+      const subject: SeoSubject = {
+        path: url, published: !a.hiddenFixture, storedRobots: a.robots,
+        canonical: normalizeSameSiteCanonical(a.canonicalUrl, siteUrl),
+      };
+      const reason = sitemapExclusionReason(subject, siteUrl);
+      const listed = inv.sitemap.urls.has(url);
+      const state = `robots ${robotsToString(effectiveRobots(subject))}; canonical ${canon}; expected ${reason ? `excluded (${reason})` : 'listed'}; actual ${listed ? 'listed' : 'not listed'}`;
+      if (!reason && !listed) out.push({ ...F('TECH_SITEMAP_EXCLUDED', `Published, indexable, self-canonical article is missing from the sitemap (${state}).`), detail: { contentType: 'article', expected: 'listed', actual: 'not listed', reason: null } });
+      if (reason && listed) out.push({ ...F('TECH_SITEMAP_EXCLUDED', `Article is listed in the sitemap but the page policy excludes it (${state}).`), detail: { contentType: 'article', expected: 'excluded', actual: 'listed', reason } });
+    }
+  }
+  // Two sitemap candidates resolving to one URL (S4 keeps the first; the other is shadowed).
+  for (const d of inv.sitemap?.duplicates ?? []) {
+    out.push({ ruleCode: 'TECH_SITEMAP_EXCLUDED', entityType: 'route', entityId: d.path, affectedUrl: d.path, discriminator: `duplicate:${d.family}`, evidence: `Duplicate sitemap URL ${d.path}: a ${d.family} candidate resolves to a URL already listed by another entity (only the first is listed).`, detail: { contentType: d.family, reason: 'duplicate-url' } });
   }
   // Redirect loops/chains + unknown targets.
   for (const [source, target] of inv.redirectSources) {
     const tgt = norm(target);
     const F = (ruleCode: string, evidence: string): RawFinding => ({ ruleCode, entityType: 'route', entityId: source, affectedUrl: source, evidence });
     if (inv.redirectSources.has(tgt) || inv.redirectSources.has(target)) out.push(F('TECH_REDIRECT_LOOP', `Redirect ${source} → ${target}, whose target is itself a redirect source.`));
-    else if (tgt.startsWith('/') && !inv.validPaths.has(tgt)) out.push(F('TECH_REDIRECT_TARGET_UNKNOWN', `Redirect ${source} → ${target} does not resolve to a known route/article.`));
+    else if (tgt.startsWith('/') && !RENDERS_PUBLICLY.has(routeFor(inv, tgt).status)) out.push(F('TECH_REDIRECT_TARGET_UNKNOWN', `Redirect ${source} → ${target} does not resolve to a public page (${routeFor(inv, tgt).detail ?? routeFor(inv, tgt).status}).`));
   }
   return out;
 }
 
 // ---------------- Structured data (§9) ----------------
-export function analyzeStructuredData(inv: Inventory): RawFinding[] {
+export function analyzeStructuredData(inv: Inventory, siteUrl: string = SITE_URL): RawFinding[] {
   const out: RawFinding[] = [];
   for (const a of inv.articles) {
     if (!isPublished(a)) continue;
@@ -131,14 +183,15 @@ export function analyzeStructuredData(inv: Inventory): RawFinding[] {
     if (!wordish(a.title)) out.push(F('SD_ARTICLE_NO_HEADLINE', 'Article JSON-LD would have no headline (no title).'));
     if (!a.publishedAt) out.push(F('SD_ARTICLE_NO_DATE', 'Article JSON-LD would have no datePublished.'));
     if (!a.heroImageUrl) out.push(F('SD_ARTICLE_NO_IMAGE', 'Article JSON-LD has no image.'));
-    const expected = `https://nfrguide.com/articles/${a.slug}/`;
-    if (a.canonicalUrl && a.canonicalUrl.replace(/\/+$/, '/') !== expected) out.push(F('SD_CANONICAL_MISMATCH', 'Structured-data URL would not match the canonical URL.'));
+    // JSON-LD mainEntityOfPage is always the article's own URL; it disagrees with the
+    // rendered canonical only when a same-site canonical points elsewhere (Batch S5).
+    if (classifyStoredCanonical(a.canonicalUrl, url, siteUrl) === 'same-site-other') out.push(F('SD_CANONICAL_MISMATCH', 'Structured-data URL would not match the canonical URL.'));
   }
   return out;
 }
 
 // ---------------- Internal links (§10) ----------------
-export function analyzeInternalLinks(inv: Inventory): RawFinding[] {
+export function analyzeInternalLinks(inv: Inventory, siteUrl: string = SITE_URL): RawFinding[] {
   const out: RawFinding[] = [];
   const inbound = new Map<string, number>(); // articleId -> inbound count
   const slugToId = new Map<string, string>();
@@ -150,18 +203,25 @@ export function analyzeInternalLinks(inv: Inventory): RawFinding[] {
     const url = `/articles/${a.slug}/`;
     const F = (ruleCode: string, evidence: string, target?: string): RawFinding =>
       ({ ruleCode, entityType: 'article', entityId: a.id, articleId: a.id, affectedUrl: url, evidence, discriminator: target, detail: target ? { target } : undefined });
-    for (const link of a.internalLinks) {
-      const p = norm(link);
-      // article link?
-      const m = p.match(/^\/articles\/([a-z0-9-]+)\/$/i);
-      if (inv.redirectSources.has(p)) { out.push(F('LINK_REDIRECTED', `Links to redirect source ${p} → ${inv.redirectSources.get(p)}.`, p)); continue; }
-      if (m) {
-        const st = inv.articleStatusBySlug.get(m[1]);
-        if (!st) out.push(F('LINK_BROKEN', `Internal link to a non-existent article: ${p}.`, p));
-        else if (st !== 'PUBLISHED') out.push(F('LINK_TO_UNPUBLISHED', `Internal link to a ${st.toLowerCase()} (non-public) article: ${p}.`, p));
-        else bump(slugToId.get(m[1])!);
-      } else if (p.startsWith('/') && !inv.validPaths.has(p)) {
-        out.push(F('LINK_BROKEN', `Internal link to a path that does not resolve: ${p}.`, p));
+    // Batch S6: classify each link (S5 same-site hosts — no network), then resolve internal
+    // paths against the route index. Valid noindex / canonical-away / non-sitemap pages are
+    // valid destinations; only genuinely missing, non-public or malformed targets are broken.
+    for (const raw of a.internalLinks) {
+      const c = classifyLink(raw, siteUrl);
+      if (c.kind === 'external' || c.kind === 'non-web') continue; // not verified (no network requests)
+      if (c.kind === 'unsafe') { out.push(F('LINK_BROKEN', `Unsafe link "${raw}" (${c.scheme}: scheme is rendered as "#").`, raw)); continue; }
+      if (c.kind === 'invalid') { out.push(F('LINK_BROKEN', `Invalid link "${raw}": ${c.reason}.`, raw)); continue; }
+      const p = c.path;
+      const r = routeFor(inv, p);
+      if (RENDERS_PUBLICLY.has(r.status)) {
+        const m = /^\/articles\/([^/]+)\/$/.exec(p);
+        if (m && slugToId.has(m[1])) bump(slugToId.get(m[1])!);
+      } else if (r.status === 'redirect') {
+        out.push(F('LINK_REDIRECTED', `Links to redirect source ${p} → ${r.redirectTo}.`, p));
+      } else if (r.status === 'unpublished') {
+        out.push(F('LINK_TO_UNPUBLISHED', `Internal link to a non-public page: ${p} (${r.detail}).`, p));
+      } else if (r.status !== 'protected') {
+        out.push(F('LINK_BROKEN', `Internal link to ${p} does not resolve (${r.detail ?? r.status}).`, p));
       }
     }
   }

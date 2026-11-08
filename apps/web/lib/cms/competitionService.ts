@@ -336,19 +336,32 @@ export async function editionCoverageSummary(editionId: string) {
   return { sessions, results, standings, hasAny: sessions + results + standings > 0 };
 }
 
-/** Editions with ANY published+verified coverage, with per-section flags, for the sitemap. */
-export async function listPublicCoverageEditions(): Promise<{ eventSlug: string; editionSlug: string; schedule: boolean; results: boolean; standings: boolean }[]> {
+/**
+ * Editions with ANY published+verified coverage, with per-section flags, for the sitemap.
+ * Batch S4: also returns each section's newest row `updatedAt` (real sitemap lastModified),
+ * using groupBy instead of distinct — same three queries, same edition/section set.
+ */
+export async function listPublicCoverageEditions(): Promise<{
+  eventSlug: string; editionSlug: string; schedule: boolean; results: boolean; standings: boolean;
+  scheduleUpdatedAt: Date | null; resultsUpdatedAt: Date | null; standingsUpdatedAt: Date | null;
+}[]> {
   const editionIds = new Set<string>();
   const [s, r, st] = await Promise.all([
-    prisma.competitionSession.findMany({ where: PUB, select: { editionId: true }, distinct: ['editionId'] }),
-    prisma.competitionResult.findMany({ where: PUB, select: { editionId: true }, distinct: ['editionId'] }),
-    prisma.competitionStanding.findMany({ where: PUB, select: { editionId: true }, distinct: ['editionId'] }),
+    prisma.competitionSession.groupBy({ by: ['editionId'], where: PUB, _max: { updatedAt: true } }),
+    prisma.competitionResult.groupBy({ by: ['editionId'], where: PUB, _max: { updatedAt: true } }),
+    prisma.competitionStanding.groupBy({ by: ['editionId'], where: PUB, _max: { updatedAt: true } }),
   ]);
-  const sch = new Set(s.map((x) => x.editionId)); const res = new Set(r.map((x) => x.editionId)); const stn = new Set(st.map((x) => x.editionId));
-  for (const id of [...sch, ...res, ...stn]) editionIds.add(id);
+  const sch = new Map(s.map((x) => [x.editionId, x._max.updatedAt ?? null]));
+  const res = new Map(r.map((x) => [x.editionId, x._max.updatedAt ?? null]));
+  const stn = new Map(st.map((x) => [x.editionId, x._max.updatedAt ?? null]));
+  for (const id of [...sch.keys(), ...res.keys(), ...stn.keys()]) editionIds.add(id);
   if (editionIds.size === 0) return [];
   const eds = await prisma.rodeoEventEdition.findMany({ where: { id: { in: [...editionIds] } }, select: { id: true, editionSlug: true, event: { select: { slug: true } } } });
-  return eds.map((e) => ({ eventSlug: e.event.slug, editionSlug: e.editionSlug, schedule: sch.has(e.id), results: res.has(e.id), standings: stn.has(e.id) }));
+  return eds.map((e) => ({
+    eventSlug: e.event.slug, editionSlug: e.editionSlug,
+    schedule: sch.has(e.id), results: res.has(e.id), standings: stn.has(e.id),
+    scheduleUpdatedAt: sch.get(e.id) ?? null, resultsUpdatedAt: res.get(e.id) ?? null, standingsUpdatedAt: stn.get(e.id) ?? null,
+  }));
 }
 
 export async function listEligibleCompetitors(a: Actor, editionId: string) {

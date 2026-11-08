@@ -1,101 +1,12 @@
 import type { MetadataRoute } from 'next';
-import { SITE_URL } from '@/lib/seo';
-import {
-  getPublishedArticles,
-  getAllDisciplines,
-  getAllSectionKeys,
-  getSectionMeta,
-} from '@/lib/content';
-import { getAllRodeoSlugs } from '@/lib/rodeoContent';
-import { getIndexableVenueSlugs, getIndexableCompetitorSlugs } from '@/lib/batch12Content';
-import { listPublicCoverageEditions } from '@/lib/cms/competitionService';
-import { getIndexableLegalPages } from '@/config/legalPages';
+import { buildSitemapEntries } from '@/lib/seo/sitemapEntries';
 
 /**
- * Central indexability policy (Master Requirements §8.2 / Batch 01 §12): the XML
- * sitemap lists ONLY published, publicly eligible URLs. Admin, drafts and other
- * non-published content are excluded by construction (adapter returns published
- * only). This replaces the missing Phase 0 sitemap generator.
+ * XML sitemap (Master Requirements §8.2 / Batch 01 §12). Thin route wrapper — eligibility
+ * is decided by the shared SEO policy (lib/seo/policy.ts) over each content type's existing
+ * rules (lib/seo/sitemapEntries.ts): only published, indexable, self-canonical URLs are
+ * listed. Admin, drafts, noindex and canonical-away pages are excluded by construction.
  */
 export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
-  const now = new Date();
-  const entries: MetadataRoute.Sitemap = [
-    { url: `${SITE_URL}/`, lastModified: now, changeFrequency: 'daily', priority: 1 },
-  ];
-
-  for (const key of getAllSectionKeys()) {
-    const meta = await getSectionMeta(key);
-    if (!meta) continue;
-    entries.push({
-      url: `${SITE_URL}${meta.path}`,
-      lastModified: now,
-      changeFrequency: 'weekly',
-      priority: 0.8,
-    });
-    const catSlug = meta.categoryKey.toLowerCase().replace(/[^a-z0-9]+/g, '-');
-    entries.push({
-      url: `${SITE_URL}/categories/${catSlug}/`,
-      lastModified: now,
-      changeFrequency: 'weekly',
-      priority: 0.5,
-    });
-  }
-
-  for (const d of await getAllDisciplines()) {
-    entries.push({
-      url: `${SITE_URL}/disciplines/${d.slug}/`,
-      lastModified: now,
-      changeFrequency: 'monthly',
-      priority: 0.6,
-    });
-  }
-
-  for (const a of await getPublishedArticles()) {
-    entries.push({
-      url: `${SITE_URL}/articles/${a.slug}/`,
-      lastModified: now,
-      changeFrequency: 'weekly',
-      priority: 0.7,
-    });
-  }
-
-  // Public rodeo entity pages (Batch 10): hubs, recurring events, annual editions.
-  const rodeo = await getAllRodeoSlugs();
-  for (const slug of rodeo.hubs) {
-    entries.push({ url: `${SITE_URL}/rodeo-events/${slug}/`, lastModified: now, changeFrequency: 'monthly', priority: 0.5 });
-  }
-  for (const slug of rodeo.events) {
-    entries.push({ url: `${SITE_URL}/rodeo-events/${slug}/`, lastModified: now, changeFrequency: 'monthly', priority: 0.6 });
-  }
-  for (const e of rodeo.editions) {
-    entries.push({ url: `${SITE_URL}/rodeo-events/${e.eventSlug}/${e.editionSlug}/`, lastModified: now, changeFrequency: 'weekly', priority: 0.6 });
-  }
-
-  // Public directories (Batch 15): the canonical index pages.
-  entries.push({ url: `${SITE_URL}/competitors/`, lastModified: now, changeFrequency: 'weekly', priority: 0.6 });
-  entries.push({ url: `${SITE_URL}/venues/`, lastModified: now, changeFrequency: 'weekly', priority: 0.6 });
-
-  // Public venue & competitor entity pages (Batch 12): only content-bearing, indexable entities.
-  for (const slug of await getIndexableVenueSlugs()) {
-    entries.push({ url: `${SITE_URL}/venues/${slug}/`, lastModified: now, changeFrequency: 'monthly', priority: 0.5 });
-  }
-  for (const slug of await getIndexableCompetitorSlugs()) {
-    entries.push({ url: `${SITE_URL}/competitors/${slug}/`, lastModified: now, changeFrequency: 'monthly', priority: 0.5 });
-  }
-
-  // Edition competition coverage (Batch 14): only sections with published+verified data.
-  for (const c of await listPublicCoverageEditions()) {
-    const base = `${SITE_URL}/rodeo-events/${c.eventSlug}/${c.editionSlug}`;
-    if (c.schedule) entries.push({ url: `${base}/schedule/`, lastModified: now, changeFrequency: 'weekly', priority: 0.6 });
-    if (c.results) entries.push({ url: `${base}/results/`, lastModified: now, changeFrequency: 'weekly', priority: 0.6 });
-    if (c.standings) entries.push({ url: `${base}/standings/`, lastModified: now, changeFrequency: 'weekly', priority: 0.6 });
-  }
-
-  // Publication policy pages: listed only once the owner approves their wording
-  // (drafts render with a review notice and are noindex — config/legalPages.ts).
-  for (const p of getIndexableLegalPages()) {
-    entries.push({ url: `${SITE_URL}${p.path}`, lastModified: now, changeFrequency: 'yearly', priority: 0.3 });
-  }
-
-  return entries;
+  return buildSitemapEntries();
 }
