@@ -26,4 +26,9 @@ export async function register(): Promise<void> {
     if (enforce) { log.error(msg); throw new Error(msg); }
     log.warn(msg);
   }
+
+  if (!isBuild) {
+    const { startScheduler } = await import('./lib/cms/scheduledPublishRunner');
+    startScheduler();
+  }
 }

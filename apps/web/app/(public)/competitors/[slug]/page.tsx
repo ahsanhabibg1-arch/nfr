@@ -8,6 +8,9 @@ import { getEntitySeo, mergeSeoMeta } from '@/lib/cms/entitySeoService';
 import { listPublicFaqs } from '@/lib/cms/faqService';
 import { EntityIntro } from '@/components/editorial/EntityIntro';
 import { FaqAccordion } from '@/components/FaqAccordion';
+import { isStaffDraftPreview } from '@/lib/cms/previewGuard';
+import { resolveCompetitorTemplateSlots } from '@/lib/cms/detailTemplateData';
+import { ArticleAppendageSlots } from '@/views/ArticleAppendageSlots';
 
 type Params = { params: Promise<{ slug: string }> };
 
@@ -39,7 +42,12 @@ export default async function CompetitorPage({ params }: Params) {
   const { slug } = await params;
   const c = await getPublicCompetitorBySlug(slug);
   if (!c) notFound();
-  const [seo, faqs] = await Promise.all([getEntitySeo('COMPETITOR', c.id), listPublicFaqs('COMPETITOR', c.id)]);
+  const draft = await isStaffDraftPreview();
+  const [seo, faqs, appendageSlots] = await Promise.all([
+    getEntitySeo('COMPETITOR', c.id),
+    listPublicFaqs('COMPETITOR', c.id),
+    resolveCompetitorTemplateSlots(c.id, { draft }),
+  ]);
   const faqLd = faqPageJsonLd(faqs);
   const hometown = competitorHometown(c);
 
@@ -120,6 +128,7 @@ export default async function CompetitorPage({ params }: Params) {
           </div>
         )}
       </article>
+      <ArticleAppendageSlots slots={appendageSlots} />
     </>
   );
 }

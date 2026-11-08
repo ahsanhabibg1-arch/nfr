@@ -6,6 +6,7 @@ import { buildMetadata, breadcrumbJsonLd, JsonLd } from '@/lib/seo';
 import { ViewBeacon } from '@/components/analytics/ViewBeacon';
 import { getEntitySeo } from '@/lib/cms/entitySeoService';
 import { sectionMetadataInput, sectionSeoEntityId } from '@/lib/seo/sectionMeta';
+import { isStaffDraftPreview } from '@/lib/cms/previewGuard';
 
 type Params = { params: Promise<{ section: string }> };
 
@@ -33,6 +34,7 @@ export default async function SectionPage({ params }: Params) {
   const { section } = await params;
   const meta = await getSectionMeta(section);
   if (!meta) notFound();
+  const draft = await isStaffDraftPreview();
 
   return (
     <>
@@ -42,7 +44,7 @@ export default async function SectionPage({ params }: Params) {
           { name: meta.name, path: meta.path },
         ])}
       />
-      <SectionLandingView sectionKey={section} />
+      <SectionLandingView sectionKey={section} draft={draft} />
       <ViewBeacon entityType="SECTION" entityId={section} path={meta.path} />
     </>
   );

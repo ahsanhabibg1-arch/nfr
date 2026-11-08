@@ -8,14 +8,35 @@ import { audit } from './guard';
 import { ServiceError } from './articleService';
 import { sanitizeLegalHtml } from './sanitizeHtml';
 
-const VALID_SLUGS = ['about', 'privacy', 'terms', 'editorial-policy', 'affiliate-disclosure', 'corrections', 'contact'] as const;
+export const LEGACY_SLUGS = ['about', 'privacy', 'terms', 'editorial-policy', 'affiliate-disclosure', 'corrections', 'contact'] as const;
+
+const RESERVED_SLUGS = new Set([
+  'admin', 'api', 'auth', '_next', 'internal', 'index', 'page', 'layout',
+  'loading', 'error', 'not-found', 'login', 'logout', 'register', 'signup',
+  'settings', 'dashboard', 'profile', 'search', 'sitemap', 'robots',
+  'favicon', 'manifest', 'feed', 'rss', 'atom', 'info',
+  'account', 'forgot-password', 'reset-password',
+  'articles', 'categories', 'competitors', 'venues', 'rodeo-events', 'disciplines',
+]);
+
+const SLUG_RE = /^[a-z0-9]+(?:-[a-z0-9]+)*$/;
+
+const slugSchema = z.string().min(1, 'Slug is required.').max(100, 'Slug must be 100 characters or fewer.').refine(
+  (s) => SLUG_RE.test(s),
+  'Slug must be lowercase letters, numbers, and hyphens (no leading/trailing/double hyphens).',
+).refine(
+  (s) => !RESERVED_SLUGS.has(s),
+  'This slug is reserved and cannot be used.',
+);
+
+export { RESERVED_SLUGS, SLUG_RE };
 
 const need = (a: Actor, perm: string) => {
   if (!roleHasPermission(a.roles, perm as any)) throw new ServiceError('forbidden', `Not permitted (${perm}).`);
 };
 
 const SaveSchema = z.object({
-  slug: z.enum(VALID_SLUGS),
+  slug: slugSchema,
   title: z.string().min(1).max(200),
   body: z.string().min(1).max(50000),
   seoTitle: z.string().max(200).nullable().optional(),

@@ -1,5 +1,5 @@
 import 'server-only';
-import type { PageLayout } from '@prisma/client';
+import type { PageLayout, PageLayoutRevision } from '@prisma/client';
 import { prisma } from '../db';
 import { roleHasPermission } from '../auth/rbac';
 import type { Actor } from './guard';
@@ -148,15 +148,30 @@ export async function publishLayout(actor: Actor, pageKey: string): Promise<Page
   const layout = await prisma.pageLayout.findUnique({ where: { pageKey } });
   if (!layout) throw new ServiceError('not_found', `No layout found for "${pageKey}".`);
 
-  const result = await prisma.pageLayout.update({
-    where: { pageKey },
-    data: {
-      publishedSections: JSON.parse(JSON.stringify(layout.draftSections)),
-      publishedAt: new Date(),
-      publishedById: actor.id,
-      updatedById: actor.id,
-    },
-  });
+  const sections = JSON.parse(JSON.stringify(layout.draftSections));
+  const actorName = await resolveActorName(actor.id);
+
+  const [result] = await prisma.$transaction([
+    prisma.pageLayout.update({
+      where: { pageKey },
+      data: {
+        publishedSections: sections,
+        publishedAt: new Date(),
+        publishedById: actor.id,
+        updatedById: actor.id,
+      },
+    }),
+    prisma.pageLayoutRevision.create({
+      data: {
+        pageKey,
+        revisionNo: await nextRevisionNo(pageKey),
+        snapshot: sections,
+        actorId: actor.id,
+        actorName,
+        summary: 'Immediate publish',
+      },
+    }),
+  ]);
   await audit(actor.id, 'page_layout.publish', 'PageLayout', result.id, JSON.stringify({ pageKey }));
   return result;
 }
@@ -195,5 +210,172 @@ export async function restoreDefaults(actor: Actor, pageKey: string): Promise<Pa
     },
   });
   await audit(actor.id, 'page_layout.restore_defaults', 'PageLayout', result.id, JSON.stringify({ pageKey }));
+  return result;
+}
+
+/* ── Scheduled Publishing ──────────────────────────────────────── */
+
+export async function schedulePublish(
+  actor: Actor,
+  pageKey: string,
+  scheduledAt: Date,
+): Promise<PageLayout> {
+  need(actor);
+  validatePageKey(pageKey);
+  if (scheduledAt.getTime() <= Date.now()) {
+    throw new ServiceError('validation', 'Scheduled time must be in the future.');
+  }
+  const layout = await prisma.pageLayout.findUnique({ where: { pageKey } });
+  if (!layout) throw new ServiceError('not_found', `No layout found for "${pageKey}".`);
+  const draft = layout.draftSections as unknown as SectionSlot[];
+  if (!Array.isArray(draft) || draft.length === 0) {
+    throw new ServiceError('validation', 'Cannot schedule an empty draft.');
+  }
+
+  const result = await prisma.pageLayout.update({
+    where: { pageKey },
+    data: {
+      scheduledSections: JSON.parse(JSON.stringify(draft)),
+      scheduledAt,
+      scheduledById: actor.id,
+      updatedById: actor.id,
+    },
+  });
+  await audit(actor.id, 'page_layout.schedule', 'PageLayout', result.id, JSON.stringify({ pageKey, scheduledAt: scheduledAt.toISOString() }));
+  return result;
+}
+
+export async function cancelSchedule(actor: Actor, pageKey: string): Promise<PageLayout> {
+  need(actor);
+  const layout = await prisma.pageLayout.findUnique({ where: { pageKey } });
+  if (!layout) throw new ServiceError('not_found', `No layout found for "${pageKey}".`);
+  if (!layout.scheduledAt) throw new ServiceError('validation', 'No schedule exists for this page.');
+
+  const result = await prisma.pageLayout.update({
+    where: { pageKey },
+    data: {
+      scheduledSections: null as unknown as undefined,
+      scheduledAt: null,
+      scheduledById: null,
+      updatedById: actor.id,
+    },
+  });
+  await audit(actor.id, 'page_layout.cancel_schedule', 'PageLayout', result.id, JSON.stringify({ pageKey }));
+  return result;
+}
+
+export async function getDueSchedules(): Promise<PageLayout[]> {
+  return prisma.pageLayout.findMany({
+    where: {
+      scheduledAt: { lte: new Date() },
+      scheduledSections: { not: { equals: null } },
+    },
+  });
+}
+
+export async function executeScheduledPublish(layout: PageLayout): Promise<PageLayout | null> {
+  const scheduled = layout.scheduledSections as unknown as SectionSlot[];
+  if (!Array.isArray(scheduled) || scheduled.length === 0) return null;
+
+  const sections = JSON.parse(JSON.stringify(scheduled));
+
+  const { count } = await prisma.pageLayout.updateMany({
+    where: {
+      id: layout.id,
+      scheduledAt: { not: null },
+      scheduledSections: { not: { equals: null } },
+    },
+    data: {
+      publishedSections: sections,
+      publishedAt: new Date(),
+      publishedById: layout.scheduledById,
+      scheduledSections: null as unknown as undefined,
+      scheduledAt: null,
+      scheduledById: null,
+      version: { increment: 1 },
+    },
+  });
+
+  if (count === 0) return null;
+
+  const actorName = await resolveActorName(layout.scheduledById);
+  await prisma.pageLayoutRevision.create({
+    data: {
+      pageKey: layout.pageKey,
+      revisionNo: await nextRevisionNo(layout.pageKey),
+      snapshot: sections,
+      actorId: layout.scheduledById,
+      actorName,
+      summary: 'Scheduled publish',
+    },
+  });
+
+  const result = await prisma.pageLayout.findUnique({ where: { id: layout.id } });
+  if (result) {
+    await audit(layout.scheduledById, 'page_layout.scheduled_publish', 'PageLayout', result.id, JSON.stringify({ pageKey: layout.pageKey }));
+  }
+  return result;
+}
+
+/* ── Revision History ─────────────────────────────────────────── */
+
+async function resolveActorName(actorId: string | null | undefined): Promise<string> {
+  if (!actorId) return 'System';
+  const user = await prisma.user.findUnique({ where: { id: actorId }, select: { name: true } });
+  return user?.name ?? 'Unknown';
+}
+
+async function nextRevisionNo(pageKey: string): Promise<number> {
+  const last = await prisma.pageLayoutRevision.findFirst({
+    where: { pageKey },
+    orderBy: { revisionNo: 'desc' },
+    select: { revisionNo: true },
+  });
+  return (last?.revisionNo ?? 0) + 1;
+}
+
+export async function listRevisions(
+  pageKey: string,
+  opts?: { limit?: number; offset?: number },
+): Promise<{ revisions: Omit<PageLayoutRevision, 'snapshot'>[]; total: number }> {
+  const limit = opts?.limit ?? 50;
+  const offset = opts?.offset ?? 0;
+  const [revisions, total] = await Promise.all([
+    prisma.pageLayoutRevision.findMany({
+      where: { pageKey },
+      select: { id: true, pageKey: true, revisionNo: true, actorId: true, actorName: true, summary: true, createdAt: true },
+      orderBy: { revisionNo: 'desc' },
+      take: limit,
+      skip: offset,
+    }),
+    prisma.pageLayoutRevision.count({ where: { pageKey } }),
+  ]);
+  return { revisions: revisions as Omit<PageLayoutRevision, 'snapshot'>[], total };
+}
+
+export async function getRevision(revisionId: string): Promise<PageLayoutRevision | null> {
+  return prisma.pageLayoutRevision.findUnique({ where: { id: revisionId } });
+}
+
+export async function restoreRevision(actor: Actor, pageKey: string, revisionId: string): Promise<PageLayout> {
+  need(actor);
+  validatePageKey(pageKey);
+
+  const revision = await prisma.pageLayoutRevision.findUnique({ where: { id: revisionId } });
+  if (!revision) throw new ServiceError('not_found', 'Revision not found.');
+  if (revision.pageKey !== pageKey) throw new ServiceError('validation', 'Revision does not belong to this page.');
+
+  const layout = await prisma.pageLayout.findUnique({ where: { pageKey } });
+  if (!layout) throw new ServiceError('not_found', `No layout found for "${pageKey}".`);
+
+  const result = await prisma.pageLayout.update({
+    where: { pageKey },
+    data: {
+      draftSections: revision.snapshot as object,
+      updatedById: actor.id,
+    },
+  });
+
+  await audit(actor.id, 'page_layout.restore_revision', 'PageLayout', result.id, JSON.stringify({ pageKey, revisionId, revisionNo: revision.revisionNo }));
   return result;
 }

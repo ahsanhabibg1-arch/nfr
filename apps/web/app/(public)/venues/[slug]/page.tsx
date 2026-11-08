@@ -8,6 +8,9 @@ import { getEntitySeo, mergeSeoMeta } from '@/lib/cms/entitySeoService';
 import { listPublicFaqs } from '@/lib/cms/faqService';
 import { EntityIntro } from '@/components/editorial/EntityIntro';
 import { FaqAccordion } from '@/components/FaqAccordion';
+import { isStaffDraftPreview } from '@/lib/cms/previewGuard';
+import { resolveVenueTemplateSlots } from '@/lib/cms/detailTemplateData';
+import { ArticleAppendageSlots } from '@/views/ArticleAppendageSlots';
 
 type Params = { params: Promise<{ slug: string }> };
 
@@ -38,7 +41,12 @@ export default async function VenuePage({ params }: Params) {
   const { slug } = await params;
   const v = await getPublicVenueBySlug(slug);
   if (!v) notFound();
-  const [seo, faqs] = await Promise.all([getEntitySeo('VENUE', v.id), listPublicFaqs('VENUE', v.id)]);
+  const draft = await isStaffDraftPreview();
+  const [seo, faqs, appendageSlots] = await Promise.all([
+    getEntitySeo('VENUE', v.id),
+    listPublicFaqs('VENUE', v.id),
+    resolveVenueTemplateSlots(v.id, { draft }),
+  ]);
   const faqLd = faqPageJsonLd(faqs);
   const place = [v.city, v.state, v.country].filter(Boolean).join(', ');
 
@@ -106,6 +114,7 @@ export default async function VenuePage({ params }: Params) {
           </div>
         )}
       </article>
+      <ArticleAppendageSlots slots={appendageSlots} />
     </>
   );
 }

@@ -41,6 +41,7 @@ export default async function Page() {
     pageKey: l.pageKey,
     draftSections: ensureSlotIds(l.draftSections as unknown as { id: string; sectionType: string; visible: boolean; order: number; props: Record<string, unknown> }[]),
     publishedAt: l.publishedAt?.toISOString() ?? null,
+    scheduledAt: l.scheduledAt?.toISOString() ?? null,
   }));
 
   const registries = {

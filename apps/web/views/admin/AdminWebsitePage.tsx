@@ -31,6 +31,7 @@ interface LayoutRow {
   pageKey: string;
   draftSections: SectionSlot[];
   publishedAt: string | null;
+  scheduledAt: string | null;
 }
 
 interface Props {

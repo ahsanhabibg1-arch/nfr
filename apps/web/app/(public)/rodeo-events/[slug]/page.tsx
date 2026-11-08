@@ -8,6 +8,9 @@ import { getEntitySeo, mergeSeoMeta } from '@/lib/cms/entitySeoService';
 import { listPublicFaqs } from '@/lib/cms/faqService';
 import { RodeoHubView, RodeoEventView } from '@/views/RodeoViews';
 import { ViewBeacon } from '@/components/analytics/ViewBeacon';
+import { isStaffDraftPreview } from '@/lib/cms/previewGuard';
+import { resolveRodeoHubTemplateSlots } from '@/lib/cms/detailTemplateData';
+import { ArticleAppendageSlots } from '@/views/ArticleAppendageSlots';
 
 type Params = { params: Promise<{ slug: string }> };
 
@@ -39,13 +42,16 @@ export default async function Page({ params }: Params) {
   const r = await resolveRodeoEntity(slug);
   if (!r) notFound();
 
+  const draft = await isStaffDraftPreview();
+
   if (r.kind === 'event') {
     const e = await getPublicEventBySlug(slug);
     if (!e) notFound();
-    const [associations, seo, faqs] = await Promise.all([
+    const [associations, seo, faqs, appendageSlots] = await Promise.all([
       getEntityCommercialAssociations('RODEO_EVENT', e.id),
       getEntitySeo('RODEO_EVENT', e.id),
       listPublicFaqs('RODEO_EVENT', e.id),
+      resolveRodeoHubTemplateSlots(e.id, { draft }),
     ]);
     const crumb = breadcrumbJsonLd([{ name: 'Home', path: '/' }, { name: 'Rodeo Events', path: ROUTES.MORE_RODEO }, { name: e.name, path: ROUTES.RODEO_EVENT(e.slug) }]);
     const faqLd = faqPageJsonLd(faqs);
@@ -53,6 +59,7 @@ export default async function Page({ params }: Params) {
       <>
         <JsonLd data={faqLd ? [crumb, faqLd] : crumb} />
         <RodeoEventView event={e} associations={associations} extras={{ intro: seo?.intro, faqs }} />
+        <ArticleAppendageSlots slots={appendageSlots} />
         <ViewBeacon entityType="RODEO_EVENT" entityId={e.id} path={ROUTES.RODEO_EVENT(e.slug)} />
       </>
     );
@@ -60,13 +67,18 @@ export default async function Page({ params }: Params) {
 
   const h = await getPublicHubBySlug(slug);
   if (!h) notFound();
-  const [seo, faqs] = await Promise.all([getEntitySeo('RODEO_HUB', h.id), listPublicFaqs('RODEO_HUB', h.id)]);
+  const [seo, faqs, appendageSlots] = await Promise.all([
+    getEntitySeo('RODEO_HUB', h.id),
+    listPublicFaqs('RODEO_HUB', h.id),
+    resolveRodeoHubTemplateSlots(h.id, { draft }),
+  ]);
   const crumb = breadcrumbJsonLd([{ name: 'Home', path: '/' }, { name: 'Rodeo Events', path: ROUTES.MORE_RODEO }, { name: h.title, path: ROUTES.RODEO_HUB(h.slug) }]);
   const faqLd = faqPageJsonLd(faqs);
   return (
     <>
       <JsonLd data={faqLd ? [crumb, faqLd] : crumb} />
       <RodeoHubView hub={h} extras={{ intro: seo?.intro, faqs }} />
+      <ArticleAppendageSlots slots={appendageSlots} />
       <ViewBeacon entityType="RODEO_HUB" entityId={h.id} path={ROUTES.RODEO_HUB(h.slug)} />
     </>
   );

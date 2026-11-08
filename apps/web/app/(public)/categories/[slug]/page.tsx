@@ -11,6 +11,9 @@ import { listPublicFaqs } from '@/lib/cms/faqService';
 import { getCategoryBySlug } from '@/lib/content';
 import { FaqAccordion } from '@/components/FaqAccordion';
 import { EntityIntro } from '@/components/editorial/EntityIntro';
+import { isStaffDraftPreview } from '@/lib/cms/previewGuard';
+import { resolveCategoryTemplateSlots } from '@/lib/cms/detailTemplateData';
+import { ArticleAppendageSlots } from '@/views/ArticleAppendageSlots';
 
 type Params = { params: Promise<{ slug: string }> };
 
@@ -38,7 +41,9 @@ export default async function CategoryPage({ params }: Params) {
     : await getPublishedArticlesByCategory(slug);
   const categoryName = meta?.categoryKey || slug.replace(/-/g, ' ').toUpperCase();
   const catRow = await getCategoryBySlug(slug);
+  const draft = await isStaffDraftPreview();
   const [seo, faqs] = catRow ? await Promise.all([getEntitySeo('CATEGORY', catRow.id), listPublicFaqs('CATEGORY', catRow.id)]) : [null, []];
+  const appendageSlots = await resolveCategoryTemplateSlots(slug, { draft });
   const faqLd = faqPageJsonLd(faqs);
   const crumb = breadcrumbJsonLd([
     { name: 'Home', path: '/' },
@@ -60,6 +65,7 @@ export default async function CategoryPage({ params }: Params) {
           <FaqAccordion faqs={faqs} />
         </div>
       )}
+      <ArticleAppendageSlots slots={appendageSlots} />
     </>
   );
 }

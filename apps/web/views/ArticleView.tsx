@@ -13,9 +13,9 @@ import { GlobalBlockRenderer } from '../components/public/GlobalBlockRenderer';
 import { resolveArticleTemplateSlots } from '../lib/cms/detailTemplateData';
 import { ArticleAppendageSlots } from './ArticleAppendageSlots';
 
-export async function ArticleView({ article }: { article: Article }) {
+export async function ArticleView({ article, draft }: { article: Article; draft?: boolean }) {
   const [appendageSlots, articleEndBlocks] = await Promise.all([
-    resolveArticleTemplateSlots(article.id),
+    resolveArticleTemplateSlots(article.id, { draft }),
     getActiveBlocksForPlacement('article-end'),
   ]);
 

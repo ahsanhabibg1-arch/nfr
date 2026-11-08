@@ -299,8 +299,8 @@ describe('Batch 32 — Premium Visual Page Builder', () => {
       expect(getPageFamily('directory:venues')).toBe('directory');
     });
 
-    it('KNOWN_PAGE_KEYS still has all 13 keys', () => {
-      expect(KNOWN_PAGE_KEYS.length).toBe(13);
+    it('KNOWN_PAGE_KEYS has all 15 keys (Tasks 2+3 added competitor/venue)', () => {
+      expect(KNOWN_PAGE_KEYS.length).toBe(15);
     });
 
     it('all known page keys still have labels', () => {

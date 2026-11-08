@@ -3,7 +3,8 @@ import { draftMode } from 'next/headers';
 import { requireUser } from '@/lib/auth/currentUser';
 import { roleHasPermission } from '@/lib/auth/rbac';
 import { prisma } from '@/lib/db';
-import { KNOWN_PAGE_KEYS } from '@/lib/cms/sectionRegistry';
+import { ADMIN_VISIBLE_PAGE_KEYS } from '@/lib/cms/sectionRegistry';
+import { publicArticleWhere } from '@/lib/fixturePolicy';
 
 export async function GET(req: NextRequest) {
   const user = await requireUser();
@@ -18,7 +19,7 @@ export async function GET(req: NextRequest) {
   }
 
   const pageKey = req.nextUrl.searchParams.get('pageKey');
-  if (!pageKey || !(KNOWN_PAGE_KEYS as readonly string[]).includes(pageKey)) {
+  if (!pageKey || !(ADMIN_VISIBLE_PAGE_KEYS as readonly string[]).includes(pageKey)) {
     return NextResponse.json({ error: 'Invalid page key' }, { status: 400 });
   }
 
@@ -27,7 +28,10 @@ export async function GET(req: NextRequest) {
     return NextResponse.json({ error: 'No draft found for this page.' }, { status: 404 });
   }
 
-  const targetUrl = pageKeyToUrl(pageKey);
+  const targetUrl = await pageKeyToUrl(pageKey);
+  if (!targetUrl) {
+    return NextResponse.json({ error: `No previewable URL for page key "${pageKey}".` }, { status: 404 });
+  }
 
   // Next.js draft mode: public pages render the saved *draft* layout for this staff session
   // (pages re-check the system.config permission before honouring it). Visitors are unaffected.
@@ -70,11 +74,47 @@ export async function GET(req: NextRequest) {
   });
 }
 
-function pageKeyToUrl(pageKey: string): string {
+async function pageKeyToUrl(pageKey: string): Promise<string | null> {
   if (pageKey === 'homepage') return '/';
   if (pageKey.startsWith('section:')) return `/${pageKey.replace('section:', '')}/`;
-  if (pageKey === 'template:article') return '/articles/';
+  if (pageKey === 'template:article') {
+    const latest = await prisma.article.findFirst({
+      where: publicArticleWhere(),
+      orderBy: { publishedAt: 'desc' },
+      select: { slug: true },
+    });
+    return latest ? `/articles/${latest.slug}/` : null;
+  }
+  if (pageKey === 'template:rodeo-hub') {
+    const hub = await prisma.rodeoHub.findFirst({ orderBy: { sortOrder: 'asc' }, select: { slug: true } });
+    if (hub) return `/rodeo-events/${hub.slug}/`;
+    const ev = await prisma.rodeoEvent.findFirst({ orderBy: { name: 'asc' }, select: { slug: true } });
+    return ev ? `/rodeo-events/${ev.slug}/` : null;
+  }
+  if (pageKey === 'template:rodeo-edition') {
+    const ed = await prisma.rodeoEventEdition.findFirst({
+      orderBy: { startAt: 'desc' },
+      include: { event: { select: { slug: true } } },
+    });
+    return ed ? `/rodeo-events/${ed.event.slug}/${ed.editionSlug}/` : null;
+  }
+  if (pageKey === 'template:discipline') {
+    const d = await prisma.discipline.findFirst({ orderBy: { sortOrder: 'asc' }, select: { slug: true } });
+    return d ? `/disciplines/${d.slug}/` : null;
+  }
+  if (pageKey === 'template:category') {
+    const cat = await prisma.category.findFirst({ orderBy: { name: 'asc' }, select: { slug: true } });
+    return cat ? `/categories/${cat.slug}/` : null;
+  }
+  if (pageKey === 'template:competitor') {
+    const comp = await prisma.competitor.findFirst({ orderBy: { fullName: 'asc' }, select: { slug: true } });
+    return comp ? `/competitors/${comp.slug}/` : null;
+  }
+  if (pageKey === 'template:venue') {
+    const venue = await prisma.venue.findFirst({ orderBy: { name: 'asc' }, select: { slug: true } });
+    return venue ? `/venues/${venue.slug}/` : null;
+  }
   if (pageKey === 'directory:competitors') return '/competitors/';
   if (pageKey === 'directory:venues') return '/venues/';
-  return '/';
+  return null;
 }

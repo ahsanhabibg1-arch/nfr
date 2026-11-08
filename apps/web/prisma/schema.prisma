@@ -1600,12 +1600,31 @@ model PageLayout {
   publishedSections   Json      @default("[]")
   scheduledSections   Json?
   scheduledAt         DateTime?
+  scheduledById       String?
   publishedAt         DateTime?
   publishedById       String?
   updatedById         String?
   version             Int       @default(1)
   createdAt           DateTime  @default(now())
   updatedAt           DateTime  @updatedAt
+  revisions           PageLayoutRevision[]
+}
+
+/// Revision snapshot for Page Layouts. Created automatically on every publish
+/// (immediate or scheduled). Enables history viewing and draft restore.
+model PageLayoutRevision {
+  id         String     @id @default(uuid())
+  pageKey    String
+  revisionNo Int
+  snapshot   Json
+  actorId    String?
+  actorName  String
+  summary    String
+  createdAt  DateTime   @default(now())
+  layout     PageLayout @relation(fields: [pageKey], references: [pageKey], onDelete: Cascade)
+
+  @@unique([pageKey, revisionNo])
+  @@index([pageKey, createdAt])
 }
 
 /// Global announcement banner (Batch 33). Displayed at the top of public pages.

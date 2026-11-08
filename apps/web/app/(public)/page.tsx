@@ -1,5 +1,4 @@
 import type { Metadata } from 'next';
-import { draftMode } from 'next/headers';
 import { HomeView } from '@/views/HomeView';
 import { buildMetadata } from '@/lib/seo';
 import { getHeroArticle } from '@/lib/content';
@@ -8,7 +7,7 @@ import { resolveHomepageSlots } from '@/lib/cms/homepageData';
 import { getActiveBlocksForPlacement } from '@/lib/cms/globalBlockService';
 import { getPublished } from '@/lib/cms/siteConfigService';
 import type { AppearanceConfig } from '@/lib/cms/siteConfigService';
-import { getCurrentUser, userHasPermission } from '@/lib/auth/currentUser';
+import { isStaffDraftPreview } from '@/lib/cms/previewGuard';
 
 export const revalidate = 60; // ISR: re-render homepage feeds at most once a minute.
 
@@ -21,13 +20,6 @@ export async function generateMetadata(): Promise<Metadata> {
     path: '/',
     image: hero?.heroImage,
   });
-}
-
-/** Draft preview is only honoured for signed-in staff who can edit the site layout. */
-async function isStaffDraftPreview(): Promise<boolean> {
-  const { isEnabled } = await draftMode();
-  if (!isEnabled) return false;
-  return userHasPermission(await getCurrentUser(), 'system.config');
 }
 
 export default async function HomePage() {

@@ -4,8 +4,9 @@ import { listPublicVenues } from '@/lib/batch12Content';
 import { buildMetadata, breadcrumbJsonLd, JsonLd } from '@/lib/seo';
 import { directoryListingRobots } from '@/lib/seo/robots';
 import { ROUTES } from '@/config/routes';
-import { getPublishedSections } from '@/lib/cms/pageLayoutService';
-import type { SectionSlot } from '@/lib/cms/sectionRegistry';
+import { resolveDirectorySlots } from '@/lib/cms/directoryData';
+import { DirectoryCtaSlot } from '@/views/DirectorySlots';
+import { isStaffDraftPreview } from '@/lib/cms/previewGuard';
 
 type SP = Promise<Record<string, string | string[] | undefined>>;
 const str = (v: string | string[] | undefined) => (Array.isArray(v) ? v[0] : v) || '';
@@ -13,31 +14,23 @@ export const revalidate = 300;
 
 export async function generateMetadata({ searchParams }: { searchParams: SP }): Promise<Metadata> {
   const sp = await searchParams; const page = Number(str(sp.page)) || 1;
-  // Filtered/paged variants: noindex (thin duplicates), follow (Batch S3 follow-up).
   const filtered = !!(str(sp.q) || str(sp.country) || page > 1);
   return buildMetadata({ title: 'Rodeo Venues Directory', description: 'Browse rodeo venues and arenas covered by NFRGuide — search by name and filter by country.', path: '/venues/', robots: directoryListingRobots(filtered) });
-}
-
-function slotProp(sections: SectionSlot[], type: string, key: string, fallback: string): string {
-  const s = sections.find((sl) => sl.sectionType === type);
-  if (!s) return fallback;
-  const v = s.props[key];
-  return typeof v === 'string' && v.length > 0 ? v : fallback;
 }
 
 export default async function VenuesDirectory({ searchParams }: { searchParams: SP }) {
   const sp = await searchParams;
   const q = str(sp.q); const country = str(sp.country); const page = Number(str(sp.page)) || 1;
-  const [{ items, total, totalPages, countryOptions }, layoutSections] = await Promise.all([
+  const draft = await isStaffDraftPreview();
+  const [{ items, total, totalPages, countryOptions }, directorySlots] = await Promise.all([
     listPublicVenues({ q, country, page }),
-    getPublishedSections('directory:venues'),
+    resolveDirectorySlots('directory:venues', { draft }),
   ]);
   const qs = (over: Record<string, string | number>) => { const p = new URLSearchParams(); if (q) p.set('q', q); if (country) p.set('country', country); for (const [k, v] of Object.entries(over)) { if (v) p.set(k, String(v)); } const s = p.toString(); return `/venues/${s ? `?${s}` : ''}`; };
 
-  const heroTitle = slotProp(layoutSections, 'directory-hero', 'title', 'Rodeo Venues');
-  const heroDesc = slotProp(layoutSections, 'directory-hero', 'description', 'Arenas and venues covered across NFRGuide\'s rodeo reporting. Search by name or filter by country.');
-  const ctaSlot = layoutSections.find((s) => s.sectionType === 'directory-cta');
-  const ctaVisible = ctaSlot?.visible !== false;
+  const heroSlot = directorySlots.find((s) => s.slot.sectionType === 'directory-hero');
+  const heroTitle = heroSlot?.data.heroTitle || 'Rodeo Venues';
+  const heroDesc = heroSlot?.data.heroDescription || 'Arenas and venues covered across NFRGuide\'s rodeo reporting. Search by name or filter by country.';
 
   return (
     <div className="max-w-5xl mx-auto px-4 sm:px-6 py-10">
@@ -56,7 +49,7 @@ export default async function VenuesDirectory({ searchParams }: { searchParams: 
         {(q || country) && <Link href="/venues/" className="px-3 py-2 text-xs text-stone-500 underline">Reset</Link>}
       </form>
 
-      <p className="text-xs text-stone-500 mb-3">{total} venue{total === 1 ? '' : 's'}{q ? ` matching “${q}”` : ''}{country ? ` in ${country}` : ''}.</p>
+      <p className="text-xs text-stone-500 mb-3">{total} venue{total === 1 ? '' : 's'}{q ? ` matching "${q}"` : ''}{country ? ` in ${country}` : ''}.</p>
 
       {items.length === 0 ? (
         <div className="bg-stone-50 border border-stone-200 rounded-xs p-10 text-center text-stone-500 text-sm">No venues match your search yet.</div>
@@ -66,7 +59,7 @@ export default async function VenuesDirectory({ searchParams }: { searchParams: 
             <li key={v.slug}>
               <Link href={ROUTES.VENUE(v.slug)} className="block h-full bg-white border border-stone-200 rounded-xs p-4 hover:border-[#D4A757] transition-colors">
                 <p className="font-serif text-lg font-bold text-stone-900">{v.name}</p>
-                {v.nickname && <p className="text-xs text-stone-500 italic">“{v.nickname}”</p>}
+                {v.nickname && <p className="text-xs text-stone-500 italic">"{v.nickname}"</p>}
                 {v.location && <p className="text-xs text-stone-600 mt-1">{v.location}</p>}
                 <p className="text-[11px] font-mono text-stone-500 mt-2">{v.capacity ? `${v.capacity.toLocaleString('en-US')} capacity` : ''}{v.capacity && v.editionCount ? ' · ' : ''}{v.editionCount ? `${v.editionCount} event edition${v.editionCount === 1 ? '' : 's'}` : ''}</p>
               </Link>
@@ -83,14 +76,7 @@ export default async function VenuesDirectory({ searchParams }: { searchParams: 
         </nav>
       )}
 
-      {ctaVisible && slotProp(layoutSections, 'directory-cta', 'ctaUrl', '') && (
-        <div className="mt-10 py-8 border-t border-stone-200 text-center">
-          <Link href={slotProp(layoutSections, 'directory-cta', 'ctaUrl', '/')}
-            className="inline-block px-6 py-3 bg-[#0F1115] text-[#D4A757] font-semibold text-sm rounded-xs hover:bg-stone-800 transition-colors">
-            {slotProp(layoutSections, 'directory-cta', 'ctaText', 'Explore More')}
-          </Link>
-        </div>
-      )}
+      <DirectoryCtaSlot slots={directorySlots} />
     </div>
   );
 }

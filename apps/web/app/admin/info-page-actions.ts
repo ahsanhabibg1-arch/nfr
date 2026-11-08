@@ -18,6 +18,7 @@ export async function saveInfoPageDraftAction(input: InfoPageInput): Promise<Act
     await saveInfoPageDraft(await actor(), input);
     revalidatePath('/admin/info-pages/');
     revalidatePath(`/${input.slug}/`);
+    revalidatePath(`/info/${input.slug}/`);
     return { ok: true };
   } catch (e) {
     return toActionError(e);
@@ -39,6 +40,7 @@ export async function approveInfoPageAction(slug: string): Promise<ActionResult>
     await approveInfoPage(await actor(), slug);
     revalidatePath('/admin/info-pages/');
     revalidatePath(`/${slug}/`);
+    revalidatePath(`/info/${slug}/`);
     return { ok: true };
   } catch (e) {
     return toActionError(e);
@@ -50,6 +52,7 @@ export async function publishInfoPageAction(slug: string): Promise<ActionResult>
     await publishInfoPage(await actor(), slug);
     revalidatePath('/admin/info-pages/');
     revalidatePath(`/${slug}/`);
+    revalidatePath(`/info/${slug}/`);
     return { ok: true };
   } catch (e) {
     return toActionError(e);
@@ -61,6 +64,7 @@ export async function revertToDraftAction(slug: string): Promise<ActionResult> {
     await revertToDraft(await actor(), slug);
     revalidatePath('/admin/info-pages/');
     revalidatePath(`/${slug}/`);
+    revalidatePath(`/info/${slug}/`);
     return { ok: true };
   } catch (e) {
     return toActionError(e);
@@ -72,6 +76,7 @@ export async function unpublishInfoPageAction(slug: string): Promise<ActionResul
     await unpublishInfoPage(await actor(), slug);
     revalidatePath('/admin/info-pages/');
     revalidatePath(`/${slug}/`);
+    revalidatePath(`/info/${slug}/`);
     return { ok: true };
   } catch (e) {
     return toActionError(e);

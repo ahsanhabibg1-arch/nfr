@@ -141,14 +141,14 @@ describe('Batch 31 — Page Layout System', () => {
     expect(registry).toContain("slotStr(slot, 'heroImageUrl')");
   });
 
-  it('homepage route resolves per-slot data and honours draft preview', () => {
+  it('homepage route resolves per-slot data and honours draft preview via shared guard', () => {
     const page = read('app/(public)/page.tsx');
     expect(page).toContain('resolveHomepageSlots');
-    expect(page).toContain('draftMode');
+    expect(page).toContain('isStaffDraftPreview');
     expect(page).toContain("getDraftSections('homepage')");
     const data = read('lib/cms/homepageData.ts');
     expect(data).toContain("numProp(slot.props, 'articleCount'");
-    expect(data).toContain("idListProp(props, 'featuredIds')");
+    expect(data).toContain("idListProp(heroSlot.props, 'featuredIds')");
   });
 
   // ---- Section landing integration ----
@@ -257,18 +257,20 @@ describe('Batch 31 — Page Layout System', () => {
     expect(bridge).toContain('PageRenderer');
   });
 
-  it('competitors directory reads layout from directory:competitors', () => {
+  it('competitors directory uses resolver for directory:competitors', () => {
     const src = read('app/(public)/competitors/page.tsx');
-    expect(src).toContain('getPublishedSections');
+    expect(src).toContain('resolveDirectorySlots');
     expect(src).toContain("'directory:competitors'");
     expect(src).toContain('heroTitle');
+    expect(src).not.toContain('slotProp(');
   });
 
-  it('venues directory reads layout from directory:venues', () => {
+  it('venues directory uses resolver for directory:venues', () => {
     const src = read('app/(public)/venues/page.tsx');
-    expect(src).toContain('getPublishedSections');
+    expect(src).toContain('resolveDirectorySlots');
     expect(src).toContain("'directory:venues'");
     expect(src).toContain('heroTitle');
+    expect(src).not.toContain('slotProp(');
   });
 
   // ---- Secure draft preview ----
@@ -276,7 +278,7 @@ describe('Batch 31 — Page Layout System', () => {
     const src = read('app/admin/(dashboard)/website/preview/route.ts');
     expect(src).toContain('requireUser');
     expect(src).toContain('system.config');
-    expect(src).toContain('KNOWN_PAGE_KEYS');
+    expect(src).toContain('ADMIN_VISIBLE_PAGE_KEYS');
     expect(src).toContain('noindex');
     expect(src).toContain('no-store');
     expect(src).toContain('DRAFT PREVIEW');

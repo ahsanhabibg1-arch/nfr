@@ -10,6 +10,9 @@ import { RodeoEditionView } from '@/views/RodeoViews';
 import { ViewBeacon } from '@/components/analytics/ViewBeacon';
 import { CoverageNav } from '@/components/editorial/CoverageNav';
 import { editionCoverageSummary } from '@/lib/cms/competitionService';
+import { isStaffDraftPreview } from '@/lib/cms/previewGuard';
+import { resolveRodeoEditionTemplateSlots } from '@/lib/cms/detailTemplateData';
+import { ArticleAppendageSlots } from '@/views/ArticleAppendageSlots';
 
 type Params = { params: Promise<{ slug: string; edition: string }> };
 
@@ -33,11 +36,13 @@ export default async function Page({ params }: Params) {
   const { slug, edition } = await params;
   const ed = await getPublicEditionBySlug(slug, edition);
   if (!ed) notFound();
-  const [associations, seo, faqs, coverage] = await Promise.all([
+  const draft = await isStaffDraftPreview();
+  const [associations, seo, faqs, coverage, appendageSlots] = await Promise.all([
     getEntityCommercialAssociations('RODEO_EDITION', ed.id),
     getEntitySeo('RODEO_EDITION', ed.id),
     listPublicFaqs('RODEO_EDITION', ed.id),
     editionCoverageSummary(ed.id),
+    resolveRodeoEditionTemplateSlots(ed.id, { draft }),
   ]);
   const url = `${SITE_URL}${ROUTES.RODEO_EDITION(ed.event.slug, ed.editionSlug)}`;
   const eventLd = rodeoEditionJsonLd({ name: `${ed.event.name}: ${ed.label}`, startAt: ed.startAt, endAt: ed.endAt, url, venue: ed.venue });
@@ -59,6 +64,7 @@ export default async function Page({ params }: Params) {
         </div>
       )}
       <RodeoEditionView edition={ed} associations={associations} extras={{ intro: seo?.intro, faqs }} />
+      <ArticleAppendageSlots slots={appendageSlots} />
       <ViewBeacon entityType="RODEO_EDITION" entityId={ed.id} path={ROUTES.RODEO_EDITION(ed.event.slug, ed.editionSlug)} />
     </>
   );

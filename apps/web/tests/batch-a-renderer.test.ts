@@ -109,8 +109,8 @@ describe('Batch A — Premium blocks are shared between homepage and landing', (
   });
 });
 
-describe('Batch A — Dead page keys hidden from admin UI', () => {
-  it('ADMIN_VISIBLE_PAGE_KEYS excludes 4 dead template keys', () => {
+describe('Batch A — Template page keys in admin UI', () => {
+  it('ADMIN_VISIBLE_PAGE_KEYS includes all template keys (Task 2 activated)', () => {
     const src = read('lib/cms/sectionRegistry.ts');
     expect(src).toContain('ADMIN_VISIBLE_PAGE_KEYS');
     expect(src).toContain("'template:rodeo-hub'");

@@ -99,13 +99,13 @@ const HOMEPAGE_SECTIONS: SectionDef[] = [
   {
     type: 'quick-access',
     label: 'Quick Access',
-    description: 'Shortcut links grid for fast navigation',
+    description: 'Shortcut links grid for fast navigation. Links are managed in Header & Nav → Homepage — Quick Access.',
     category: 'info',
     icon: 'Zap',
     maxInstances: 1,
     defaultProps: { kicker: 'Quick Links', title: 'NFR Quick Access', description: '' },
     editableProps: [
-      { key: 'kicker', label: 'Kicker', type: 'text', tab: 'content' },
+      { key: 'kicker', label: 'Kicker', type: 'text', tab: 'content', helpText: 'The links shown here are managed in Admin → Header & Nav under "Homepage — Quick Access".' },
       { key: 'title', label: 'Title', type: 'text', tab: 'content' },
       { key: 'description', label: 'Description', type: 'textarea', tab: 'content' },
     ],
@@ -353,8 +353,9 @@ const SECTION_LANDING_SECTIONS: SectionDef[] = [
     category: 'editorial',
     icon: 'Star',
     maxInstances: 1,
-    defaultProps: { ctaText: 'Read Full Story' },
+    defaultProps: { ctaText: 'Read Full Story', featuredIds: '' },
     editableProps: [
+      { key: 'featuredIds', label: 'Featured article', type: 'featured', tab: 'content', helpText: 'Pick a featured story. Empty = newest article in this section.' },
       { key: 'ctaText', label: 'CTA text', type: 'text', tab: 'content' },
     ],
   },
@@ -631,6 +632,8 @@ export const KNOWN_PAGE_KEYS = [
   'template:rodeo-edition',
   'template:discipline',
   'template:category',
+  'template:competitor',
+  'template:venue',
   'directory:competitors',
   'directory:venues',
 ] as const;
@@ -649,11 +652,13 @@ export const PAGE_KEY_LABELS: Record<string, string> = {
   'template:rodeo-edition': 'Template — Annual Edition',
   'template:discipline': 'Template — Discipline Guide',
   'template:category': 'Template — Category Archive',
+  'template:competitor': 'Template — Competitor Detail',
+  'template:venue': 'Template — Venue Detail',
   'directory:competitors': 'Directory — Competitors',
   'directory:venues': 'Directory — Venues',
 };
 
-const DEAD_PAGE_KEYS = new Set(['template:rodeo-hub', 'template:rodeo-edition', 'template:discipline', 'template:category']);
+const DEAD_PAGE_KEYS = new Set<string>([]);
 
 export const ADMIN_VISIBLE_PAGE_KEYS = KNOWN_PAGE_KEYS.filter((k) => !DEAD_PAGE_KEYS.has(k));
 

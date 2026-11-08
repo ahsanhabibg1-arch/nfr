@@ -7,6 +7,7 @@ import { getSectionMeta } from '@/lib/content';
 import { listPublicHubs, listPublicEvents } from '@/lib/rodeoContent';
 import { getEntitySeo } from '@/lib/cms/entitySeoService';
 import { sectionMetadataInput, sectionSeoEntityId } from '@/lib/seo/sectionMeta';
+import { isStaffDraftPreview } from '@/lib/cms/previewGuard';
 
 /**
  * Rodeo Events section landing (Batch 10). A dedicated static page replaces the
@@ -24,11 +25,11 @@ export async function generateMetadata(): Promise<Metadata> {
 
 export default async function Page() {
   const meta = (await getSectionMeta('rodeo-events'))!;
-  const [hubs, events] = await Promise.all([listPublicHubs(), listPublicEvents()]);
+  const [hubs, events, draft] = await Promise.all([listPublicHubs(), listPublicEvents(), isStaffDraftPreview()]);
   return (
     <>
       <JsonLd data={breadcrumbJsonLd([{ name: 'Home', path: '/' }, { name: meta.name, path: meta.path }])} />
-      <SectionLandingView sectionKey="rodeo-events" />
+      <SectionLandingView sectionKey="rodeo-events" draft={draft} />
       <RodeoDirectory hubs={hubs} events={events} />
       <ViewBeacon entityType="SECTION" entityId="rodeo-events" path={meta.path} />
     </>

@@ -3,7 +3,7 @@
 import React, { useState, useTransition, useCallback, useRef, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
 import type { SectionSlot, PropDef, BlockCategory, SelectOption } from '@/lib/cms/sectionRegistry';
-import { saveDraftAction, publishLayoutAction, resetDraftAction, restoreDefaultsAction, listFeaturedCandidatesAction, resolveArticleDetailsAction, type FeaturedPickerItem } from '@/app/admin/page-layout-actions';
+import { saveDraftAction, publishLayoutAction, resetDraftAction, restoreDefaultsAction, schedulePublishAction, cancelScheduleAction, listFeaturedCandidatesAction, resolveArticleDetailsAction, listRevisionsAction, restoreRevisionAction, type FeaturedPickerItem, type RevisionRow } from '@/app/admin/page-layout-actions';
 import { MediaPickerModal, type SelectedMediaData } from '@/components/admin/editor/MediaPickerModal';
 
 interface SectionDef {
@@ -23,6 +23,7 @@ interface LayoutRow {
   pageKey: string;
   draftSections: SectionSlot[];
   publishedAt: string | null;
+  scheduledAt: string | null;
 }
 
 interface Props {
@@ -348,6 +349,70 @@ export const AdminPageLayoutEditor: React.FC<Props> = ({ layouts, registries, ca
     });
   };
 
+  /* ── Scheduling ──────────────────────────────────────────────── */
+
+  const [showScheduleModal, setShowScheduleModal] = useState(false);
+  const [scheduleInput, setScheduleInput] = useState('');
+
+  const openScheduleModal = () => {
+    const now = new Date();
+    now.setMinutes(now.getMinutes() + 60 - now.getTimezoneOffset() % 60);
+    const iso = new Date(now.getTime() - now.getTimezoneOffset() * 60000).toISOString().slice(0, 16);
+    setScheduleInput(layout?.scheduledAt ? new Date(new Date(layout.scheduledAt).getTime() - new Date().getTimezoneOffset() * 60000).toISOString().slice(0, 16) : iso);
+    setShowScheduleModal(true);
+  };
+
+  const confirmSchedule = () => {
+    const dt = new Date(scheduleInput);
+    if (isNaN(dt.getTime()) || dt.getTime() <= Date.now()) { flash('Please select a future date and time.', 'error'); return; }
+    setShowScheduleModal(false);
+    startTransition(async () => {
+      const r = await schedulePublishAction(activeKey, dt.toISOString());
+      flash(r.ok ? `Scheduled for ${dt.toLocaleString()}.` : r.error || 'Error scheduling.', r.ok ? 'ok' : 'error');
+      if (r.ok) router.refresh();
+    });
+  };
+
+  const cancelScheduleHandler = () => {
+    if (!window.confirm('Cancel the scheduled publication? The current public layout will remain unchanged.')) return;
+    startTransition(async () => {
+      const r = await cancelScheduleAction(activeKey);
+      flash(r.ok ? 'Schedule cancelled.' : r.error || 'Error', r.ok ? 'ok' : 'error');
+      if (r.ok) router.refresh();
+    });
+  };
+
+  /* ── Revision History ─────────────────────────────────────────── */
+
+  const [showHistoryModal, setShowHistoryModal] = useState(false);
+  const [revisions, setRevisions] = useState<RevisionRow[]>([]);
+  const [revisionsLoading, setRevisionsLoading] = useState(false);
+  const [confirmRestoreRevId, setConfirmRestoreRevId] = useState<string | null>(null);
+
+  const openHistory = async () => {
+    setShowHistoryModal(true);
+    setRevisionsLoading(true);
+    setConfirmRestoreRevId(null);
+    const r = await listRevisionsAction(activeKey);
+    if (r.ok) setRevisions(r.revisions);
+    else flash(r.error || 'Failed to load revisions.', 'error');
+    setRevisionsLoading(false);
+  };
+
+  const confirmRestore = (revId: string) => setConfirmRestoreRevId(revId);
+
+  const executeRestore = (revId: string) => {
+    setShowHistoryModal(false);
+    setConfirmRestoreRevId(null);
+    startTransition(async () => {
+      const r = await restoreRevisionAction(activeKey, revId);
+      if (r.ok) {
+        flash('Revision restored to draft. Review and publish when ready.');
+        router.refresh();
+      } else flash(r.error || 'Failed to restore revision.', 'error');
+    });
+  };
+
   const onMediaSelect = (media: SelectedMediaData) => {
     if (!mediaPicker) return;
     updateProp(mediaPicker.blockId, mediaPicker.propKey, media.url);
@@ -583,8 +648,9 @@ export const AdminPageLayoutEditor: React.FC<Props> = ({ layouts, registries, ca
           {knownPageKeys.map((k) => <option key={k.key} value={k.key}>{k.label}</option>)}
         </select>
         {layout?.publishedAt && <span className="text-[10px] text-emerald-600">Published: {new Date(layout.publishedAt).toLocaleDateString()}</span>}
+        {layout?.scheduledAt && <span className="text-[10px] text-violet-600 bg-violet-50 border border-violet-200 px-2 py-0.5 rounded">Scheduled: {new Date(layout.scheduledAt).toLocaleString()}</span>}
         {!layout && <span className="text-[10px] text-sky-600">Showing defaults — save draft to persist</span>}
-        {layout && !layout.publishedAt && <span className="text-[10px] text-amber-600">Draft saved — not yet published</span>}
+        {layout && !layout.publishedAt && !layout.scheduledAt && <span className="text-[10px] text-amber-600">Draft saved — not yet published</span>}
         {dirty && <span className="text-[10px] font-bold text-amber-700 bg-amber-50 border border-amber-200 px-2 py-0.5 rounded">Unsaved changes</span>}
       </div>
 
@@ -765,10 +831,13 @@ export const AdminPageLayoutEditor: React.FC<Props> = ({ layouts, registries, ca
         <div className="flex items-center gap-3 pt-1 flex-wrap">
           <button onClick={saveDraft} disabled={isPending || !dirty} className="px-3.5 py-1.5 bg-[#0F1115] text-[#D4A757] text-xs font-semibold rounded disabled:opacity-50">Save Draft</button>
           <button onClick={publish} disabled={isPending || !layout} className="px-3.5 py-1.5 bg-emerald-700 text-white text-xs font-semibold rounded disabled:opacity-50">Publish</button>
+          <button onClick={openScheduleModal} disabled={isPending || !layout} className="px-3.5 py-1.5 bg-violet-700 text-white text-xs font-semibold rounded disabled:opacity-50">{layout?.scheduledAt ? 'Reschedule' : 'Schedule'}</button>
+          {layout?.scheduledAt && <button onClick={cancelScheduleHandler} disabled={isPending} className="text-xs text-violet-600 hover:underline">Cancel schedule</button>}
           <a href={`/admin/website/preview?pageKey=${encodeURIComponent(activeKey)}`} target="_blank" rel="noopener noreferrer"
             className={`px-3.5 py-1.5 border border-stone-300 text-xs font-semibold rounded text-stone-700 hover:bg-stone-50 ${!layout ? 'pointer-events-none opacity-30' : ''}`}>
             Preview Draft
           </a>
+          <button onClick={openHistory} disabled={isPending || !layout} className="px-3.5 py-1.5 border border-stone-300 text-xs font-semibold rounded text-stone-700 hover:bg-stone-50 disabled:opacity-30">History</button>
           <button onClick={resetDraft} disabled={isPending || !layout?.publishedAt} className="text-xs text-stone-500 hover:underline disabled:opacity-30">Reset to published</button>
           <button onClick={restoreDefaults} disabled={isPending} className="text-xs text-amber-700 hover:underline">Restore defaults</button>
         </div>
@@ -781,6 +850,63 @@ export const AdminPageLayoutEditor: React.FC<Props> = ({ layouts, registries, ca
           onClose={() => setMediaPicker(null)}
           onSelect={onMediaSelect}
         />
+      )}
+      {showHistoryModal && (
+        <div className="fixed inset-0 bg-black/40 z-50 flex items-center justify-center p-4" onClick={() => setShowHistoryModal(false)}>
+          <div className="bg-white rounded-lg shadow-xl max-w-lg w-full p-5 space-y-4 max-h-[80vh] flex flex-col" onClick={(e) => e.stopPropagation()}>
+            <div className="flex items-center justify-between">
+              <h3 className="text-sm font-semibold text-stone-900">Revision History</h3>
+              <button onClick={() => setShowHistoryModal(false)} className="text-stone-400 hover:text-stone-600 text-xs">Close</button>
+            </div>
+            <p className="text-xs text-stone-500">Each publish creates a snapshot. Restoring replaces the current draft — review and publish manually.</p>
+            <div className="flex-1 min-h-0 overflow-y-auto divide-y divide-stone-100 border border-stone-200 rounded">
+              {revisionsLoading && <div className="p-6 text-center text-xs text-stone-400">Loading...</div>}
+              {!revisionsLoading && revisions.length === 0 && <div className="p-6 text-center text-xs text-stone-400">No revisions yet. Publish this layout to create the first revision.</div>}
+              {!revisionsLoading && revisions.map((r) => (
+                <div key={r.id} className="px-4 py-3 hover:bg-stone-50/60 transition-colors">
+                  <div className="flex items-center justify-between">
+                    <span className="text-xs font-semibold text-stone-900">Revision #{r.revisionNo}</span>
+                    <span className="text-[10px] font-mono text-stone-400">{new Date(r.createdAt).toLocaleString()}</span>
+                  </div>
+                  <div className="text-[11px] text-stone-600 mt-0.5">{r.actorName} &middot; {r.summary}</div>
+                  {confirmRestoreRevId === r.id ? (
+                    <div className="mt-2 p-2 bg-amber-50 border border-amber-200 rounded text-xs space-y-2">
+                      <p className="text-amber-800">Restore revision #{r.revisionNo}? This will replace the current draft. You can review and publish it manually.</p>
+                      <div className="flex items-center gap-2">
+                        <button onClick={() => executeRestore(r.id)} className="px-3 py-1 bg-[#0F1115] text-[#D4A757] text-[10px] font-semibold rounded">Yes, Restore</button>
+                        <button onClick={() => setConfirmRestoreRevId(null)} className="text-[10px] text-stone-500 hover:underline">Cancel</button>
+                      </div>
+                    </div>
+                  ) : (
+                    <button onClick={() => confirmRestore(r.id)} className="mt-1.5 text-[10px] text-[#D4A757] hover:underline">Restore this revision</button>
+                  )}
+                </div>
+              ))}
+            </div>
+          </div>
+        </div>
+      )}
+      {showScheduleModal && (
+        <div className="fixed inset-0 bg-black/40 z-50 flex items-center justify-center p-4" onClick={() => setShowScheduleModal(false)}>
+          <div className="bg-white rounded-lg shadow-xl max-w-sm w-full p-5 space-y-4" onClick={(e) => e.stopPropagation()}>
+            <h3 className="text-sm font-semibold text-stone-900">Schedule Publication</h3>
+            <p className="text-xs text-stone-500">The current draft will be snapshotted and published automatically at the selected time.</p>
+            <div>
+              <label className="text-[10px] font-mono uppercase text-stone-500 block mb-1">Publish at</label>
+              <input type="datetime-local" value={scheduleInput} onChange={(e) => setScheduleInput(e.target.value)}
+                className="w-full p-2 bg-stone-50 border border-stone-200 rounded text-xs" />
+            </div>
+            {layout?.scheduledAt && (
+              <p className="text-[10px] text-violet-600">Currently scheduled: {new Date(layout.scheduledAt).toLocaleString()}</p>
+            )}
+            <div className="flex items-center gap-3 pt-1">
+              <button onClick={confirmSchedule} disabled={isPending} className="px-4 py-1.5 bg-violet-700 text-white text-xs font-semibold rounded disabled:opacity-50">
+                {layout?.scheduledAt ? 'Update Schedule' : 'Schedule'}
+              </button>
+              <button onClick={() => setShowScheduleModal(false)} className="text-xs text-stone-500 hover:underline">Cancel</button>
+            </div>
+          </div>
+        </div>
       )}
     </div>
   );

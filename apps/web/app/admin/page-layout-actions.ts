@@ -95,6 +95,61 @@ export async function resolveArticleDetailsAction(
   } catch (e) { return { ok: false, error: e instanceof Error ? e.message : 'Unknown error' }; }
 }
 
+export async function schedulePublishAction(pageKey: string, scheduledAt: string): Promise<ActionResult> {
+  try {
+    const a = await requireActor('system.config');
+    const date = new Date(scheduledAt);
+    if (isNaN(date.getTime())) return { ok: false, code: 'validation', error: 'Invalid date.' };
+    await pl.schedulePublish(a, pageKey, date);
+    rev();
+    return { ok: true };
+  } catch (e) { return toActionError(e); }
+}
+
+export async function cancelScheduleAction(pageKey: string): Promise<ActionResult> {
+  try {
+    const a = await requireActor('system.config');
+    await pl.cancelSchedule(a, pageKey);
+    rev();
+    return { ok: true };
+  } catch (e) { return toActionError(e); }
+}
+
+export interface RevisionRow {
+  id: string;
+  revisionNo: number;
+  actorName: string;
+  summary: string;
+  createdAt: string;
+}
+
+export async function listRevisionsAction(pageKey: string): Promise<ActionResult<{ revisions: RevisionRow[]; total: number }>> {
+  try {
+    await requireActor('system.config');
+    const { revisions, total } = await pl.listRevisions(pageKey);
+    return {
+      ok: true,
+      revisions: revisions.map((r) => ({
+        id: r.id,
+        revisionNo: r.revisionNo,
+        actorName: r.actorName,
+        summary: r.summary,
+        createdAt: r.createdAt.toISOString(),
+      })),
+      total,
+    };
+  } catch (e) { return toActionError(e) as ActionResult<{ revisions: RevisionRow[]; total: number }>; }
+}
+
+export async function restoreRevisionAction(pageKey: string, revisionId: string): Promise<ActionResult> {
+  try {
+    const a = await requireActor('system.config');
+    await pl.restoreRevision(a, pageKey, revisionId);
+    rev();
+    return { ok: true };
+  } catch (e) { return toActionError(e); }
+}
+
 export async function getDraftPreviewSections(pageKey: string): Promise<{ ok: true; sections: SectionSlot[] } | { ok: false; error: string }> {
   try {
     await requireActor('system.config');

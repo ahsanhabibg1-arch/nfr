@@ -10,6 +10,7 @@ import { ArticleMonetization } from '@/components/monetization/ArticleMonetizati
 import { AdPlacementSlot } from '@/components/monetization/AdPlacementSlot';
 import { CommentSection } from '@/components/editorial/CommentSection';
 import { listApprovedForArticle } from '@/lib/cms/commentService';
+import { isStaffDraftPreview } from '@/lib/cms/previewGuard';
 
 type Params = { params: Promise<{ slug: string }> };
 
@@ -56,7 +57,7 @@ export default async function ArticlePage({ params }: Params) {
           ]),
         ]}
       />
-      <ArticleView article={article} />
+      <ArticleView article={article} draft={await isStaffDraftPreview()} />
       <ArticleMonetization articleId={article.id} />
       <AdPlacementSlot pageScope="article" />
       <CommentSection articleId={article.id} initialComments={await listApprovedForArticle(article.id)} />
