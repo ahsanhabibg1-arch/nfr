@@ -100,7 +100,7 @@ describe('Stage 09 Task A — SEO Intelligence is the single owner of SEO metada
     expect(seo.isNewsArticleType(undefined)).toBe(false);
   });
 
-  it('GAP: ArticleSeo.robots is rendered and honoured but has no editing surface', () => {
+  it('GAP: ArticleSeo.robots is rendered and honoured but has no editing surface [structural]', () => {
     /**
      * The single most consequential Task A finding.
      *
@@ -150,22 +150,23 @@ describe('Stage 09 Task A — SEO Intelligence is the single owner of SEO metada
     expect(productionCanonicalUrl('/articles/x/')).toBe(`${PRODUCTION_SITE_URL}/articles/x/`);
   });
 
-  it('the editor shell duplicates the canonical rule, but the server ignores it', () => {
+  it('the editor shell and preview use the shared canonical rule, and the server ignores the client copy', () => {
     /**
-     * A category-6 duplication finding, recorded with its real severity rather
-     * than inflated. `AdminArticleEditorShell` builds a client-side snapshot for
-     * live validation that contains a hardcoded
-     * `https://nfrguide.com/articles/${slug}/` literal instead of the shared
-     * constant. It never reaches the database: `articleService` recomputes the
-     * canonical from `productionCanonicalUrl()` and the client value is not part
-     * of the save payload schema.
+     * A category-6 duplication finding, RESOLVED in the Stage 09 continuation
+     * (Task H). `AdminArticleEditorShell`'s validation snapshot and
+     * `SearchAppearancePreview` each carried a hardcoded
+     * `https://nfrguide.com/articles/${slug}/` literal. Both now call
+     * `productionCanonicalUrl()` — the same function `articleService` uses on
+     * save — so the editor cannot drift from what is stored if the host changes.
      *
-     * So the consequence is limited to drift in what the editor's own validator
-     * sees if the production host ever changes — worth fixing when the host
-     * changes, not a live defect.
+     * The client value still never reaches the database: the save payload
+     * schema has no canonical field (asserted below).
      */
-    const shell = read('views/admin/AdminArticleEditorShell.tsx');
-    expect(shell).toContain('https://nfrguide.com/articles/');
+    for (const f of ['views/admin/AdminArticleEditorShell.tsx', 'components/admin/editor/SearchAppearancePreview.tsx']) {
+      const src = read(f);
+      expect(src, `${f} must not hardcode the canonical host`).not.toContain('https://nfrguide.com/articles/');
+      expect(src, `${f} must use the shared canonical builder`).toContain('productionCanonicalUrl(`/articles/');
+    }
     // The proof that it is inert: the server's input schema has no canonical field.
     const service = read('lib/cms/articleService.ts');
     const schema = service.slice(service.indexOf('ArticleInputSchema'), service.indexOf('export type ArticleInput'));
@@ -227,7 +228,7 @@ describe('Stage 09 Task A — SEO Intelligence is the single owner of SEO metada
     expect(tw).toBe(`${seo.SITE_URL}/javascript:alert(1)`);
   });
 
-  it('BOUNDARY: EntitySeo.intro is visible body copy owned by SEO Intelligence', () => {
+  it('BOUNDARY: EntitySeo.intro is visible body copy owned by SEO Intelligence [structural]', () => {
     /**
      * The mirror image of the risk Task A is written to catch. The guarded
      * direction is "the Builder must not own SEO metadata", and it does not. But

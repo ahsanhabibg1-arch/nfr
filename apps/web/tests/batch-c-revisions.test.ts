@@ -463,7 +463,12 @@ describe('Phase C — Regression: existing scheduled publish', () => {
 
   it('executeScheduledPublish still clears scheduling fields', () => {
     const fnBody = service.slice(service.indexOf('export async function executeScheduledPublish'));
-    expect(fnBody).toContain('scheduledSections: null');
+    // Stage 09 Task I (S08-5): the clear must be a real SQL NULL. The literal
+    // `scheduledSections: null` this line used to pin is the form Prisma coerces
+    // to a JSON `null`, which kept consumed schedules "due" — so it must NOT
+    // come back. Behavioural proof: tests/stage08-scheduler.test.ts.
+    expect(fnBody).toContain('scheduledSections: Prisma.DbNull');
+    expect(fnBody).not.toMatch(/scheduledSections: null\b/);
     expect(fnBody).toContain('scheduledAt: null');
     expect(fnBody).toContain('scheduledById: null');
   });

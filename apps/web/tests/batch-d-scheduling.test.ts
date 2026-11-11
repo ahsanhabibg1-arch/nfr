@@ -121,8 +121,11 @@ describe('Phase D — cancelSchedule contracts', () => {
   });
 
   it('clears scheduledSections on cancellation', () => {
-    const fn = src.slice(src.indexOf('async function cancelSchedule'));
-    expect(fn).toContain('scheduledSections: null');
+    // Stage 09 Task I (S08-5): SQL NULL via Prisma.DbNull; a bare `null` was
+    // coerced to a JSON null literal and the cancelled schedule stayed due.
+    const fn = src.slice(src.indexOf('async function cancelSchedule'), src.indexOf('async function getDueSchedules'));
+    expect(fn).toContain('scheduledSections: Prisma.DbNull');
+    expect(fn).not.toMatch(/scheduledSections: null\b/);
   });
 
   it('clears scheduledAt on cancellation', () => {
@@ -150,8 +153,10 @@ describe('Phase D — getDueSchedules contracts', () => {
   });
 
   it('requires scheduledSections to be non-null', () => {
-    const fn = src.slice(src.indexOf('async function getDueSchedules'));
-    expect(fn).toContain('not: { equals: null }');
+    // Stage 09 Task I: `AnyNull` excludes both SQL NULL and a legacy JSON null
+    // literal left by the pre-Stage-09 clear.
+    const fn = src.slice(src.indexOf('async function getDueSchedules'), src.indexOf('async function executeScheduledPublish'));
+    expect(fn).toContain('scheduledSections: { not: Prisma.AnyNull }');
   });
 });
 
@@ -175,7 +180,8 @@ describe('Phase D — executeScheduledPublish contracts', () => {
 
   it('WHERE clause requires scheduledSections not null', () => {
     const fn = src.slice(src.indexOf('async function executeScheduledPublish'));
-    expect(fn).toContain("scheduledSections: { not: { equals: null } }");
+    // Stage 09 Task I: the claim guard rejects SQL NULL AND a legacy JSON null.
+    expect(fn).toContain('scheduledSections: { not: Prisma.AnyNull }');
   });
 
   it('returns null when updateMany count is 0 (already executed or cancelled)', () => {
@@ -191,7 +197,8 @@ describe('Phase D — executeScheduledPublish contracts', () => {
 
   it('clears scheduling fields after publication', () => {
     const fn = src.slice(src.indexOf('async function executeScheduledPublish'));
-    expect(fn).toContain('scheduledSections: null');
+    // Stage 09 Task I: SQL NULL, never the JSON-null-coercing bare `null`.
+    expect(fn).toContain('scheduledSections: Prisma.DbNull');
     expect(fn).toContain('scheduledAt: null');
     expect(fn).toContain('scheduledById: null');
   });
@@ -455,7 +462,8 @@ describe('Phase D — Concurrency protection design', () => {
     const fn = src.slice(src.indexOf('async function executeScheduledPublish'));
     expect(fn).toContain('updateMany');
     expect(fn).toContain('scheduledAt: { not: null }');
-    expect(fn).toContain("scheduledSections: { not: { equals: null } }");
+    // Stage 09 Task I: AnyNull (SQL NULL and legacy JSON null both rejected).
+    expect(fn).toContain('scheduledSections: { not: Prisma.AnyNull }');
   });
 
   it('returns null when no rows matched (already executed or cancelled)', () => {
@@ -468,7 +476,8 @@ describe('Phase D — Concurrency protection design', () => {
     const fn = src.slice(src.indexOf('async function executeScheduledPublish'));
     const updateData = fn.slice(fn.indexOf('data: {'), fn.indexOf('});'));
     expect(updateData).toContain('scheduledAt: null');
-    expect(updateData).toContain('scheduledSections: null');
+    // Stage 09 Task I: SQL NULL in the same atomic update.
+    expect(updateData).toContain('scheduledSections: Prisma.DbNull');
     expect(updateData).toContain('publishedSections:');
   });
 

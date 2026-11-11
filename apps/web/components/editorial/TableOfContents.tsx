@@ -63,10 +63,16 @@ export const TableOfContents: React.FC<TableOfContentsProps> = ({
       } ${className}`}
     >
       <div className="flex items-center justify-between">
-        <h3 className="text-xs uppercase tracking-widest font-sans font-bold text-stone-900 flex items-center gap-2">
+        {/* Full-project audit — accessibility fix (heading hierarchy).
+            This was an `h3` while the article's own body section headings are
+            `h2`, and the table of contents renders directly after the article
+            `h1`. That skipped a level (h1 -> h3) on every article page. The
+            contents panel is a sibling of the body sections it lists, so `h2`
+            is the correct level. Visual size comes from the classes. */}
+        <h2 className="text-xs uppercase tracking-widest font-sans font-bold text-stone-900 flex items-center gap-2">
           <span className="w-1.5 h-1.5 rounded-full bg-[#8B5E3C]" aria-hidden="true" />
           Contents of This Guide
-        </h3>
+        </h2>
         <button
           onClick={() => setMobileExpanded(!mobileExpanded)}
           className="lg:hidden text-xs text-[#8B5E3C] font-semibold font-sans py-1 px-2 hover:bg-stone-100 rounded"

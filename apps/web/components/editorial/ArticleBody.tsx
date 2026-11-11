@@ -140,9 +140,14 @@ export const ArticleBody: React.FC<ArticleBodyProps> = ({ article, className = '
                 className={`my-6 p-5 border-l-4 rounded-sm shadow-2xs font-sans text-sm sm:text-base leading-relaxed ${variantClasses}`}
               >
                 {block.title && (
-                  <h4 className="text-xs uppercase tracking-widest font-bold mb-1.5 text-[#8B5E3C]">
+                  /* Full-project audit — accessibility fix (heading hierarchy).
+                     A callout sits between the article's `h2` body sections, so
+                     an `h4` title skipped a level (h2 -> h4). `h3` is the
+                     correct level for a block nested under a body section.
+                     Visual size is set by the classes, not the tag. */
+                  <h3 className="text-xs uppercase tracking-widest font-bold mb-1.5 text-[#8B5E3C]">
                     {block.title}
-                  </h4>
+                  </h3>
                 )}
                 <p>{block.text}</p>
               </aside>

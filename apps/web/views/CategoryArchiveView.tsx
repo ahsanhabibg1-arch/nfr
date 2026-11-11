@@ -84,6 +84,15 @@ export const CategoryArchiveView: React.FC<CategoryArchiveViewProps> = ({
 
         {paginatedArticles.length > 0 ? (
           <div className="space-y-10">
+            {/* Full-project audit — accessibility fix (heading hierarchy).
+                The grid's article cards are `h3`, and they render directly
+                after this page's `h1`, so the archive skipped a level
+                (h1 -> h3) on every category page. This names the listing
+                region at the correct level instead of changing the shared
+                grid component, which is also used under an existing heading
+                elsewhere. Visually hidden: the <h1> above already labels the
+                page for sighted readers, so there is no design change. */}
+            <h2 className="sr-only">Articles in {categoryName}</h2>
             <EditorialArticleGrid articles={paginatedArticles} columns={3} />
             <ArticlePagination
               currentPage={currentPage}

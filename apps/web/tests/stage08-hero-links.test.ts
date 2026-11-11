@@ -80,6 +80,52 @@ function hrefs(html: string): string[] {
   return [...html.matchAll(/<a[^>]*href="([^"]+)"/g)].map((m) => m[1]);
 }
 
+/** Every heading level in the rendered output, in document order. */
+function headingLevels(html: string): number[] {
+  return [...html.matchAll(/<h([1-6])\b/g)].map((m) => Number(m[1]));
+}
+
+/* ── 0. Heading hierarchy (Stage 09 continuation) ─────────────────── */
+
+describe('Stage 09 continuation — the hero does not skip a heading level', () => {
+  /**
+   * THE DEFECT, found by running the full Chromium suite (Stage 08's gate ran
+   * only the Stage 06-08 specs, so `e2e/a11y.spec.ts` had never been executed
+   * against this markup): the lead story headline is the homepage's only `h1`
+   * and each secondary story was an `h3`, with no `h2` between them. That is a
+   * skipped level — WCAG 2.4.6 / 1.3.1 — and it made the homepage announce a
+   * subsection that does not exist to a screen-reader user navigating by
+   * heading. `e2e/a11y.spec.ts › home (/)` failed with "h1→h3".
+   *
+   * Fixed by emitting `h2`, which is also what the sibling section headings on
+   * the page use. Asserted on the rendered HTML, in document order, because the
+   * claim is about the delivered markup.
+   */
+  it('the lead headline is the only h1', () => {
+    expect(headingLevels(render()).filter((l) => l === 1)).toHaveLength(1);
+  });
+
+  it('REGRESSION: no heading level is skipped (h1→h3 was the a11y failure)', () => {
+    const levels = headingLevels(render());
+    const jumps: string[] = [];
+    for (let i = 1; i < levels.length; i++) {
+      if (levels[i] - levels[i - 1] > 1) jumps.push(`h${levels[i - 1]}→h${levels[i]}`);
+    }
+    expect(jumps, 'the homepage hero must not skip a heading level').toEqual([]);
+  });
+
+  it('each secondary story headline is an h2, one level below the page headline', () => {
+    expect(headingLevels(render())).toEqual([1, 2, 2]);
+    // And the heading is still the card link's accessible name (Stage 08 Task H).
+    expect(render()).toMatch(/<h2[^>]*>\s*Barrel Racing Standings\s*<\/h2>/);
+  });
+
+  it('holds when there is only one secondary story, and when there are none', () => {
+    expect(headingLevels(render([SECONDARY[0]]))).toEqual([1, 2]);
+    expect(headingLevels(render([]))).toEqual([1]);
+  });
+});
+
 /* ── 1. Real hrefs exist in the public HTML ───────────────────────── */
 
 describe('Stage 08 Task H — every hero article has a crawlable href', () => {

@@ -23,9 +23,16 @@ export const ContentEmptyState: React.FC<ContentEmptyStateProps> = ({
           <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M19 20H5a2 2 0 01-2-2V6a2 2 0 012-2h10a2 2 0 012 2v1m2 13a2 2 0 01-2-2V7m2 13a2 2 0 002-2V9.5a2.5 2.5 0 00-2.5-2.5H15" />
         </svg>
       </div>
-      <h3 className="text-lg font-serif font-bold text-stone-900 mb-1">
+      {/* Full-project audit — accessibility fix (heading hierarchy).
+          This was an `h3`, and both call sites render it as a page-level region
+          directly under the page `h1`: the category archive when a filter
+          matches nothing (`CategoryArchiveView`) and the section landing when a
+          section has no published articles (`LandingBlocks.LandingEmptyState`).
+          An `h3` there skips a level (h1 -> h3). Visual size is set by the
+          classes, so nothing changes on screen. */}
+      <h2 className="text-lg font-serif font-bold text-stone-900 mb-1">
         {title}
-      </h3>
+      </h2>
       <p className="text-xs sm:text-sm text-stone-500 font-sans max-w-md mx-auto mb-5 leading-relaxed">
         {description}
       </p>

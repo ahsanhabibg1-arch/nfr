@@ -13,6 +13,17 @@ async function actor() {
   return a;
 }
 
+/**
+ * Stage 09 continuation (Workstream C/D): a legal slug is in the sitemap only
+ * while a published InfoPage exists for it (`lib/seo/sitemapEntries.ts`), and
+ * `app/sitemap.ts` is statically cached. Publishing or unpublishing therefore
+ * changes sitemap membership and must revalidate it, exactly as
+ * `article-actions.ts` already does — otherwise an unpublished (now noindex)
+ * page stays advertised in the cached sitemap. Applied inline in the publish
+ * and unpublish actions below.
+ */
+const SITEMAP_PATH = '/sitemap.xml';
+
 export async function saveInfoPageDraftAction(input: InfoPageInput): Promise<ActionResult> {
   try {
     await saveInfoPageDraft(await actor(), input);
@@ -53,6 +64,7 @@ export async function publishInfoPageAction(slug: string): Promise<ActionResult>
     revalidatePath('/admin/info-pages/');
     revalidatePath(`/${slug}/`);
     revalidatePath(`/info/${slug}/`);
+    revalidatePath(SITEMAP_PATH);
     return { ok: true };
   } catch (e) {
     return toActionError(e);
@@ -77,6 +89,7 @@ export async function unpublishInfoPageAction(slug: string): Promise<ActionResul
     revalidatePath('/admin/info-pages/');
     revalidatePath(`/${slug}/`);
     revalidatePath(`/info/${slug}/`);
+    revalidatePath(SITEMAP_PATH);
     return { ok: true };
   } catch (e) {
     return toActionError(e);

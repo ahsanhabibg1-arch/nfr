@@ -14,6 +14,7 @@ import { useUnsavedChangesWarning } from '../../lib/hooks/useUnsavedChangesWarni
 import type { ArticleInput } from '../../lib/cms/articleService';
 import { RichBlockEditor } from '../../components/admin/editor/RichBlockEditor';
 import { SearchAppearancePreview } from '../../components/admin/editor/SearchAppearancePreview';
+import { productionCanonicalUrl } from '../../lib/seo/canonical';
 import { SeoAssistantPanel } from '../../components/admin/editor/SeoAssistantPanel';
 import { RevisionHistoryModal } from '../../components/admin/editor/RevisionHistoryModal';
 import { RodeoRelationshipsPanel, RodeoRelationshipsData } from '../../components/admin/editor/RodeoRelationshipsPanel';
@@ -243,7 +244,9 @@ export const AdminArticleEditorShell: React.FC<AdminArticleEditorShellProps> = (
       seo: {
         title: seoTitle || title,
         description: metaDescription || excerpt || deck,
-        canonicalUrl: `https://nfrguide.com/articles/${slug}/`,
+        // Stage 09 Task H: the shared constant, not a host literal (the server
+        // recomputes this on save; this copy only feeds the live validator/preview).
+        canonicalUrl: productionCanonicalUrl(`/articles/${slug}/`),
         ogImage: heroImage,
       },
       disclosure,
@@ -1024,7 +1027,7 @@ export const AdminArticleEditorShell: React.FC<AdminArticleEditorShellProps> = (
                   </p>
                 )}
                 <div className="text-[10px] font-mono text-ink-muted truncate pt-0.5">
-                  Canonical: https://nfrguide.com/articles/{slug}/
+                  Canonical: {productionCanonicalUrl(`/articles/${slug}/`)}
                 </div>
               </div>
             </div>
@@ -1374,6 +1377,8 @@ export const AdminArticleEditorShell: React.FC<AdminArticleEditorShellProps> = (
           <SearchAppearancePreview
             article={currentArticleSnapshot}
             slug={slug}
+            storedRobots={existingArticle?.seo?.robots}
+            workflowStatus={workflowStatus}
           />
         </div>
         </div>

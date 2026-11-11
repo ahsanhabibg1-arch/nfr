@@ -30,11 +30,25 @@ export const ImageWithCredit: React.FC<ImageWithCreditProps> = ({
 }) => {
   const [hasError, setHasError] = useState(false);
   const t = TONE[tone];
+  /**
+   * D-A3 — a missing image must take the SAME path as a failed one.
+   *
+   * `Article.heroImage` is optional at publication (`z.string().optional()`),
+   * so `src` can arrive as an empty string. React then omits the attribute
+   * entirely, and a browser fires no `error` event for an `<img>` that has no
+   * `src` at all — so `onError` never ran, `hasError` stayed false, and the
+   * card rendered a permanently broken image instead of the fallback panel
+   * that already exists below. Treating a blank value as unavailable up front
+   * routes it to that panel, which shows "Image unavailable" plus the real alt
+   * text. No placeholder artwork is invented and nothing changes for an image
+   * that loads.
+   */
+  const missing = typeof src !== 'string' || src.trim() === '';
 
   return (
     <figure className="relative w-full overflow-hidden group">
       <div className={`relative w-full ${aspectRatioClass} bg-[#1E293B]/60 overflow-hidden`}>
-        {!hasError ? (
+        {!hasError && !missing ? (
           <img
             src={src}
             alt={alt}

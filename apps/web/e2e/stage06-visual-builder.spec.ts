@@ -151,21 +151,58 @@ test.describe('Stage 06 — three-panel visual builder', () => {
      */
     await page.setViewportSize({ width: 1900, height: 1000 });
     await openBuilder(page);
-    const shell = page.locator(CANVAS).locator('..');
-
-    const widthOf = async () => (await shell.boundingBox())?.width ?? 0;
+    /**
+     * D-A6 — measure a SETTLED width, not a mid-transition one.
+     *
+     * The device label ("390px") becomes visible as soon as the state changes,
+     * but the canvas shell animates to its new width, so reading
+     * `boundingBox()` right after the label appeared sometimes captured a frame
+     * part-way through the transition. That is what made this test flaky under
+     * full-suite load: it twice reported the previous width (686) for mobile
+     * while the product was correct.
+     *
+     * This waits in the browser, sampling on animation frames, until the width
+     * has been unchanged for three consecutive frames. No sleep, no retry of
+     * the assertions themselves, and not one assertion was weakened.
+     */
+    const settledWidth = async (): Promise<number> => {
+      await page.evaluate(() => {
+        const g = window as unknown as Record<string, unknown>;
+        delete g.__nfrCanvasWidth;
+        delete g.__nfrCanvasStable;
+      });
+      const handle = await page.waitForFunction(
+        (sel: string) => {
+          const frame = document.querySelector(sel);
+          const el = frame?.parentElement;
+          if (!el) return null;
+          const w = el.getBoundingClientRect().width;
+          const g = window as unknown as { __nfrCanvasWidth?: number; __nfrCanvasStable?: number };
+          if (g.__nfrCanvasWidth !== undefined && Math.abs(g.__nfrCanvasWidth - w) < 0.5) {
+            g.__nfrCanvasStable = (g.__nfrCanvasStable ?? 0) + 1;
+          } else {
+            g.__nfrCanvasStable = 0;
+          }
+          g.__nfrCanvasWidth = w;
+          return (g.__nfrCanvasStable ?? 0) >= 3 ? w : null;
+        },
+        CANVAS,
+        { polling: 'raf', timeout: 10_000 },
+      );
+      return (await handle.jsonValue()) as number;
+    };
 
     await page.getByRole('button', { name: 'Mobile' }).click();
     await expect(page.getByText('390px')).toBeVisible();
-    const mobile = await widthOf();
+    const mobile = await settledWidth();
 
     await page.getByRole('button', { name: 'Tablet' }).click();
     await expect(page.getByText('768px')).toBeVisible();
-    const tablet = await widthOf();
+    const tablet = await settledWidth();
 
     await page.getByRole('button', { name: 'Desktop' }).click();
     await expect(page.getByText('1280px')).toBeVisible();
-    const desktop = await widthOf();
+    const desktop = await settledWidth();
 
     /**
      * The contract is `width = min(deviceWidth, availableColumnWidth)`.

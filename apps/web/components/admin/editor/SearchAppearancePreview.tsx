@@ -1,21 +1,57 @@
 'use client';
 
 import React, { useState } from 'react';
-import { Article } from '../../../types';
+import { Article, ArticleWorkflowStatus } from '../../../types';
+import { brandedTitle, DEFAULT_OG_IMAGE } from '../../../lib/seo';
+import { ARTICLE_DESCRIPTION_FALLBACK } from '../../../lib/seo/articleMeta';
+import { productionCanonicalUrl } from '../../../lib/seo/canonical';
+import { parseRobotsDirective, robotsToString } from '../../../lib/seo/robots';
 
 interface SearchAppearancePreviewProps {
   article: Partial<Article>;
   slug: string;
+  /** The stored `ArticleSeo.robots` directive (undefined for an unsaved article). */
+  storedRobots?: string;
+  workflowStatus: ArticleWorkflowStatus;
 }
 
-export const SearchAppearancePreview: React.FC<SearchAppearancePreviewProps> = ({ article, slug }) => {
+/**
+ * Stage 09 Task H — every value shown here is computed by the SAME function the
+ * public route uses, so the preview cannot claim something the page does not do:
+ *
+ *   title       brandedTitle()            (lib/seo.tsx, used by buildMetadata)
+ *   description stored/meta → excerpt → deck → ARTICLE_DESCRIPTION_FALLBACK
+ *   canonical   productionCanonicalUrl()  (what articleService stores on save)
+ *   robots      parseRobotsDirective()    (lib/seo/articleMeta.ts)
+ *
+ * Previously the robots line was the hardcoded string "index, follow (SSL
+ * Enforced)" whatever the stored directive or the article's status, and the
+ * canonical was a hardcoded host literal.
+ */
+export function describeArticleIndexing(
+  workflowStatus: ArticleWorkflowStatus,
+  storedRobots: string | undefined,
+): { directive: string; publicNow: boolean; indexable: boolean; note: string } {
+  const directive = robotsToString(parseRobotsDirective(storedRobots));
+  const publicNow = workflowStatus === 'published';
+  const indexable = publicNow && parseRobotsDirective(storedRobots).index;
+  const note = publicNow
+    ? indexable
+      ? 'Published and indexable. It is eligible for the sitemap.'
+      : 'Published, but the stored directive keeps it out of search results and the sitemap.'
+    : `Not public while ${workflowStatus.replace('_', ' ')}: unpublished articles are never served, indexed or listed in the sitemap. On publication the directive below applies.`;
+  return { directive, publicNow, indexable, note };
+}
+
+export const SearchAppearancePreview: React.FC<SearchAppearancePreviewProps> = ({ article, slug, storedRobots, workflowStatus }) => {
   const [deviceView, setDeviceView] = useState<'desktop' | 'mobile'>('desktop');
   const [previewTab, setPreviewTab] = useState<'google' | 'social'>('google');
 
-  const displayTitle = (article.seo?.title || article.title || article.headline || 'Article Headline').trim();
-  const displayDesc = (article.seo?.description || article.excerpt || article.deck || 'Authoritative championship rodeo reporting and spectator intelligence from NFRGuide.com.').trim();
-  const displayImage = article.heroImage || '/assets/images/hero_bull_riding_1793166440262.jpg';
-  const canonicalUrl = `https://nfrguide.com/articles/${slug || 'article-slug'}/`;
+  const displayTitle = brandedTitle((article.seo?.title || article.title || article.headline || 'Article Headline').trim());
+  const displayDesc = (article.seo?.description || article.excerpt || article.deck || ARTICLE_DESCRIPTION_FALLBACK).trim();
+  const displayImage = article.seo?.ogImage || article.heroImage || DEFAULT_OG_IMAGE;
+  const canonicalUrl = productionCanonicalUrl(`/articles/${slug || 'article-slug'}/`);
+  const indexing = describeArticleIndexing(workflowStatus, storedRobots);
 
   return (
     <div className="bg-white border border-stone-200 rounded-sm p-5 shadow-2xs space-y-4">
@@ -139,14 +175,24 @@ export const SearchAppearancePreview: React.FC<SearchAppearancePreviewProps> = (
       )}
 
       {/* Canonical URL & Indexing Directives */}
-      <div className="pt-2 border-t border-stone-100 grid grid-cols-1 sm:grid-cols-2 gap-3 text-xs font-mono">
+      <div className="pt-2 border-t border-stone-100 grid grid-cols-1 sm:grid-cols-2 gap-3 text-xs font-mono" data-testid="seo-indexing-status">
         <div>
           <span className="text-[10px] text-ink-muted uppercase tracking-wider block">Canonical URL:</span>
-          <span className="text-stone-700 truncate block text-[11px]">{canonicalUrl}</span>
+          <span className="text-stone-700 break-all block text-[11px]" data-testid="seo-canonical">{canonicalUrl}</span>
+          <span className="text-[10px] text-ink-muted font-sans block mt-0.5">Generated from the URL slug on save; not editable.</span>
         </div>
         <div>
-          <span className="text-[10px] text-ink-muted uppercase tracking-wider block">Robots Directives:</span>
-          <span className="text-emerald-700 font-semibold block text-[11px]">index, follow (SSL Enforced)</span>
+          <span className="text-[10px] text-ink-muted uppercase tracking-wider block">Robots directive:</span>
+          <span
+            className={`font-semibold block text-[11px] ${indexing.indexable ? 'text-emerald-700' : 'text-amber-800'}`}
+            data-testid="seo-robots"
+          >
+            {indexing.directive}
+          </span>
+          <span className="text-[10px] text-ink-muted font-sans block mt-0.5">{indexing.note}</span>
+          <span className="text-[10px] text-ink-muted font-sans block mt-0.5">
+            The directive is stored per article but cannot be changed from this editor.
+          </span>
         </div>
       </div>
     </div>

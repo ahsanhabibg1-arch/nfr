@@ -81,12 +81,19 @@ export const EditorialHero: React.FC<EditorialHeroProps> = ({
         <div className="relative rounded-sm overflow-hidden border border-white/10 shadow-2xl bg-[#1E293B]">
           {/* Background Image Layer */}
           <div className="absolute inset-0 z-0">
-            <img
-              src={imageSrc}
-              alt={imageAlt}
-              referrerPolicy="no-referrer"
-              className="w-full h-full object-cover object-right md:object-center brightness-90 transform scale-100 hover:scale-[1.01] transition-transform duration-700 ease-out"
-            />
+            {/* D-A3: `heroImage` is optional at publication, so render the image
+                only when there is one. The stage already carries the dark
+                `bg-[#1E293B]` backdrop that the gradient scrim sits on, so an
+                article with no hero still gets the intended look instead of a
+                broken-image icon. */}
+            {imageSrc?.trim() ? (
+              <img
+                src={imageSrc}
+                alt={imageAlt}
+                referrerPolicy="no-referrer"
+                className="w-full h-full object-cover object-right md:object-center brightness-90 transform scale-100 hover:scale-[1.01] transition-transform duration-700 ease-out"
+              />
+            ) : null}
             {/* Cinematic Gradient Scrim: Deep dark on left/bottom for perfect typography contrast */}
             <div 
               className="absolute inset-0 bg-gradient-to-t md:bg-gradient-to-r from-[#0F1115] via-[#0F1115]/85 to-transparent md:to-black/30"
@@ -168,12 +175,16 @@ export const EditorialHero: React.FC<EditorialHeroProps> = ({
                 className="flex flex-col sm:flex-row gap-4 items-start p-5 bg-[#1E293B]/60 hover:bg-[#1E293B] border border-white/10 rounded-sm transition-all duration-200 cursor-pointer focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#D4A757] focus-visible:ring-offset-2 focus-visible:ring-offset-[#0F1115]"
               >
               <div className="w-full sm:w-36 h-28 shrink-0 overflow-hidden rounded-sm bg-black/40">
-                <img
-                  src={story.heroImage}
-                  alt={story.title}
-                  referrerPolicy="no-referrer"
-                  className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-500 ease-out"
-                />
+                {/* D-A3: see the hero stage above — the wrapper's `bg-black/40`
+                    is the placeholder when a story has no hero image. */}
+                {story.heroImage?.trim() ? (
+                  <img
+                    src={story.heroImage}
+                    alt={story.title}
+                    referrerPolicy="no-referrer"
+                    className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-500 ease-out"
+                  />
+                ) : null}
               </div>
               <div className="flex-1 flex flex-col justify-between">
                 <div>
@@ -182,9 +193,18 @@ export const EditorialHero: React.FC<EditorialHeroProps> = ({
                     <span aria-hidden="true">&middot;</span>
                     <span>{story.readTime}</span>
                   </div>
-                  <h3 className="text-base font-serif font-semibold text-white group-hover:text-[#D4A757] transition-colors leading-snug">
+                  {/* Stage 09 continuation — accessibility fix.
+                      This was an `h3` directly after the page's only `h1` (the
+                      lead story headline), with no `h2` between them, so the
+                      homepage skipped a heading level and `e2e/a11y.spec.ts`
+                      failed with "h1→h3". A secondary story sits one level below
+                      the page headline, so `h2` is both the correct level and
+                      consistent with the sibling section headings ("Latest NFR
+                      Coverage"). Visual size is set by the classes, not the tag,
+                      so nothing changes on screen. */}
+                  <h2 className="text-base font-serif font-semibold text-white group-hover:text-[#D4A757] transition-colors leading-snug">
                     {story.title}
-                  </h3>
+                  </h2>
                   <p className="mt-1 text-xs text-stone-300 line-clamp-2 font-sans leading-normal">
                     {story.deck}
                   </p>

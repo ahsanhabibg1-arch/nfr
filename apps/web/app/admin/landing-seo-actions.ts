@@ -19,6 +19,10 @@ function rev(entityType?: string, entityId?: string) {
   revalidatePath('/admin/landing-seo/');
   // Revalidate the affected public landing page so overrides/FAQs show immediately.
   revalidatePath('/', 'layout');
+  // Stage 09 continuation: EntitySeo.noindex and canonicalOverride decide sitemap
+  // membership (lib/seo/sitemapEntries.ts); the sitemap is a metadata route, so
+  // revalidate it explicitly rather than relying on the layout purge reaching it.
+  revalidatePath('/sitemap.xml');
   void entityType;
   void entityId;
 }

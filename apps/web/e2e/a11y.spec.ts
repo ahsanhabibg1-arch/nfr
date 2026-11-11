@@ -120,6 +120,30 @@ test.describe('accessibility (automated subset)', () => {
     });
   }
 
+  /**
+   * Full-project audit addition. The static `PUBLIC_PAGES` list above covers one
+   * page of each template EXCEPT the category archive, and a live audit of every
+   * sitemap URL found a skipped heading level on every category page (the
+   * article grid's `h3` cards rendered straight after the page `h1`). The slug
+   * is read from the database rather than hardcoded, because categories are
+   * CMS-owned rows, not configuration.
+   */
+  test('category archive (first category in the database)', async ({ page }) => {
+    const db = testDb();
+    let slug: string | null = null;
+    try {
+      const c = await db.category.findFirst({ orderBy: { sortOrder: 'asc' }, select: { slug: true } });
+      slug = c?.slug ?? null;
+    } finally {
+      await db.$disconnect();
+    }
+    test.skip(!slug, 'no Category rows in the test database');
+    await page.goto(`/categories/${slug}/`);
+    await audit(page, 'category');
+    await structure(page, 'category');
+    await focusVisible(page, 'category');
+  });
+
   test('reduced-motion preference: pages still render and remain usable', async ({ browser }) => {
     const ctx = await browser.newContext({ reducedMotion: 'reduce' });
     const page = await ctx.newPage();

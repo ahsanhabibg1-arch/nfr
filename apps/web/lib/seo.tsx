@@ -19,7 +19,7 @@ export const SITE_URL = (
   process.env.NEXT_PUBLIC_SITE_URL || PRODUCTION_SITE_URL
 ).replace(/\/$/, '');
 
-const DEFAULT_OG_IMAGE = '/assets/images/hero_bull_riding_1793166440262.jpg';
+export const DEFAULT_OG_IMAGE = '/assets/images/hero_bull_riding_1793166440262.jpg';
 
 interface BuildMetaInput {
   title: string;
@@ -50,6 +50,18 @@ function absolute(pathOrUrl: string | undefined): string {
   return `${SITE_URL}${pathOrUrl.startsWith('/') ? '' : '/'}${pathOrUrl}`;
 }
 
+/**
+ * The rendered `<title>`: the brand suffix is appended unless the title already
+ * names the brand (root layout sets no template, so this is authoritative).
+ *
+ * Stage 09 Task H: exported so the admin search-appearance preview shows the
+ * title exactly as `buildMetadata` renders it, instead of a second copy of the
+ * rule that could drift.
+ */
+export function brandedTitle(title: string): string {
+  return title.includes('NFRGuide') ? title : `${title} — NFRGuide`;
+}
+
 export function buildMetadata({
   title,
   description,
@@ -67,7 +79,7 @@ export function buildMetadata({
   const ogImage = absolute(image);
   // Mirror the Phase 0 suffix behaviour without double-appending when the brand
   // is already present (root layout sets no template, so this is authoritative).
-  const fullTitle = title.includes('NFRGuide') ? title : `${title} — NFRGuide`;
+  const fullTitle = brandedTitle(title);
   return {
     title: { absolute: fullTitle },
     description,
@@ -166,15 +178,23 @@ export function rodeoEditionJsonLd(input: {
   if (input.endAt) data.endDate = input.endAt;
   if (input.description) data.description = input.description;
   if (input.venue) {
+    const { city, state, country } = input.venue;
     data.location = {
       '@type': 'Place',
       name: input.venue.name,
-      address: {
-        '@type': 'PostalAddress',
-        ...(input.venue.city ? { addressLocality: input.venue.city } : {}),
-        ...(input.venue.state ? { addressRegion: input.venue.state } : {}),
-        ...(input.venue.country ? { addressCountry: input.venue.country } : {}),
-      },
+      // Stage 09 Task C: a venue with no stored locality used to emit an empty
+      // `PostalAddress` node — a structurally present address that asserts
+      // nothing. Omit it, as venueJsonLd already does.
+      ...(city || state || country
+        ? {
+            address: {
+              '@type': 'PostalAddress',
+              ...(city ? { addressLocality: city } : {}),
+              ...(state ? { addressRegion: state } : {}),
+              ...(country ? { addressCountry: country } : {}),
+            },
+          }
+        : {}),
     };
   }
   return data;
@@ -189,7 +209,9 @@ export function venueJsonLd(input: {
   city?: string | null; state?: string | null; country?: string | null;
   latitude?: number | null; longitude?: number | null; capacity?: number | null;
 }): Record<string, unknown> {
-  const data: Record<string, unknown> = { '@context': 'https://schema.org', '@type': 'Place', name: input.name, url: input.url };
+  // Stage 09 Task C: callers pass a route path; schema.org `url` must be absolute,
+  // like every breadcrumb and article node. `absolute()` leaves an http(s) URL as is.
+  const data: Record<string, unknown> = { '@context': 'https://schema.org', '@type': 'Place', name: input.name, url: absolute(input.url) };
   if (input.description) data.description = input.description;
   if (input.city || input.state || input.country) {
     data.address = {
@@ -214,7 +236,8 @@ export function competitorJsonLd(input: {
   name: string; url: string; description?: string | null; image?: string | null;
   disciplines?: string[]; hometown?: string | null;
 }): Record<string, unknown> {
-  const data: Record<string, unknown> = { '@context': 'https://schema.org', '@type': 'Person', name: input.name, url: input.url };
+  // Stage 09 Task C: absolute `url` (callers pass a route path) — see venueJsonLd.
+  const data: Record<string, unknown> = { '@context': 'https://schema.org', '@type': 'Person', name: input.name, url: absolute(input.url) };
   if (input.description) data.description = input.description;
   if (input.image) data.image = absolute(input.image);
   if (input.hometown) data.homeLocation = { '@type': 'Place', name: input.hometown };

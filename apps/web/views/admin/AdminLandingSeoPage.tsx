@@ -1,6 +1,8 @@
 'use client';
 
-import React, { useState, useTransition } from 'react';
+import React, { useId, useState, useTransition } from 'react';
+import { SITE_URL } from '../../lib/seo';
+import { normalizeSameSiteCanonical } from '../../lib/seo/canonical';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import type { LandingEntityType } from '@prisma/client';
@@ -74,6 +76,24 @@ export const AdminLandingSeoPage: React.FC<AdminLandingSeoPageProps> = ({ groups
 const inputCls = 'w-full px-3 py-2 text-xs border border-stone-300 rounded-xs bg-white text-stone-900 focus:outline-none focus:border-[#D4A757]';
 const labelCls = 'block text-[11px] font-mono uppercase text-stone-500 font-medium mb-1';
 
+/**
+ * Stage 09 Task H — the canonical a landing page will actually emit, computed by
+ * the SAME normalizer the server uses to validate on save and to render
+ * (`resolveCanonical` → `normalizeSameSiteCanonical`). A blank override means
+ * the page is self-canonical; a value the normalizer rejects is refused on save,
+ * so the editor is told before pressing Save rather than after.
+ */
+export function effectiveLandingCanonical(
+  override: string,
+  publicPath: string,
+  siteUrl: string = SITE_URL,
+): { url: string; source: 'self' | 'override' | 'invalid' } {
+  const self = normalizeSameSiteCanonical(publicPath, siteUrl) ?? `${siteUrl}${publicPath}`;
+  if (!override.trim()) return { url: self, source: 'self' };
+  const resolved = normalizeSameSiteCanonical(override, siteUrl);
+  return resolved ? { url: resolved, source: 'override' } : { url: self, source: 'invalid' };
+}
+
 function LandingEditor({ detail, notify, refresh }: { detail: LandingDetail; notify: (m: string) => void; refresh: () => void }) {
   const [pending, start] = useTransition();
   const [seo, setSeo] = useState({
@@ -93,9 +113,14 @@ function LandingEditor({ detail, notify, refresh }: { detail: LandingDetail; not
       canonicalOverride: seo.canonicalOverride || null, ogImage: seo.ogImage || null,
       noindex: seo.noindex, intro: seo.intro || null,
     });
-    notify(r.ok ? 'SEO saved.' : `Failed: ${r.error}`);
+    // Stage 09 Task H: SEO fields have no draft step — the save revalidates the
+    // public site, so say so rather than implying a staged change.
+    notify(r.ok ? 'SEO saved — now live on the public page (SEO fields have no draft step).' : `Failed: ${r.error}`);
     if (r.ok) refresh();
   });
+
+  const fid = useId();
+  const canonical = effectiveLandingCanonical(seo.canonicalOverride, detail.publicUrl);
 
   return (
     <div className="space-y-6">
@@ -106,13 +131,25 @@ function LandingEditor({ detail, notify, refresh }: { detail: LandingDetail; not
         </div>
         {!detail.canEdit && <p className="text-[11px] text-amber-700">You can view this entity but lack the permission to edit it.</p>}
         <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-          <div><label className={labelCls}>SEO title</label><input className={inputCls} disabled={disabled} value={seo.seoTitle} onChange={(e) => setSeo({ ...seo, seoTitle: e.target.value })} placeholder="(falls back to derived title)" /></div>
-          <div><label className={labelCls}>OG / social image URL</label><input className={inputCls} disabled={disabled} value={seo.ogImage} onChange={(e) => setSeo({ ...seo, ogImage: e.target.value })} /></div>
-          <div className="md:col-span-2"><label className={labelCls}>Meta description</label><textarea rows={2} className={inputCls} disabled={disabled} value={seo.metaDescription} onChange={(e) => setSeo({ ...seo, metaDescription: e.target.value })} placeholder="(falls back to derived description)" /></div>
-          <div className="md:col-span-2"><label className={labelCls}>Canonical override (path or same-site URL)</label><input className={inputCls} disabled={disabled} value={seo.canonicalOverride} onChange={(e) => setSeo({ ...seo, canonicalOverride: e.target.value })} placeholder="/rodeo-events/… (optional)" /></div>
-          <div className="md:col-span-2"><label className={labelCls}>Editorial intro (plain text)</label><textarea rows={4} className={inputCls} disabled={disabled} value={seo.intro} onChange={(e) => setSeo({ ...seo, intro: e.target.value })} /></div>
+          {/* Stage 09 Task H: every label is programmatically associated (htmlFor/id),
+              and maxLength mirrors the server's Zod bounds in entitySeoService. */}
+          <div><label htmlFor={`${fid}-title`} className={labelCls}>SEO title</label><input id={`${fid}-title`} maxLength={160} className={inputCls} disabled={disabled} value={seo.seoTitle} onChange={(e) => setSeo({ ...seo, seoTitle: e.target.value })} placeholder="(falls back to derived title)" /></div>
+          <div><label htmlFor={`${fid}-og`} className={labelCls}>OG / social image URL</label><input id={`${fid}-og`} maxLength={500} className={inputCls} disabled={disabled} value={seo.ogImage} onChange={(e) => setSeo({ ...seo, ogImage: e.target.value })} /></div>
+          <div className="md:col-span-2"><label htmlFor={`${fid}-desc`} className={labelCls}>Meta description</label><textarea id={`${fid}-desc`} maxLength={320} rows={2} className={inputCls} disabled={disabled} value={seo.metaDescription} onChange={(e) => setSeo({ ...seo, metaDescription: e.target.value })} placeholder="(falls back to derived description)" /></div>
+          <div className="md:col-span-2">
+            <label htmlFor={`${fid}-canonical`} className={labelCls}>Canonical override (path or same-site URL)</label>
+            <input id={`${fid}-canonical`} maxLength={500} aria-describedby={`${fid}-canonical-effective`} aria-invalid={canonical.source === 'invalid'} className={inputCls} disabled={disabled} value={seo.canonicalOverride} onChange={(e) => setSeo({ ...seo, canonicalOverride: e.target.value })} placeholder="/rodeo-events/… (optional)" />
+            <p id={`${fid}-canonical-effective`} className={`mt-1 text-[11px] font-mono break-all ${canonical.source === 'invalid' ? 'text-rose-700' : 'text-stone-500'}`} data-testid="landing-effective-canonical">
+              {canonical.source === 'invalid'
+                ? 'This value is off-site or malformed and will be refused on save. '
+                : ''}
+              Effective canonical: {canonical.url} ({canonical.source === 'override' ? 'override' : 'self'})
+            </p>
+          </div>
+          <div className="md:col-span-2"><label htmlFor={`${fid}-intro`} className={labelCls}>Editorial intro (plain text)</label><textarea id={`${fid}-intro`} maxLength={4000} rows={4} className={inputCls} disabled={disabled} value={seo.intro} onChange={(e) => setSeo({ ...seo, intro: e.target.value })} /></div>
         </div>
-        <label className="flex items-center gap-2 text-xs"><input type="checkbox" className="accent-[#0F1115]" disabled={disabled} checked={seo.noindex} onChange={(e) => setSeo({ ...seo, noindex: e.target.checked })} /><span>noindex this page (cannot force-index a thin/unpublished entity — only adds restriction)</span></label>
+        <label className="flex items-center gap-2 text-xs"><input type="checkbox" className="accent-[#0F1115]" disabled={disabled} checked={seo.noindex} onChange={(e) => setSeo({ ...seo, noindex: e.target.checked })} /><span>noindex this page — renders <code>noindex, follow</code> and removes it from the sitemap (cannot force-index a thin/unpublished entity — only adds restriction)</span></label>
+        <p className="text-[11px] text-stone-500">SEO fields have no draft step: saving applies them to the public page immediately.</p>
         <button onClick={saveSeo} disabled={pending || disabled} className="px-4 py-2 bg-[#0F1115] text-[#D4A757] text-xs font-semibold rounded-xs disabled:opacity-50">Save SEO</button>
       </div>
 

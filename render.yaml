@@ -52,6 +52,17 @@ services:
         sync: false
       - key: MEDIA_S3_SECRET_ACCESS_KEY
         sync: false
+      # --- scheduled publishing (Stage 01 / Stage 08) ---
+      # Required by app/api/internal/revalidate/route.ts and the in-process
+      # scheduler (lib/cms/scheduledPublishRunner.ts). The endpoint fails CLOSED:
+      # without this value the scheduler still publishes to the database but the
+      # public pages are never revalidated, so a scheduled publish silently does
+      # not appear on the site. Set any long random value in the dashboard; it is
+      # only ever used for localhost-to-localhost calls inside the instance.
+      # NOTE: free-tier instances spin down after 15 min idle, so a schedule only
+      # fires while the instance is awake (owner decision D-12 — scheduler host).
+      - key: INTERNAL_REVALIDATE_SECRET
+        sync: false
       # --- staging SEO protection (Batch 29) ---
       - key: STAGING_NOINDEX
         value: "true"              # X-Robots-Tag: noindex on all HTML responses; prevents indexing
