@@ -20,6 +20,37 @@ const nextConfig = {
   // installed (the local foundation needs no cloud SDK). See STORAGE_PROVIDER_DECISION.md.
   serverExternalPackages: ['@aws-sdk/client-s3'],
 
+  /**
+   * Build-time database concurrency cap.
+   *
+   * WHY. Eight routes pre-render through `generateStaticParams`, and the public
+   * layout queries the search index, so `next build` talks to PostgreSQL while
+   * it generates pages. By default Next starts one worker per available core —
+   * on Render's build machine that was **47 workers**, each with its own Prisma
+   * pool. The managed database could not accept them:
+   *
+   *     FATAL: sorry, too many clients already   (Prisma P2037)
+   *
+   * Measured against the deployment database: `max_connections` 20, of which 3
+   * are reserved for superusers and ~13 are held by the provider's own internal
+   * processes (management agent, failover slots, pg_cron, background workers),
+   * leaving roughly 3-4 for the application. No environment variable can cap
+   * Next's worker count — `experimental.cpus` is the only control — so it is
+   * set here rather than in the deploy configuration.
+   *
+   * Pair this with a bounded pool on the connection string itself
+   * (`?connection_limit=1`), which caps the sockets each worker opens.
+   *
+   * COST. A single worker makes the build slower (59 static pages), which is an
+   * acceptable trade for a build that completes. Raise `cpus` only after the
+   * database's connection ceiling is raised (a larger plan, or a PgBouncer
+   * connection pool in front of it).
+   */
+  experimental: {
+    cpus: 1,
+    staticGenerationMaxConcurrency: 1,
+  },
+
   async redirects() {
     // Server-level HTTP 308 permanent redirects replacing the Phase 0
     // client-side <Navigate> compatibility routes (ROUTES.md §1).
