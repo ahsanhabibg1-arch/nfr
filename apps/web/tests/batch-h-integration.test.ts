@@ -40,14 +40,18 @@ describe('Phase H — Block registry ↔ sectionRegistry alignment', () => {
   const registry = read('components/blocks/registry.tsx');
   const sectionReg = read('lib/cms/sectionRegistry.ts');
 
-  it('registry has exactly 23 block entries', () => {
+  it('registry has exactly 22 block entries', () => {
     const entries = registry.match(/'[a-z][\w-]+'/g) ?? [];
     const blockEntries = entries.filter((e) => {
       const m = e.replace(/'/g, '');
       return registry.includes(`'${m}':`) && m !== 'use client';
     });
     const uniqueKeys = [...new Set(blockEntries)];
-    expect(uniqueKeys.length).toBe(23);
+    // 22 after Stage 05 retired newsletter-signup (owner decision D-11): the
+    // block has no renderer, so a legacy slot renders nothing at all.
+    // 24 after Stage 07 Task F gave `directory-hero` and `directory-grid` real
+    // renderers, which is what made their Admin labels truthful.
+    expect(uniqueKeys.length).toBe(24);
   });
 
   it('every blockRegistry key has a SectionDef somewhere in sectionRegistry (except synthetic blocks)', () => {
@@ -58,10 +62,26 @@ describe('Phase H — Block registry ↔ sectionRegistry alignment', () => {
     }
   });
 
-  it('server-only section types are intentionally NOT in blockRegistry', () => {
-    const serverOnly = ['detail-hero', 'detail-body', 'detail-faq', 'directory-hero', 'directory-grid', 'landing-stat-pills'];
-    for (const type of serverOnly) {
+  it('types with no renderer are intentionally absent from blockRegistry', () => {
+    /**
+     * REWRITTEN IN STAGE 07. The list used to include `directory-hero` and
+     * `directory-grid`, described as "server-only". That was accurate but it was
+     * the defect, not the design: the hero's text reached the page only because
+     * each route read its props by hand, and the listing block rendered nothing
+     * at all while being `required: true`. Task F gave both real renderers.
+     *
+     * What remains absent, and should be:
+     *  - the three detail markers, retired under owner decision D-02 (Task C);
+     *  - `landing-stat-pills`, a visibility toggle the resolver reads and skips,
+     *    which correctly has no appearance of its own.
+     */
+    const noRenderer = ['detail-hero', 'detail-body', 'detail-faq', 'landing-stat-pills'];
+    for (const type of noRenderer) {
       expect(registry, `"${type}" should not be in blockRegistry`).not.toContain(`'${type}':`);
+    }
+    const nowRendered = ['directory-hero', 'directory-grid'];
+    for (const type of nowRendered) {
+      expect(registry, `"${type}" should now be in blockRegistry`).toContain(`'${type}':`);
     }
   });
 });

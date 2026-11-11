@@ -144,16 +144,35 @@ describe('Phase I — Section family completeness', () => {
     expect(HOMEPAGE_SECTIONS.length).toBe(15);
   });
 
-  it('section-landing has 6 section defs', () => {
-    expect(SECTION_LANDING_SECTIONS.length).toBe(6);
+  /**
+   * STAGE 07 UPDATED THESE THREE COUNTS. Each is a deliberate act, recorded so a
+   * silent drift still fails review:
+   *
+   *  - section-landing 6 → 7: Task E registered
+   *    `landing-competition-disciplines`, which previously rendered two
+   *    hardcoded headings on /competition/ with no definition anywhere, so no
+   *    administrator could edit, hide or reorder it.
+   *  - detail-template 5 → 9: Task D added the four approved appendage regions
+   *    under owner decision D-02 Option B ("shared structured editorial
+   *    templates, with optional approved appendage sections").
+   *  - directory 3 → 4: Task F added `rich-text-block`, so a directory page has
+   *    at least one genuine presentation choice.
+   *
+   * All five additions are library-only via `excludeFromDefaultsIn`, so no
+   * default layout and no live page changed. Proven in
+   * tests/stage07-detail-template.test.ts and
+   * tests/stage07-directory-template.test.ts.
+   */
+  it('section-landing has 7 section defs', () => {
+    expect(SECTION_LANDING_SECTIONS.length).toBe(7);
   });
 
-  it('detail-template has 5 section defs', () => {
-    expect(DETAIL_TEMPLATE_SECTIONS.length).toBe(5);
+  it('detail-template has 9 section defs', () => {
+    expect(DETAIL_TEMPLATE_SECTIONS.length).toBe(9);
   });
 
-  it('directory has 3 section defs', () => {
-    expect(DIRECTORY_SECTIONS.length).toBe(3);
+  it('directory has 4 section defs', () => {
+    expect(DIRECTORY_SECTIONS.length).toBe(4);
   });
 
   it('getAllFamilies returns 4 families', () => {
@@ -172,29 +191,43 @@ describe('Phase I — pageLayoutService validation contracts', () => {
   const src = read('lib/cms/pageLayoutService.ts');
 
   it('validateSectionTypes checks against family-specific block types', () => {
-    expect(src).toContain('getAvailableBlockTypes(family)');
-    expect(src).toContain('allowed.has(s.sectionType)');
+    // Stage 05: save validation uses getKnownSectionTypes, which INCLUDES
+    // retired blocks so a layout stored before a retirement stays editable.
+    // The block library still uses getAvailableBlockTypes, which excludes them.
+    // Behaviour proven in tests/stage05-content-source.test.ts.
+    expect(src).toContain('getKnownSectionTypes(family)');
+    expect(src).toContain('known.has(s.sectionType)');
   });
 
-  it('validates prop string length (2000 chars max)', () => {
-    expect(src).toContain('val.length > 2000');
+  /* Stage 04 Task C replaced the string-only prop checks with validation driven
+   * by each block's own PropDef. These five assertions tracked the OLD
+   * implementation's literals; they now track the new layer's markers. The
+   * GUARANTEES they were protecting are proven behaviourally — by 34 tests in
+   * tests/stage04-property-validation.test.ts, which drive the real saveDraft
+   * service and assert what it accepts and rejects. */
+
+  it('enforces a maximum property length', () => {
+    expect(src).toContain('MAX_PROP_CHARS');
+    expect(src).toContain('exceeds ${MAX_PROP_CHARS} characters');
   });
 
-  it('rejects <script> in string props', () => {
-    expect(src).toContain('<script');
+  it('rejects dangerous markup in text props, beyond just <script>', () => {
+    expect(src).toContain('UNSAFE_MARKUP');
+    expect(src).toContain('disallowed markup');
   });
 
-  it('validates URL props against relative path or https pattern', () => {
-    expect(src).toContain('/url$/i');
-    expect(src).toContain('relative path or https URL');
+  it('validates URL props against a same-site path or http(s) URL', () => {
+    expect(src).toContain('SAFE_URL');
+    expect(src).toContain('relative path or an http(s) URL');
   });
 
-  it('rejects javascript: URLs', () => {
-    expect(src).toContain('javascript:');
+  it('rejects unsafe URL schemes', () => {
+    expect(src).toContain('UNSAFE_SCHEME');
+    expect(src).toContain('disallowed URL scheme');
   });
 
-  it('validateBlockLimits enforces maxInstances', () => {
-    expect(src).toContain('maxInstances');
+  it('validateBlockLimits enforces the family-aware instance cap', () => {
+    expect(src).toContain('resolveMaxInstances');
     expect(src).toContain('exceeds max instances');
   });
 
@@ -222,13 +255,18 @@ describe('Phase I — pageLayoutService validation contracts', () => {
     expect(src).toContain('draftSections: JSON.parse(JSON.stringify(layout.publishedSections))');
   });
 
-  it('getPublishedSections falls back to buildDefaultSlots on missing/empty layout', () => {
-    expect(src).toContain("return buildDefaultSlots(getPageFamily(pageKey))");
+  // Stage 03 Task G moved the shared logic into `resolveSections`, so these two
+  // no longer slice the individual function bodies. The BEHAVIOUR they protect —
+  // falling back to family defaults for a missing layout, an empty layout, and a
+  // database failure — is now proven directly, with the three cases
+  // distinguished, in tests/stage03-layout-observability.test.ts.
+  it('section retrieval falls back to buildDefaultSlots on missing/empty layout', () => {
+    expect(src).toContain('buildDefaultSlots(getPageFamily(pageKey))');
   });
 
-  it('getDraftSections falls back to buildDefaultSlots on missing/empty layout', () => {
-    const draft = src.slice(src.indexOf('async function getDraftSections'));
-    expect(draft).toContain("buildDefaultSlots(getPageFamily(pageKey))");
+  it('both published and draft retrieval route through the shared resolver', () => {
+    expect(src).toContain("resolveSections(pageKey, 'publishedSections')");
+    expect(src).toContain("resolveSections(pageKey, 'draftSections')");
   });
 });
 
@@ -355,9 +393,17 @@ describe('Phase I — Resolver draft-branching consistency', () => {
       expect(src).toContain('getDraftSections');
     });
 
-    it(`${name} accepts options?: { draft?: boolean }`, () => {
+    it(`${name} accepts a draft option`, () => {
+      /**
+       * Stage 07 Task F widened `directoryData`'s options from an inline
+       * `{ draft?: boolean }` to a named `ResolveDirectoryOptions` interface so
+       * it could also carry the route's listing data. The draft capability is
+       * unchanged, and draft/published ISOLATION is proven behaviourally in
+       * tests/stage07-directory-template.test.ts.
+       */
       const src = read(p);
-      expect(src).toContain('options?: { draft?: boolean }');
+      expect(src).toMatch(/options\?: \{ draft\?: boolean \}|options\?: Resolve\w+Options/);
+      expect(src).toContain('draft?: boolean');
     });
 
     it(`${name} uses conditional fetch pattern`, () => {
@@ -365,10 +411,11 @@ describe('Phase I — Resolver draft-branching consistency', () => {
       expect(src).toContain('options?.draft ? getDraftSections : getPublishedSections');
     });
 
-    it(`${name} filters visible and sorts by order`, () => {
+    it(`${name} delegates visibility and ordering to the single shared authority`, () => {
+      // Stage 07 Task A. Behavioural proof: tests/stage07-renderer-consolidation.test.ts.
       const src = read(p);
-      expect(src).toContain('.filter((s) => s.visible)');
-      expect(src).toContain('.sort((a, b) => a.order - b.order)');
+      expect(src).toContain('selectRenderableSlots');
+      expect(src).not.toContain('.filter((s) => s.visible)');
     });
   }
 });

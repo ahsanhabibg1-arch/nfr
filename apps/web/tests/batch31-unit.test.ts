@@ -126,9 +126,12 @@ describe('Batch 31 — Page Layout System', () => {
 
   it('service validates URL props and rejects script injection', () => {
     const src = read('lib/cms/pageLayoutService.ts');
-    expect(src).toContain('<script');
-    expect(src).toContain('javascript:');
-    expect(src).toContain('relative path or https URL');
+    // Stage 04 Task C: validation is now PropDef-driven. The behaviour this
+    // protects is proven against the real saveDraft service in
+    // tests/stage04-property-validation.test.ts.
+    expect(src).toContain('UNSAFE_MARKUP');
+    expect(src).toContain('UNSAFE_SCHEME');
+    expect(src).toContain('relative path or an http(s) URL');
   });
 
   // ---- Homepage integration ----
@@ -195,9 +198,14 @@ describe('Batch 31 — Page Layout System', () => {
 
   it('admin editor supports section settings panel with prop types', () => {
     const src = read('views/admin/AdminPageLayoutEditor.tsx');
-    expect(src).toContain('textarea');
-    expect(src).toContain("=== 'url'");
-    expect(src).toContain("type=\"number\"");
+    // Stage 04 Task A moved the field chrome into views/admin/PropField.tsx and
+    // the editor delegates to it. DOM behaviour is proven in
+    // tests/stage04-editor-dom.test.ts.
+    const field = read('views/admin/PropField.tsx');
+    expect(field).toContain('textarea');
+    expect(field).toContain("=== 'url'");
+    expect(field).toContain("type=\"number\"");
+    expect(src).toContain('SimplePropField');
     expect(src).toContain('REQ');
   });
 
@@ -258,10 +266,17 @@ describe('Batch 31 — Page Layout System', () => {
   });
 
   it('competitors directory uses resolver for directory:competitors', () => {
+    /**
+     * Stage 07 Task F: the route no longer reads `heroTitle` out of the resolved
+     * slot to render a header itself — `DirectoryHeroBlock` does that, which is
+     * what made the block canvas-selectable and its `heroImageUrl` work. The
+     * route now supplies the DEFAULT heading instead, and the resolver applies
+     * it when the operator left the field empty.
+     */
     const src = read('app/(public)/competitors/page.tsx');
     expect(src).toContain('resolveDirectorySlots');
     expect(src).toContain("'directory:competitors'");
-    expect(src).toContain('heroTitle');
+    expect(src).toContain('defaultHeroTitle');
     expect(src).not.toContain('slotProp(');
   });
 
@@ -269,7 +284,7 @@ describe('Batch 31 — Page Layout System', () => {
     const src = read('app/(public)/venues/page.tsx');
     expect(src).toContain('resolveDirectorySlots');
     expect(src).toContain("'directory:venues'");
-    expect(src).toContain('heroTitle');
+    expect(src).toContain('defaultHeroTitle');
     expect(src).not.toContain('slotProp(');
   });
 
@@ -292,7 +307,11 @@ describe('Batch 31 — Page Layout System', () => {
   // ---- Service validates image props ----
   it('service validates image URL props', () => {
     const src = read('lib/cms/pageLayoutService.ts');
-    // Only *Url props are URL-validated, so alt text / position props are not rejected.
-    expect(src).toContain('const isUrlProp = /url$/i.test(key);');
+    // Stage 04 Task C: URL validation is now driven by the declared prop TYPE
+    // ('url' | 'image') rather than a key-name heuristic, so alt-text and
+    // image-position props can never be mistaken for URLs.
+    expect(src).toContain("case 'url':");
+    expect(src).toContain("case 'image':");
+    expect(src).toContain('SAFE_URL');
   });
 });

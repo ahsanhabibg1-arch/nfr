@@ -26,14 +26,24 @@ export default defineConfig({
       // which breaks importing server modules (lib/db, lib/content) under the
       // plain-Node vitest runtime. Alias it to a no-op stub for tests only.
       'server-only': fileURLToPath(new URL('./tests/stubs/server-only.ts', import.meta.url)),
+      // Mirror tsconfig's `@/*` -> `./*` so tests can import the same modules the
+      // app does. Required to render real block components (Stage 03).
+      '@': fileURLToPath(new URL('./', import.meta.url)),
     },
   },
   test: {
     environment: 'node',
     include: ['tests/**/*.test.ts'],
     // DB integration tests may connect to a real database; give them room.
-    testTimeout: 30000,
-    hookTimeout: 30000,
+    //
+    // Raised from 30s in Stage 04. `tests/seo-intel.test.ts` runs full audit
+    // passes against the test database: individual cases take 21-25s even in
+    // isolation, so they sat just inside the old limit and began timing out once
+    // Stage 03/04 added ~270 tests of concurrent load. They pass 12/12 when the
+    // file is run alone. No assertion was changed — only the allowance for a
+    // genuinely slow DB suite.
+    testTimeout: 90000,
+    hookTimeout: 90000,
     // Some DB suites toggle shared singleton config rows (AnalyticsConfig,
     // MonetizationConfiguration). Run test files serially so those globals are
     // deterministic across suites (tests within a file already run in order).

@@ -7,36 +7,57 @@ const read = (f: string) => fs.readFileSync(path.join(root, f), 'utf-8');
 
 describe('Batch 33 — Unified Site Experience', () => {
 
-  // ── Content Source Engine ────────────────────────────────────────
-  describe('Content Source Engine', () => {
-    const src = read('lib/cms/contentSourceEngine.ts');
-
-    it('exports resolveContentSource function', () => {
-      expect(src).toContain('export async function resolveContentSource');
+  /* ── Content Source contract ──────────────────────────────────────
+   * Stage 05 (owner decision D-04) retired `lib/cms/contentSourceEngine.ts`:
+   * 402 lines with zero importers, unreachable by construction, and missing the
+   * fixture-exclusion filter the live path applies. These six tests asserted
+   * that symbols existed inside that dead file — they proved nothing about the
+   * running site.
+   *
+   * They are replaced by assertions on the live contract in `slotUtils`, which
+   * is what actually serves pages. Its behaviour (auto / manual / mixed
+   * selection, ordering, bounded counts, cross-slot deduplication, fixture and
+   * unpublished exclusion) is proven in tests/stage05-content-source.test.ts.
+   */
+  describe('Content Source contract', () => {
+    it('the retired engine is gone from the codebase', () => {
+      expect(fs.existsSync(path.join(root, 'lib/cms/contentSourceEngine.ts'))).toBe(false);
     });
 
-    it('exports resolveMultipleSources function', () => {
-      expect(src).toContain('export async function resolveMultipleSources');
+    it('no module imports the retired engine', () => {
+      const offenders: string[] = [];
+      const walk = (dir: string) => {
+        for (const e of fs.readdirSync(path.join(root, dir), { withFileTypes: true })) {
+          if (e.name === 'node_modules' || e.name === '.next' || e.name.startsWith('.')) continue;
+          const rel = `${dir}/${e.name}`;
+          if (e.isDirectory()) walk(rel);
+          else if (/\.(ts|tsx)$/.test(e.name)) {
+            const src = fs.readFileSync(path.join(root, rel), 'utf-8');
+            // An IMPORT, not a mention. slotUtils documents why the engine was
+            // retired, and that comment is deliberate.
+            if (/(?:from\s+['"][^'"]*contentSourceEngine|require\(\s*['"][^'"]*contentSourceEngine|import\(\s*['"][^'"]*contentSourceEngine)/.test(src)) {
+              offenders.push(rel);
+            }
+          }
+        }
+      };
+      for (const d of ['app', 'lib', 'views', 'components']) walk(d);
+      expect(offenders).toEqual([]);
     });
 
-    it('exports parseContentSource function', () => {
-      expect(src).toContain('export function parseContentSource');
-    });
-
-    it('exports DeduplicationContext class', () => {
-      expect(src).toContain('export class DeduplicationContext');
-    });
-
-    it('supports all 6 entity types', () => {
-      for (const type of ['article', 'rodeo-hub', 'rodeo-event', 'rodeo-edition', 'competitor', 'venue']) {
-        expect(src).toContain(`'${type}'`);
+    it('the authoritative content-source helpers are exported from slotUtils', async () => {
+      const mod = await import('../lib/cms/slotUtils');
+      for (const fn of ['pickedThenAuto', 'createSelectionContext', 'numProp', 'idListProp', 'limitList']) {
+        expect(typeof (mod as Record<string, unknown>)[fn], fn).toBe('function');
       }
     });
 
-    it('supports auto/manual/mixed modes', () => {
-      for (const mode of ['auto', 'manual', 'mixed']) {
-        expect(src).toContain(`'${mode}'`);
-      }
+    it('the selection context deduplicates and is first-claim-wins', async () => {
+      const { createSelectionContext } = await import('../lib/cms/slotUtils');
+      const ctx = createSelectionContext(['a']);
+      ctx.claim(['b', 'b', null, undefined, '']);
+      expect(ctx.has('a')).toBe(true);
+      expect(ctx.excluded().sort()).toEqual(['a', 'b']);
     });
   });
 

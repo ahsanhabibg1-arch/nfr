@@ -5,27 +5,92 @@ import { requireActor, toActionError, type ActionResult } from '@/lib/cms/guard'
 import * as pl from '@/lib/cms/pageLayoutService';
 import type { SectionSlot } from '@/lib/cms/sectionRegistry';
 import { prisma } from '@/lib/db';
+import { ADMIN_LAYOUT_PATH, publishedPathsFor } from '@/lib/cms/layoutCachePaths';
 
-const rev = () => { revalidatePath('/admin/website/'); revalidatePath('/', 'layout'); };
+/**
+ * SCOPED CACHE INVALIDATION (Stage 08 Task D, owner decision D-08).
+ *
+ * The previous helper was:
+ *
+ *     const rev = () => { revalidatePath('/admin/website/'); revalidatePath('/', 'layout'); };
+ *
+ * and EVERY action called it, including `saveDraftAction`. `revalidatePath('/',
+ * 'layout')` invalidates the root layout and therefore the whole public site,
+ * so saving an unpublished draft for one page key flushed every public page —
+ * including the published version of the page being drafted.
+ *
+ * Two tiers now, per D-08 option (a):
+ *
+ *   `revalidateDraft()`   — the admin route only. A draft write changes no
+ *                           published artefact, and the staff preview is
+ *                           dynamically rendered because it reads draftMode(),
+ *                           so there is nothing public to invalidate.
+ *   `revalidatePublish()` — the admin route plus exactly the paths that page
+ *                           key publishes to, from the authoritative map in
+ *                           lib/cms/layoutCachePaths.ts.
+ *
+ * Which tier each action uses is decided by what it WRITES, not by what it is
+ * called: `resetDraftAction`, `restoreDefaultsAction`, `restoreRevisionAction`,
+ * `schedulePublishAction` and `cancelScheduleAction` all write draft or
+ * schedule columns only, so all five are draft-tier.
+ */
+const revalidateDraft = () => {
+  revalidatePath(ADMIN_LAYOUT_PATH);
+};
 
-export async function saveDraftAction(pageKey: string, sections: SectionSlot[]): Promise<ActionResult> {
-  try { const a = await requireActor('system.config'); await pl.saveDraft(a, { pageKey, sections }); rev(); return { ok: true }; }
-  catch (e) { return toActionError(e); }
+const revalidatePublish = (pageKey: string) => {
+  revalidatePath(ADMIN_LAYOUT_PATH);
+  for (const target of publishedPathsFor(pageKey)) {
+    revalidatePath(target.path, target.type);
+  }
+};
+
+export async function saveDraftAction(
+  pageKey: string,
+  sections: SectionSlot[],
+  /**
+   * The `PageLayout.version` the editor loaded (Stage 08 Task B, KD-09).
+   *
+   * REQUIRED, and with no `'unchecked'` escape — unlike the service, which
+   * allows that opt-out for scripts and tests. This is the interactive path, so
+   * a save arriving without the version the operator actually loaded is the
+   * exact condition that used to overwrite another editor's work in silence.
+   */
+  expectedVersion: number,
+): Promise<ActionResult> {
+  try {
+    const a = await requireActor('system.config');
+    const layout = await pl.saveDraft(a, { pageKey, sections, expectedVersion });
+    revalidateDraft();
+    return { ok: true, version: layout.version };
+  } catch (e) { return toActionError(e); }
 }
 
 export async function publishLayoutAction(pageKey: string): Promise<ActionResult> {
-  try { const a = await requireActor('system.config'); await pl.publishLayout(a, pageKey); rev(); return { ok: true }; }
-  catch (e) { return toActionError(e); }
+  try {
+    const a = await requireActor('system.config');
+    const layout = await pl.publishLayout(a, pageKey);
+    revalidatePublish(pageKey);
+    return { ok: true, version: layout.version };
+  } catch (e) { return toActionError(e); }
 }
 
 export async function resetDraftAction(pageKey: string): Promise<ActionResult> {
-  try { const a = await requireActor('system.config'); await pl.resetDraftToPublished(a, pageKey); rev(); return { ok: true }; }
-  catch (e) { return toActionError(e); }
+  try {
+    const a = await requireActor('system.config');
+    const layout = await pl.resetDraftToPublished(a, pageKey);
+    revalidateDraft();
+    return { ok: true, version: layout.version };
+  } catch (e) { return toActionError(e); }
 }
 
 export async function restoreDefaultsAction(pageKey: string): Promise<ActionResult> {
-  try { const a = await requireActor('system.config'); await pl.restoreDefaults(a, pageKey); rev(); return { ok: true }; }
-  catch (e) { return toActionError(e); }
+  try {
+    const a = await requireActor('system.config');
+    const layout = await pl.restoreDefaults(a, pageKey);
+    revalidateDraft();
+    return { ok: true, version: layout.version };
+  } catch (e) { return toActionError(e); }
 }
 
 export interface FeaturedPickerItem {
@@ -100,18 +165,19 @@ export async function schedulePublishAction(pageKey: string, scheduledAt: string
     const a = await requireActor('system.config');
     const date = new Date(scheduledAt);
     if (isNaN(date.getTime())) return { ok: false, code: 'validation', error: 'Invalid date.' };
-    await pl.schedulePublish(a, pageKey, date);
-    rev();
-    return { ok: true };
+    const layout = await pl.schedulePublish(a, pageKey, date);
+    // Draft tier: scheduling writes the scheduled columns, nothing published.
+    revalidateDraft();
+    return { ok: true, version: layout.version };
   } catch (e) { return toActionError(e); }
 }
 
 export async function cancelScheduleAction(pageKey: string): Promise<ActionResult> {
   try {
     const a = await requireActor('system.config');
-    await pl.cancelSchedule(a, pageKey);
-    rev();
-    return { ok: true };
+    const layout = await pl.cancelSchedule(a, pageKey);
+    revalidateDraft();
+    return { ok: true, version: layout.version };
   } catch (e) { return toActionError(e); }
 }
 
@@ -125,8 +191,8 @@ export interface RevisionRow {
 
 export async function listRevisionsAction(pageKey: string): Promise<ActionResult<{ revisions: RevisionRow[]; total: number }>> {
   try {
-    await requireActor('system.config');
-    const { revisions, total } = await pl.listRevisions(pageKey);
+    const a = await requireActor('system.config');
+    const { revisions, total } = await pl.listRevisions(a, pageKey);
     return {
       ok: true,
       revisions: revisions.map((r) => ({
@@ -144,9 +210,15 @@ export async function listRevisionsAction(pageKey: string): Promise<ActionResult
 export async function restoreRevisionAction(pageKey: string, revisionId: string): Promise<ActionResult> {
   try {
     const a = await requireActor('system.config');
-    await pl.restoreRevision(a, pageKey, revisionId);
-    rev();
-    return { ok: true };
+    const layout = await pl.restoreRevision(a, pageKey, revisionId);
+    /**
+     * Draft tier, and this is the important one for Task D requirement 4:
+     * restoring a revision writes `draftSections` only, so it must NOT publish
+     * anything. Using the publish tier here would have made a restore appear
+     * on the live site.
+     */
+    revalidateDraft();
+    return { ok: true, version: layout.version };
   } catch (e) { return toActionError(e); }
 }
 

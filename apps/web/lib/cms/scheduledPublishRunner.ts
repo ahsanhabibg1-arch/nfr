@@ -6,16 +6,22 @@ const INTERVAL_MS = 60_000;
 let started = false;
 let timer: ReturnType<typeof setInterval> | null = null;
 
-const REVALIDATE_SECRET = process.env.INTERNAL_REVALIDATE_SECRET || '__scheduled_publish_revalidate__';
-
 async function triggerRevalidation(): Promise<void> {
+  // Read per-call and never fall back to a literal: without a configured secret
+  // the endpoint fails closed, so skip rather than issue a request that cannot succeed.
+  const secret = process.env.INTERNAL_REVALIDATE_SECRET;
+  if (!secret) {
+    log.warn('skipping revalidation: INTERNAL_REVALIDATE_SECRET is not configured');
+    return;
+  }
+
   const port = process.env.PORT || '3000';
   const base = `http://localhost:${port}`;
   try {
     const res = await fetch(`${base}/api/internal/revalidate`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ secret: REVALIDATE_SECRET, path: '/' }),
+      body: JSON.stringify({ secret, path: '/' }),
     });
     if (!res.ok) log.warn('revalidation request failed', { status: res.status });
   } catch (err) {

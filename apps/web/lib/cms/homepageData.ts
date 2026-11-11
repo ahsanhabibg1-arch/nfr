@@ -11,10 +11,11 @@ import {
 import { listPublicHubs, listPublicEvents } from '../rodeoContent';
 import { getQuickAccessLinks } from './navigationService';
 import { PRIMARY_SECTIONS } from '../../config/routes';
-import { numProp, idListProp, pickedThenAuto } from './slotUtils';
+import { numProp, idListProp, pickedThenAuto, createSelectionContext } from './slotUtils';
 import type { Article, Discipline } from '../../types';
 import type { QuickAccessLink } from './navTypes';
 import type { SectionSlot } from './sectionRegistry';
+import { selectRenderableSlots } from './slotSelection';
 
 /**
  * Homepage data resolver — turns each page-builder slot into the data that slot needs,
@@ -42,7 +43,7 @@ export interface ResolvedHomeSlot {
 }
 
 /* ── re-export shared helpers for existing external consumers ───── */
-export { numProp, idListProp, pickedThenAuto } from './slotUtils';
+export { numProp, idListProp, pickedThenAuto, createSelectionContext } from './slotUtils';
 
 const SECTION_CATEGORY: Record<string, string> = {
   'plan-and-watch': 'plan-watch',
@@ -63,7 +64,11 @@ const DEFAULT_COUNTS: Record<string, number> = {
  * are fetched once and only when a slot that needs them is on the page.
  */
 export async function resolveHomepageSlots(slots: SectionSlot[]): Promise<ResolvedHomeSlot[]> {
-  const visible = slots.filter((s) => s.visible).sort((a, b) => a.order - b.order);
+  // Stage 07 Task A: the ONE authoritative selection (lib/cms/slotSelection.ts).
+  // Applied here so no content query is issued for a hidden slot and the
+  // deduplication context claims articles in render order. `PageRenderer`
+  // applies the same function as the final authority; it is idempotent.
+  const visible = selectRenderableSlots(slots);
   const has = (type: string) => visible.some((s) => s.sectionType === type);
 
   const [disciplines, quickAccessLinks, hubs, recurringEvents] = await Promise.all([
@@ -73,11 +78,23 @@ export async function resolveHomepageSlots(slots: SectionSlot[]): Promise<Resolv
     has('more-rodeo') ? listPublicEvents() : Promise.resolve([]),
   ]);
 
-  // Articles shown in the hero are not repeated in "Latest" sections.
-  const shownInHero: string[] = [];
+  /**
+   * One selection context for the whole page (Stage 05 — fixes KD-01).
+   *
+   * Previously a one-way `shownInHero` array was passed to `latest-coverage`
+   * alone and never extended, so the category sections and `learning` could not
+   * deduplicate against the hero or against each other. The live homepage
+   * rendered one article three times and five others twice.
+   */
+  const ctx = createSelectionContext();
   const out: ResolvedHomeSlot[] = [];
 
-  // Hero first so its articles can be excluded from later "latest" feeds.
+  /**
+   * The hero resolves first and claims first, regardless of where an admin has
+   * placed it. The lead story is the page's headline act: if it also qualifies
+   * for a category feed, the hero keeps it and the feed moves on. Resolving it
+   * ahead of the loop is what makes that priority deterministic.
+   */
   const heroSlot = visible.find((s) => s.sectionType === 'editorial-hero');
   let heroData: HomeSlotData | null = null;
   if (heroSlot) {
@@ -89,8 +106,10 @@ export async function resolveHomepageSlots(slots: SectionSlot[]): Promise<Resolv
       const more = await getLatestArticles(secondaryCount - secondary.length, [lead?.id, ...secondary.map((a) => a.id)].filter(Boolean) as string[]);
       secondary.push(...more);
     }
-    shownInHero.push(...[lead?.id, ...secondary.map((a) => a.id)].filter(Boolean) as string[]);
-    heroData = { lead, secondary };
+    // Guard against the hero itself repeating its lead among the secondaries.
+    const uniqueSecondary = secondary.filter((a) => a.id !== lead?.id);
+    ctx.claim([lead?.id, ...uniqueSecondary.map((a) => a.id)]);
+    heroData = { lead, secondary: uniqueSecondary };
   }
 
   for (const slot of visible) {
@@ -100,12 +119,14 @@ export async function resolveHomepageSlots(slots: SectionSlot[]): Promise<Resolv
 
     if (t === 'editorial-hero') data = heroData ?? {};
     else if (t === 'latest-coverage') {
-      data.articles = await pickedThenAuto(slot.props, count, (need, ex) => getLatestArticles(need, [...shownInHero, ...ex]));
+      data.articles = await pickedThenAuto(slot.props, count, (need, ex) => getLatestArticles(need, ex), ctx);
     } else if (SECTION_CATEGORY[t]) {
+      // Category relevance is preserved: the filter is unchanged, only the
+      // exclude list now carries everything already placed on the page.
       const categoryKey = PRIMARY_SECTIONS[SECTION_CATEGORY[t]].categoryKey;
-      data.articles = await pickedThenAuto(slot.props, count, (need, ex) => getPublishedArticlesBySection(categoryKey, { limit: need, excludeIds: ex }));
+      data.articles = await pickedThenAuto(slot.props, count, (need, ex) => getPublishedArticlesBySection(categoryKey, { limit: need, excludeIds: ex }), ctx);
     } else if (t === 'learning') {
-      data.articles = await pickedThenAuto(slot.props, count, async (need, ex) => (await getEvergreenArticles(need + ex.length)).filter((a) => !ex.includes(a.id)).slice(0, need));
+      data.articles = await pickedThenAuto(slot.props, count, async (need, ex) => (await getEvergreenArticles(need + ex.length)).filter((a) => !ex.includes(a.id)).slice(0, need), ctx);
     } else if (t === 'competition') data.disciplines = disciplines;
     else if (t === 'quick-access') data.quickAccessLinks = quickAccessLinks;
     else if (t === 'more-rodeo') { data.hubs = hubs; data.recurringEvents = recurringEvents; }

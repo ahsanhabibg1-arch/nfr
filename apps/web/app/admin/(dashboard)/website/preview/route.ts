@@ -23,14 +23,50 @@ export async function GET(req: NextRequest) {
     return NextResponse.json({ error: 'Invalid page key' }, { status: 400 });
   }
 
+  /**
+   * Embed mode — the Page Builder canvas (Stage 06 Task 3).
+   *
+   * The canvas mounts THIS route rather than a second renderer, so the centre
+   * panel shows the same draft composition the standalone preview shows, built
+   * by the same public pages. Two deliberate differences from the standalone
+   * path below:
+   *
+   *  1. It redirects to the target page instead of returning a chrome wrapper.
+   *     The wrapper's preview bar and its own inner iframe belong to a
+   *     full-window preview; inside the canvas they would waste height and add
+   *     a second frame boundary between the page and the Builder.
+   *
+   *  2. It does NOT 404 when no draft layout is stored. A page with no stored
+   *     layout renders registry defaults — that is what the public site already
+   *     does, and it is what the Builder's own tree shows — so refusing to draw
+   *     the canvas would be wrong. There is no disclosure concern: the operator
+   *     already holds `system.config` and the page shows what a visitor sees.
+   */
+  const embed = req.nextUrl.searchParams.get('embed') === '1';
+
   const layout = await prisma.pageLayout.findUnique({ where: { pageKey } });
-  if (!layout || !Array.isArray(layout.draftSections) || (layout.draftSections as unknown[]).length === 0) {
+  const hasDraft = !!layout && Array.isArray(layout.draftSections) && (layout.draftSections as unknown[]).length > 0;
+  if (!hasDraft && !embed) {
     return NextResponse.json({ error: 'No draft found for this page.' }, { status: 404 });
   }
 
   const targetUrl = await pageKeyToUrl(pageKey);
   if (!targetUrl) {
     return NextResponse.json({ error: `No previewable URL for page key "${pageKey}".` }, { status: 404 });
+  }
+
+  if (embed) {
+    (await draftMode()).enable();
+    const dest = new URL(targetUrl, req.url);
+    dest.searchParams.set('_preview', 'draft');
+    dest.searchParams.set('_pk', pageKey);
+    // `_canvas=1` is what turns the click-to-select bridge on. Only this path
+    // sets it, so the standalone preview keeps ordinary navigation.
+    dest.searchParams.set('_canvas', '1');
+    const res = NextResponse.redirect(dest);
+    res.headers.set('Cache-Control', 'no-store, no-cache, must-revalidate');
+    res.headers.set('X-Robots-Tag', 'noindex');
+    return res;
   }
 
   // Next.js draft mode: public pages render the saved *draft* layout for this staff session

@@ -36,11 +36,14 @@ test.describe('Batch 32 — Visual Page Builder', () => {
     await cleanupPageLayout('homepage');
   });
 
-  test('Page Layouts tab shows builder with Canvas and Properties headings', async ({ page }) => {
+  // Stage 06 renamed the left panel to "Page Structure" and introduced a real
+  // centre canvas, so this now asserts all THREE panel headings instead of two.
+  test('Page Layouts tab shows the three builder panels', async ({ page }) => {
     await login(page);
     await page.goto('/admin/website/');
     await page.getByRole('button', { name: 'Page Layouts' }).click();
-    await expect(page.getByRole('heading', { name: /Page Canvas/i })).toBeVisible({ timeout: 10000 });
+    await expect(page.getByRole('heading', { name: /Page Structure/i })).toBeVisible({ timeout: 10000 });
+    await expect(page.getByRole('heading', { name: /^Canvas$/i })).toBeVisible();
     await expect(page.getByRole('heading', { name: /Properties/i })).toBeVisible();
   });
 

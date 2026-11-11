@@ -184,7 +184,8 @@ describe('Batch 32 — Premium Visual Page Builder', () => {
     it('service validates block instance limits', () => {
       const src = read('lib/cms/pageLayoutService.ts');
       expect(src).toContain('validateBlockLimits');
-      expect(src).toContain('maxInstances');
+      // Stage 04 Task B: caps are resolved per page family.
+      expect(src).toContain('resolveMaxInstances');
     });
 
     it('service validates unique block IDs', () => {
@@ -201,9 +202,25 @@ describe('Batch 32 — Premium Visual Page Builder', () => {
 
   // ── Three-panel builder UI ─────────────────────────────────────
   describe('Visual builder UI', () => {
-    it('editor has three-panel layout: Canvas and Properties', () => {
+    /**
+     * Stage 06 retargeted this test, and it is worth recording why.
+     *
+     * It was named "editor has three-panel layout: Canvas and Properties" and
+     * asserted that the strings "Page Canvas" and "Properties" appeared in the
+     * editor's SOURCE. It passed from Batch 32 through Stage 05 while the editor
+     * had only TWO panels — a block list and a property panel — and no canvas at
+     * all. The name described a layout; the assertion found two substrings.
+     *
+     * It is now a wiring check with a name that says so: the editor must mount
+     * the three panel pieces. The layout itself is proven against rendered DOM
+     * in `tests/stage06-builder-dom.test.ts`, which asserts the three panel
+     * headings, the canvas iframe and its embed URL.
+     */
+    it('editor wires three panels: structure tree, BuilderCanvas and inspector', () => {
       const src = read('views/admin/AdminPageLayoutEditor.tsx');
-      expect(src).toContain('Page Canvas');
+      expect(src).toContain("from './BuilderCanvas'");
+      expect(src).toContain('<BuilderCanvas');
+      expect(src).toContain('Page Structure');
       expect(src).toContain('Properties');
     });
 
@@ -242,9 +259,11 @@ describe('Batch 32 — Premium Visual Page Builder', () => {
 
     it('editor supports new prop types: select, boolean, color', () => {
       const src = read('views/admin/AdminPageLayoutEditor.tsx');
-      expect(src).toContain("prop.type === 'select'");
-      expect(src).toContain("prop.type === 'boolean'");
-      expect(src).toContain("prop.type === 'color'");
+      // Stage 04 Task A: these branches live in the shared field component.
+      const field = read('views/admin/PropField.tsx');
+      expect(field).toContain("prop.type === 'select'");
+      expect(field).toContain("prop.type === 'boolean'");
+      expect(field).toContain("prop.type === 'color'");
     });
 
     it('editor shows block metadata: category, description, instance count', () => {

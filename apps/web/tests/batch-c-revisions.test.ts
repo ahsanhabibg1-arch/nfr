@@ -189,11 +189,24 @@ describe('Phase C — Scheduled publish creates revision', () => {
     expect(fnBody).toContain('layout.scheduledById');
   });
 
-  it('preserves atomic updateMany concurrency guard', () => {
+  it('preserves the atomic claim-by-update concurrency guard [structural]', () => {
+    /**
+     * STAGE 08 UPDATED THIS SOURCE-TEXT ASSERTION. The behaviour it names is
+     * preserved and strengthened; only the literal moved. Task B put the layout
+     * write and the revision insert into ONE interactive transaction
+     * (`publishWithRevision`), because the previous form awaited
+     * `nextRevisionNo` while BUILDING the `$transaction` array — so the read
+     * happened before the transaction opened, and two concurrent publishes both
+     * claimed the same revision number.
+     *
+     * Behavioural proof: tests/stage08-concurrency.test.ts, which runs real
+     * concurrent publishes against the isolated test database.
+     */
     const fnBody = service.slice(service.indexOf('export async function executeScheduledPublish'));
-    expect(fnBody).toContain('prisma.pageLayout.updateMany');
+    expect(fnBody).toContain('updateMany');
     expect(fnBody).toContain('scheduledAt: { not: null }');
     expect(fnBody).toContain('if (count === 0) return null');
+    expect(fnBody).toContain('publishWithRevision');
   });
 
   it('only creates revision after successful updateMany (count > 0)', () => {
@@ -273,9 +286,19 @@ describe('Phase C — restoreRevision service', () => {
     expect(fnBody).toContain("'Revision does not belong to this page.'");
   });
 
-  it('copies snapshot to draftSections only', () => {
+  it('copies snapshot to draftSections only [structural]', () => {
+    /**
+     * Stage 08 Task C VALIDATES the snapshot before writing it, so the literal
+     * is now `draftSections: parsed.data`. A restore previously bypassed every
+     * check `saveDraft` applies, so a malformed stored snapshot became the
+     * operator's working draft and failed confusingly on the next save.
+     *
+     * The claim under test is unchanged and still the important one: a restore
+     * touches the DRAFT and never `publishedSections`. Proven behaviourally in
+     * tests/stage08-revision-recovery.test.ts.
+     */
     const fnBody = service.slice(service.indexOf('export async function restoreRevision'));
-    expect(fnBody).toContain('draftSections: revision.snapshot');
+    expect(fnBody).toContain('draftSections: parsed.data');
     expect(fnBody).not.toContain('publishedSections');
   });
 
@@ -330,12 +353,20 @@ describe('Phase C — Server actions', () => {
     expect(fnBody).toContain("requireActor('system.config')");
   });
 
-  it('restoreRevisionAction calls rev() for revalidation', () => {
+  it('restoreRevisionAction revalidates the DRAFT tier only [structural]', () => {
+    /**
+     * Stage 08 Task D replaced the single `rev()` helper — which called
+     * `revalidatePath('/', 'layout')` and therefore flushed the whole public
+     * site — with two tiers. A restore writes `draftSections` only, so it must
+     * use the draft tier: the publish tier would have made a restored revision
+     * appear on the live site, which Task D requirement 4 forbids.
+     */
     const fnBody = actions.slice(
       actions.indexOf('async function restoreRevisionAction'),
       actions.indexOf('async function getDraftPreviewSections'),
     );
-    expect(fnBody).toContain('rev()');
+    expect(fnBody).toContain('revalidateDraft()');
+    expect(fnBody).not.toContain('revalidatePublish(');
   });
 
   it('exports RevisionRow interface', () => {
@@ -424,9 +455,10 @@ describe('Phase C — Regression: existing immediate publish', () => {
  * 13. Regression — Existing Scheduled Publish
  * ================================================================ */
 describe('Phase C — Regression: existing scheduled publish', () => {
-  it('executeScheduledPublish still uses atomic updateMany', () => {
+  it('executeScheduledPublish still uses an atomic updateMany [structural]', () => {
+    // Stage 08: now `tx.pageLayout.updateMany`, inside the shared transaction.
     const fnBody = service.slice(service.indexOf('export async function executeScheduledPublish'));
-    expect(fnBody).toContain('prisma.pageLayout.updateMany');
+    expect(fnBody).toContain('updateMany');
   });
 
   it('executeScheduledPublish still clears scheduling fields', () => {
@@ -451,21 +483,26 @@ describe('Phase C — Regression: existing scheduled publish', () => {
  * 14. Regression — Draft Preview Isolation
  * ================================================================ */
 describe('Phase C — Regression: draft preview and public rendering', () => {
-  it('getPublishedSections is unchanged (reads publishedSections)', () => {
-    const fnBody = service.slice(
-      service.indexOf('export async function getPublishedSections'),
-      service.indexOf('export async function getDraftSections'),
+  // Stage 03 Task G moved the shared body into `resolveSections`, which reads
+  // the column named by its argument. The behaviour this protects — published
+  // retrieval serves the published column and never consults revisions — is
+  // proven directly in tests/stage03-layout-observability.test.ts.
+  it('getPublishedSections reads the published column via the shared resolver', () => {
+    expect(service).toContain("resolveSections(pageKey, 'publishedSections')");
+    const resolver = service.slice(
+      service.indexOf('async function resolveSections'),
+      service.indexOf('export async function getPublishedSectionsResolved'),
     );
-    expect(fnBody).toContain('layout.publishedSections');
-    expect(fnBody).not.toContain('revision');
+    expect(resolver).toContain('layout[column]');
+    expect(resolver).not.toContain('revision');
   });
 
-  it('getDraftSections is unchanged', () => {
+  it('getDraftSections reads the draft column via the shared resolver', () => {
+    expect(service).toContain("resolveSections(pageKey, 'draftSections')");
     const fnBody = service.slice(
       service.indexOf('export async function getDraftSections'),
       service.indexOf('export async function listPageLayouts'),
     );
-    expect(fnBody).toContain('layout.draftSections');
     expect(fnBody).not.toContain('revision');
   });
 
@@ -520,7 +557,9 @@ describe('Phase C — Snapshot integrity', () => {
       service.indexOf('export async function resetDraftToPublished'),
     );
     expect(fnBody).toContain('JSON.parse(JSON.stringify(layout.draftSections))');
-    expect(fnBody).toContain('snapshot: sections');
+    // Stage 08: the snapshot is handed to `publishWithRevision`, which writes it
+    // inside the transaction.
+    expect(fnBody).toContain('publishWithRevision');
   });
 
   it('scheduled publish snapshots the scheduled sections', () => {
@@ -529,12 +568,15 @@ describe('Phase C — Snapshot integrity', () => {
       service.indexOf('/* ── Revision History'),
     );
     expect(fnBody).toContain('JSON.parse(JSON.stringify(scheduled))');
-    expect(fnBody).toContain('snapshot: sections');
+    // Stage 08: as above.
+    expect(fnBody).toContain('publishWithRevision');
   });
 
-  it('restore uses the revision snapshot directly (not a reference)', () => {
+  it('restore writes the validated revision snapshot [structural]', () => {
+    // Stage 08 Task C validates before writing; see the note above.
     const fnBody = service.slice(service.indexOf('export async function restoreRevision'));
-    expect(fnBody).toContain('draftSections: revision.snapshot');
+    expect(fnBody).toContain('revision.snapshot');
+    expect(fnBody).toContain('draftSections: parsed.data');
   });
 });
 

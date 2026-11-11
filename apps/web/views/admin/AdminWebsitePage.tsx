@@ -32,6 +32,8 @@ interface LayoutRow {
   draftSections: SectionSlot[];
   publishedAt: string | null;
   scheduledAt: string | null;
+  /** Optimistic-concurrency token; see AdminPageLayoutEditor (Stage 08 Task B). */
+  version: number;
 }
 
 interface Props {

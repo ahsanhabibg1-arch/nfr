@@ -16,6 +16,21 @@ export const IntroBanner: React.FC<Props> = ({ config }) => {
   const cta2Url = config.introBannerCtaSecondaryUrl;
   const focalX = config.introBannerFocalX ?? 50;
   const focalY = config.introBannerFocalY ?? 50;
+  /**
+   * STAGE 08 TASK F — two controls that saved and did nothing.
+   *
+   * `introBannerMobileFocalX` / `introBannerMobileFocalY` had an Admin slider,
+   * a Zod schema entry and persistence, and were read by NOTHING: the image
+   * used the desktop focal point at every width. An operator could move both
+   * sliders, save successfully, and see no change on a phone — the exact class
+   * of defect this programme exists to remove, and the reason Task F asks for
+   * controls that "save but do not affect public rendering" to be separated out.
+   *
+   * They default to the desktop values rather than to 50%, so a configuration
+   * stored before this fix renders exactly as it did.
+   */
+  const mobileFocalX = config.introBannerMobileFocalX ?? focalX;
+  const mobileFocalY = config.introBannerMobileFocalY ?? focalY;
   const zoom = config.introBannerZoom ?? 100;
   const overlay = config.introBannerOverlayDarkness ?? 40;
   const dH = config.introBannerDesktopHeight ?? '70vh';
@@ -26,8 +41,19 @@ export const IntroBanner: React.FC<Props> = ({ config }) => {
 
   if (!headline && !img) return null;
 
+  /**
+   * The focal point is published as a CSS custom property and switched by a
+   * media query, so the responsive behaviour needs no JavaScript, no viewport
+   * measurement and no hydration — it works in the first painted frame and in
+   * the static HTML a crawler sees. `objectPosition` keeps a literal value as
+   * the fallback for any renderer that ignores the variable.
+   */
   const objPos = `${focalX}% ${focalY}%`;
+  const mobileObjPos = `${mobileFocalX}% ${mobileFocalY}%`;
   const scale = `scale(${zoom / 100})`;
+  /** Breakpoint matches Tailwind's `md`, which the banner layouts already use. */
+  const focalStyleId = 'nfr-intro-banner-focal';
+  const focalCss = `.${focalStyleId}{object-position:var(--nfr-focal-mobile)}@media (min-width:768px){.${focalStyleId}{object-position:var(--nfr-focal-desktop)}}`;
 
   const vAlignClass = vAlign === 'top' ? 'items-start pt-16' : vAlign === 'bottom' ? 'items-end pb-16' : 'items-center';
   const tAlignClass = tAlign === 'center' ? 'text-center mx-auto' : tAlign === 'right' ? 'text-right ml-auto' : 'text-left';
@@ -35,7 +61,21 @@ export const IntroBanner: React.FC<Props> = ({ config }) => {
 
   const imgElement = img ? (
     /* eslint-disable-next-line @next/next/no-img-element */
-    <img src={img} alt={alt} className="absolute inset-0 w-full h-full object-cover" style={{ objectPosition: objPos, transform: scale }} />
+    <>
+      <style>{focalCss}</style>
+      {/* eslint-disable-next-line @next/next/no-img-element */}
+      <img
+        src={img}
+        alt={alt}
+        className={`absolute inset-0 w-full h-full object-cover ${focalStyleId}`}
+        style={{
+          objectPosition: objPos,
+          transform: scale,
+          ['--nfr-focal-desktop' as string]: objPos,
+          ['--nfr-focal-mobile' as string]: mobileObjPos,
+        } as React.CSSProperties}
+      />
+    </>
   ) : null;
 
   const overlayEl = <div className="absolute inset-0 bg-black pointer-events-none" style={{ opacity: overlay / 100 }} />;
@@ -201,8 +241,18 @@ export const IntroBanner: React.FC<Props> = ({ config }) => {
             </div>
             {img && (
               <div className="relative w-full md:w-2/5 aspect-[4/3] rounded-lg overflow-hidden">
+                <style>{focalCss}</style>
                 {/* eslint-disable-next-line @next/next/no-img-element */}
-                <img src={img} alt={alt} className="w-full h-full object-cover" style={{ objectPosition: objPos }} />
+                <img
+                  src={img}
+                  alt={alt}
+                  className={`w-full h-full object-cover ${focalStyleId}`}
+                  style={{
+                    objectPosition: objPos,
+                    ['--nfr-focal-desktop' as string]: objPos,
+                    ['--nfr-focal-mobile' as string]: mobileObjPos,
+                  } as React.CSSProperties}
+                />
               </div>
             )}
           </div>

@@ -126,8 +126,18 @@ describe('Phase F — Directory draft support', () => {
     expect(resolverSrc).toContain('getDraftSections');
   });
 
-  it('resolver accepts options parameter with draft flag', () => {
-    expect(resolverSrc).toContain('options?: { draft?: boolean }');
+  it('resolver accepts a draft option [structural]', () => {
+    /**
+     * Stage 07 Task F widened the directory resolver's options from an inline
+     * `{ draft?: boolean }` to a named `ResolveDirectoryOptions` interface, so it
+     * could also carry the route's listing data. The draft capability is
+     * unchanged; only the type's spelling moved. Draft/published ISOLATION is
+     * proven behaviourally against a real stored layout in
+     * tests/stage07-renderer-consolidation.test.ts and
+     * tests/stage07-directory-template.test.ts.
+     */
+    expect(resolverSrc).toContain('ResolveDirectoryOptions');
+    expect(resolverSrc).toContain('draft?: boolean');
   });
 
   it('resolver conditionally uses getDraftSections or getPublishedSections', () => {
@@ -138,7 +148,9 @@ describe('Phase F — Directory draft support', () => {
     const src = read('app/(public)/competitors/page.tsx');
     expect(src).toContain("from '@/lib/cms/previewGuard'");
     expect(src).toContain('isStaffDraftPreview');
-    expect(src).toContain('{ draft }');
+    // Stage 07: the route now passes `draft` inside the resolver's options
+    // object rather than as a bare shorthand property.
+    expect(src).toContain('draft,');
   });
 
   it('competitors generateMetadata does not reference draft mode', () => {
@@ -156,7 +168,7 @@ describe('Phase F — Directory draft support', () => {
     const src = read('app/(public)/venues/page.tsx');
     expect(src).toContain("from '@/lib/cms/previewGuard'");
     expect(src).toContain('isStaffDraftPreview');
-    expect(src).toContain('{ draft }');
+    expect(src).toContain('draft,');
   });
 
   it('venues generateMetadata does not reference draft mode', () => {

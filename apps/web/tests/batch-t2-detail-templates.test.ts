@@ -426,10 +426,16 @@ describe('Task 2 — Regressions', () => {
     expect(src).toContain('idListProp');
   });
 
-  it('existing shared slotUtils (Task 1) is preserved', () => {
-    const src = read('lib/cms/slotUtils.ts');
-    expect(src).toContain('export async function pickedThenAuto');
-    expect(src).toContain('export function idListProp');
-    expect(src).toContain('export function numProp');
+  it('existing shared slotUtils (Task 1) is preserved', async () => {
+    // Stage 06 moved numProp/idListProp into lib/cms/slotProps.ts so the Admin
+    // inspector shares one implementation with the resolvers; slotUtils
+    // re-exports them. Asserting the SURFACE rather than the file's characters,
+    // which is what "is preserved" was always meant to mean.
+    const mod = await import('../lib/cms/slotUtils');
+    expect(typeof mod.pickedThenAuto).toBe('function');
+    expect(typeof mod.idListProp).toBe('function');
+    expect(typeof mod.numProp).toBe('function');
+    expect(typeof mod.limitList).toBe('function');
+    expect(read('lib/cms/slotUtils.ts')).toContain('export async function pickedThenAuto');
   });
 });

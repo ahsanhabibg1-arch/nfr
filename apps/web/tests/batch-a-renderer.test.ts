@@ -1,6 +1,18 @@
-import { describe, it, expect } from 'vitest';
+import { describe, it, expect, vi } from 'vitest';
 import fs from 'node:fs';
 import path from 'node:path';
+import React from 'react';
+import { renderToStaticMarkup } from 'react-dom/server';
+
+// Stage 07 Task A: converting the ordering test from source text to behaviour
+// means rendering real blocks, and three of them call useRouter during render.
+vi.mock('next/navigation', () => ({
+  useRouter: () => ({ push: () => {}, replace: () => {}, prefetch: () => {}, back: () => {}, forward: () => {}, refresh: () => {} }),
+  usePathname: () => '/',
+  useSearchParams: () => new URLSearchParams(),
+}));
+
+const { PageRenderer } = await import('../components/blocks/PageRenderer');
 
 const root = path.resolve(__dirname, '..');
 const read = (rel: string) => fs.readFileSync(path.join(root, rel), 'utf8');
@@ -38,9 +50,23 @@ describe('Batch A — PageRenderer architecture', () => {
   });
 
   it('PageRenderer renders slots in order via registry lookup', () => {
-    const src = read('components/blocks/PageRenderer.tsx');
-    expect(src).toContain('blockRegistry');
-    expect(src).toContain('slots.map');
+    /**
+     * Stage 07 Task A converted this from source text to behaviour. It used to
+     * assert the substring 'slots.map', which broke when the renderer started
+     * mapping the SELECTED list (`renderable.map`) instead of the raw one — a
+     * change that made ordering stronger, not weaker. Rendering two real blocks
+     * and checking their emitted order proves the claim the name makes.
+     */
+    const html = renderToStaticMarkup(
+      React.createElement(PageRenderer, {
+        slots: [
+          { slot: { id: 'b', sectionType: 'cta-banner', visible: true, order: 1, props: { ctaText: 'B' } }, data: {} },
+          { slot: { id: 'a', sectionType: 'cta-banner', visible: true, order: 0, props: { ctaText: 'A' } }, data: {} },
+        ],
+        editorMode: true,
+      }),
+    );
+    expect(html.indexOf('data-slot-id="a"')).toBeLessThan(html.indexOf('data-slot-id="b"'));
   });
 
   it('HomeView delegates slot rendering to PageRenderer', () => {
@@ -71,10 +97,12 @@ describe('Batch A — Section landing slot-order rendering', () => {
     expect(src).toContain('PageRenderer');
   });
 
-  it('section landing resolver fetches published sections and renders in order', () => {
+  it('section landing resolver fetches published sections and delegates ordering', () => {
+    // Stage 07 Task A: ordering is no longer hand-written here. Behavioural
+    // proof lives in tests/stage07-renderer-consolidation.test.ts.
     const src = read('lib/cms/sectionLandingData.ts');
     expect(src).toContain('getPublishedSections');
-    expect(src).toContain('.sort((a, b) => a.order - b.order)');
+    expect(src).toContain('selectRenderableSlots');
     expect(src).toContain('section:${sectionKey}');
   });
 

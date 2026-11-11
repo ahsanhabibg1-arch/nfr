@@ -1,8 +1,9 @@
 import 'server-only';
 import { getSectionMeta, getPublishedArticlesBySection, getAllDisciplines } from '../content';
 import { getPublishedSections, getDraftSections } from './pageLayoutService';
-import { idListProp, pickedThenAuto } from './slotUtils';
+import { idListProp, limitList, pickedThenAuto } from './slotUtils';
 import type { SectionSlot } from './sectionRegistry';
+import { selectRenderableSlots, orderAfter } from './slotSelection';
 import type { Article, Discipline } from '../../types';
 
 export interface LandingSlotData {
@@ -27,7 +28,7 @@ export async function resolveSectionLandingSlots(
   const sectionMeta = (await getSectionMeta(sectionKey))!;
   const fetchSections = options?.draft ? getDraftSections : getPublishedSections;
   const layoutSections = await fetchSections(`section:${sectionKey}`);
-  const visible = layoutSections.filter((s) => s.visible).sort((a, b) => a.order - b.order);
+  const visible = selectRenderableSlots(layoutSections);
 
   const sectionArticles = await getPublishedArticlesBySection(sectionMeta.categoryKey);
 
@@ -47,8 +48,17 @@ export async function resolveSectionLandingSlots(
     secondaryStories = sectionArticles.slice(1);
   }
 
+  /**
+   * Discipline data (Stage 07 Task E).
+   *
+   * Fetched when the section HAS disciplines (Competition) or when an operator
+   * has placed a `landing-competition-disciplines` block, so a stored slot is
+   * never rendered empty merely because the resolver did not look. One source —
+   * the existing `getAllDisciplines()` — and no second competition data path.
+   */
+  const storedDisciplineSlot = visible.find((s) => s.sectionType === 'landing-competition-disciplines');
   const needsDisciplines = sectionKey === 'competition';
-  const disciplines = needsDisciplines ? await getAllDisciplines() : [];
+  const disciplines = needsDisciplines || storedDisciplineSlot ? await getAllDisciplines() : [];
 
   const pillsSlot = visible.find((s) => s.sectionType === 'landing-stat-pills');
   const pillsVisible = pillsSlot?.visible !== false;
@@ -66,31 +76,81 @@ export async function resolveSectionLandingSlots(
 
     if (t === 'landing-hero') {
       out.push({ slot, data: { ...base, pillsVisible } });
+    } else if (t === 'landing-competition-disciplines') {
+      // An operator-placed block gets the same data the injected one gets, so
+      // the two paths cannot diverge (Stage 07 Task E).
+      out.push({ slot, data: { ...base, disciplines } });
     } else if (t === 'landing-featured') {
       out.push({ slot, data: { ...base, featuredStory } });
     } else if (t === 'landing-grid') {
-      out.push({ slot, data: { ...base, secondaryStories } });
+      // Stage 04 Task D: `landing-grid.articleCount` was declared but ignored —
+      // the full secondary list was passed through unsliced. Declared max is 20;
+      // an unset or zero value keeps the previous "show all" behaviour, so
+      // layouts stored before the fix render exactly as before.
+      const limited = limitList(secondaryStories, slot.props, 'articleCount', 20);
+      out.push({ slot, data: { ...base, secondaryStories: limited } });
     } else {
       out.push({ slot, data: base });
     }
   }
 
-  if (needsDisciplines && disciplines.length > 0) {
+  /**
+   * Injected system slots (Stage 07 Task A).
+   *
+   * These two are spliced at a POSITIONAL index, so their `order` must agree
+   * with that position. They previously carried the placeholder `order: -1`,
+   * which made the array order and the order fields contradict each other: any
+   * sort by `order` hoisted both blocks to the top of the page, putting the
+   * discipline guides and the empty state above the section hero. That
+   * contradiction is precisely why Stage 06 could not safely move sorting into
+   * `PageRenderer`.
+   *
+   * `orderAfter` derives a real fractional order from the anchor slot, so the
+   * composed position survives the renderer's authoritative sort. `lastOrder`
+   * keeps an unanchored injection at the end, as the previous `out.length`
+   * fallback did.
+   */
+  const lastOrder = out.length > 0 ? Math.max(...out.map((r) => r.slot.order)) + 1 : 0;
+
+  /**
+   * Inject the discipline guides ONLY when the operator has not placed the
+   * block themselves (Stage 07 Task E).
+   *
+   * Without this guard the Competition page would render the grid twice the
+   * moment an administrator added the now-registered block: once from their
+   * stored slot and once from this injection. The injection remains as the
+   * backward-compatible default, so the live page is unchanged until someone
+   * takes deliberate control of it.
+   */
+  if (needsDisciplines && disciplines.length > 0 && !storedDisciplineSlot) {
     const heroIdx = out.findIndex((r) => r.slot.sectionType === 'landing-hero');
     const featuredIdx = out.findIndex((r) => r.slot.sectionType === 'landing-featured');
-    const insertIdx = featuredIdx >= 0 ? featuredIdx + 1 : heroIdx >= 0 ? heroIdx + 1 : out.length;
+    const anchorIdx = featuredIdx >= 0 ? featuredIdx : heroIdx;
+    const insertIdx = anchorIdx >= 0 ? anchorIdx + 1 : out.length;
 
     out.splice(insertIdx, 0, {
-      slot: { id: 'landing-competition-disciplines', sectionType: 'landing-competition-disciplines', visible: true, order: -1, props: {} },
+      slot: {
+        id: 'landing-competition-disciplines',
+        sectionType: 'landing-competition-disciplines',
+        visible: true,
+        order: orderAfter(anchorIdx >= 0 ? out[anchorIdx].slot : undefined, lastOrder),
+        props: {},
+      },
       data: { ...out[0]?.data ?? {}, disciplines },
     });
   }
 
-  const emptyIdx = out.findIndex((r) => r.slot.sectionType === 'landing-featured');
   if (sectionArticles.length === 0) {
-    const insertAt = emptyIdx >= 0 ? emptyIdx + 1 : out.length;
+    const emptyAnchorIdx = out.findIndex((r) => r.slot.sectionType === 'landing-featured');
+    const insertAt = emptyAnchorIdx >= 0 ? emptyAnchorIdx + 1 : out.length;
     out.splice(insertAt, 0, {
-      slot: { id: 'landing-empty', sectionType: 'landing-empty', visible: true, order: -1, props: {} },
+      slot: {
+        id: 'landing-empty',
+        sectionType: 'landing-empty',
+        visible: true,
+        order: orderAfter(emptyAnchorIdx >= 0 ? out[emptyAnchorIdx].slot : undefined, lastOrder),
+        props: {},
+      },
       data: { sectionMeta: metaObj, sectionKey, totalArticleCount: 0 },
     });
   }

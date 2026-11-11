@@ -245,10 +245,31 @@ export function breadcrumbJsonLd(
  */
 export function faqPageJsonLd(faqs: { question: string; answer: string }[]): Record<string, unknown> | null {
   if (!faqs || faqs.length === 0) return null;
+
+  /**
+   * Stage 09 Task C — defence in depth, closing no live hole.
+   *
+   * schema.org requires a `Question` to carry both a `name` and an
+   * `acceptedAnswer.text`; a `Question` with an empty answer is invalid markup
+   * rather than an incomplete one. The emitter previously mapped every entry
+   * through unconditionally, so an empty `answer` would have been published as
+   * `acceptedAnswer: { text: '' }`.
+   *
+   * To be precise about severity: this was **not reachable** through the
+   * supported path. `faqService` validates both fields with
+   * `z.string().trim().min(3)` on create and update, so no stored `EntityFaq`
+   * row can hold a blank question or answer, and the audit found no other
+   * writer. The filter makes the guarantee local to the emitter instead of
+   * resting on a validator three modules away — it is hardening, not a fix for
+   * an observed defect, and it changes nothing for valid input.
+   */
+  const complete = faqs.filter((f) => (f.question ?? '').trim() !== '' && (f.answer ?? '').trim() !== '');
+  if (complete.length === 0) return null;
+
   return {
     '@context': 'https://schema.org',
     '@type': 'FAQPage',
-    mainEntity: faqs.map((f) => ({
+    mainEntity: complete.map((f) => ({
       '@type': 'Question',
       name: f.question,
       acceptedAnswer: { '@type': 'Answer', text: f.answer },

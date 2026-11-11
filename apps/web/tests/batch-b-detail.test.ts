@@ -60,9 +60,16 @@ describe('Batch B — Detail template data resolver', () => {
     expect(resolverSrc).toContain('export async function resolveArticleTemplateSlots');
   });
 
-  it('filters visible slots and sorts by order', () => {
-    expect(resolverSrc).toContain('.filter((s) => s.visible)');
-    expect(resolverSrc).toContain('.sort((a, b) => a.order - b.order)');
+  it('delegates visibility and ordering to the single shared authority', () => {
+    // Stage 07 Task A: the five hand-written `.filter(visible).sort(order)` copies
+    // were replaced by one shared `selectRenderableSlots`. This test asserted the
+    // literal characters of the old copy, so it failed on a change that
+    // strengthened the guarantee. The behavioural claim its name used to make is
+    // now proven against a real stored layout and the real resolver in
+    // tests/stage07-renderer-consolidation.test.ts. What remains here is the
+    // structural fact this file exists to record: no local reimplementation.
+    expect(resolverSrc).toContain('selectRenderableSlots');
+    expect(resolverSrc).not.toContain('.filter((s) => s.visible)');
   });
 
   it('resolves related articles count from slot props', () => {

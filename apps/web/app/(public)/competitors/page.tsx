@@ -1,16 +1,19 @@
 import type { Metadata } from 'next';
-import Link from 'next/link';
 import { listPublicCompetitors } from '@/lib/batch12Content';
 import { buildMetadata, breadcrumbJsonLd, JsonLd } from '@/lib/seo';
 import { directoryListingRobots } from '@/lib/seo/robots';
 import { ROUTES } from '@/config/routes';
 import { resolveDirectorySlots } from '@/lib/cms/directoryData';
-import { DirectoryCtaSlot } from '@/views/DirectorySlots';
+import { DirectorySlots } from '@/views/DirectorySlots';
 import { isStaffDraftPreview } from '@/lib/cms/previewGuard';
 
 type SP = Promise<Record<string, string | string[] | undefined>>;
 const str = (v: string | string[] | undefined) => (Array.isArray(v) ? v[0] : v) || '';
 export const revalidate = 300;
+
+const DEFAULT_HERO_TITLE = 'Rodeo Competitors';
+const DEFAULT_HERO_DESCRIPTION =
+  "Contestants and athletes covered across NFRGuide's rodeo reporting. Search by name or filter by discipline.";
 
 export async function generateMetadata({ searchParams }: { searchParams: SP }): Promise<Metadata> {
   const sp = await searchParams; const page = Number(str(sp.page)) || 1;
@@ -18,66 +21,64 @@ export async function generateMetadata({ searchParams }: { searchParams: SP }): 
   return buildMetadata({ title: 'Rodeo Competitors Directory', description: 'Browse rodeo competitors and contestants covered by NFRGuide — search by name and filter by discipline.', path: '/competitors/', robots: directoryListingRobots(filtered) });
 }
 
+/**
+ * Competitor directory (Stage 07 Task F).
+ *
+ * The route still owns the DATA — `listPublicCompetitors` is the authoritative,
+ * bounded, page-clamped query, and it stays here because it depends on
+ * `searchParams`. What moved is the PRESENTATION: the header, the search form,
+ * the entries and the pagination are now the `directory-hero` and
+ * `directory-grid` blocks, placed by the Builder in slot order.
+ *
+ * SEO is unchanged: the same `generateMetadata`, the same breadcrumb JSON-LD,
+ * the same single `<h1>` (now emitted by the hero block rather than here), and
+ * the same `directoryListingRobots` treatment of filtered views.
+ */
 export default async function CompetitorsDirectory({ searchParams }: { searchParams: SP }) {
   const sp = await searchParams;
   const q = str(sp.q); const discipline = str(sp.discipline); const page = Number(str(sp.page)) || 1;
   const draft = await isStaffDraftPreview();
-  const [{ items, total, totalPages, disciplineOptions }, directorySlots] = await Promise.all([
-    listPublicCompetitors({ q, disciplineSlug: discipline, page }),
-    resolveDirectorySlots('directory:competitors', { draft }),
-  ]);
+  const { items, total, totalPages, disciplineOptions } = await listPublicCompetitors({ q, disciplineSlug: discipline, page });
+
   const qs = (over: Record<string, string | number>) => { const p = new URLSearchParams(); if (q) p.set('q', q); if (discipline) p.set('discipline', discipline); for (const [k, v] of Object.entries(over)) { if (v) p.set(k, String(v)); else p.delete(k); } const s = p.toString(); return `/competitors/${s ? `?${s}` : ''}`; };
 
-  const heroSlot = directorySlots.find((s) => s.slot.sectionType === 'directory-hero');
-  const heroTitle = heroSlot?.data.heroTitle || 'Rodeo Competitors';
-  const heroDesc = heroSlot?.data.heroDescription || 'Contestants and athletes covered across NFRGuide\'s rodeo reporting. Search by name or filter by discipline.';
+  const directorySlots = await resolveDirectorySlots('directory:competitors', {
+    draft,
+    listing: {
+      defaultHeroTitle: DEFAULT_HERO_TITLE,
+      defaultHeroDescription: DEFAULT_HERO_DESCRIPTION,
+      items: items.map((c) => ({
+        slug: c.slug,
+        href: ROUTES.COMPETITOR(c.slug),
+        title: c.fullName,
+        subtitle: c.knownAs,
+        meta: c.hometown,
+        tags: c.disciplines.length > 0 ? c.disciplines.slice(0, 3).join(' · ') : null,
+        badge: c.status,
+      })),
+      total,
+      page,
+      totalPages,
+      entityLabel: 'competitor',
+      entityLabelPlural: 'competitors',
+      query: q,
+      searchPlaceholder: 'Competitor name…',
+      filterName: 'discipline',
+      filterLabel: 'Discipline',
+      filterAllLabel: 'All disciplines',
+      filterValue: discipline,
+      filterOptions: disciplineOptions.map((d) => ({ value: d.slug, label: d.name })),
+      basePath: '/competitors/',
+      resetHref: '/competitors/',
+      prevHref: page > 1 ? qs({ page: page - 1 }) : null,
+      nextHref: page < totalPages ? qs({ page: page + 1 }) : null,
+    },
+  });
 
   return (
     <div className="max-w-5xl mx-auto px-4 sm:px-6 py-10">
       <JsonLd data={[breadcrumbJsonLd([{ name: 'Home', path: '/' }, { name: 'Competitors', path: '/competitors/' }])]} />
-      <header className="mb-6">
-        <p className="text-[11px] font-mono uppercase tracking-wider text-stone-500">Directory</p>
-        <h1 className="font-serif text-3xl sm:text-4xl font-bold text-stone-900 mt-1">{heroTitle}</h1>
-        <p className="text-stone-600 mt-2 max-w-2xl">{heroDesc}</p>
-      </header>
-
-      <form method="get" className="flex flex-wrap items-end gap-3 mb-6 bg-white border border-stone-200 rounded-xs p-3">
-        <div className="grow min-w-[200px]"><label className="block text-[10px] font-mono uppercase text-stone-500 mb-1">Search</label><input name="q" defaultValue={q} placeholder="Competitor name…" className="w-full px-3 py-2 text-sm border border-stone-300 rounded-xs focus:outline-none focus:border-[#D4A757]" /></div>
-        <div><label className="block text-[10px] font-mono uppercase text-stone-500 mb-1">Discipline</label>
-          <select name="discipline" defaultValue={discipline} className="px-3 py-2 text-sm border border-stone-300 rounded-xs bg-white"><option value="">All disciplines</option>{disciplineOptions.map((d) => <option key={d.slug} value={d.slug}>{d.name}</option>)}</select></div>
-        <button type="submit" className="px-4 py-2 bg-[#0F1115] text-[#D4A757] text-xs font-semibold rounded-xs">Apply</button>
-        {(q || discipline) && <Link href="/competitors/" className="px-3 py-2 text-xs text-stone-500 underline">Reset</Link>}
-      </form>
-
-      <p className="text-xs text-stone-500 mb-3">{total} competitor{total === 1 ? '' : 's'}{q ? ` matching "${q}"` : ''}{discipline ? ` in ${disciplineOptions.find((d) => d.slug === discipline)?.name ?? discipline}` : ''}.</p>
-
-      {items.length === 0 ? (
-        <div className="bg-stone-50 border border-stone-200 rounded-xs p-10 text-center text-stone-500 text-sm">No competitors match your search yet.</div>
-      ) : (
-        <ul className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
-          {items.map((c) => (
-            <li key={c.slug}>
-              <Link href={ROUTES.COMPETITOR(c.slug)} className="block h-full bg-white border border-stone-200 rounded-xs p-4 hover:border-[#D4A757] transition-colors">
-                <p className="font-serif text-lg font-bold text-stone-900">{c.fullName}</p>
-                {c.knownAs && <p className="text-xs text-stone-500 italic">"{c.knownAs}"</p>}
-                {c.hometown && <p className="text-xs text-stone-600 mt-1">{c.hometown}</p>}
-                {c.disciplines.length > 0 && <p className="text-[11px] font-mono text-stone-500 mt-2">{c.disciplines.slice(0, 3).join(' · ')}</p>}
-                {c.status && <span className="inline-block mt-2 text-[10px] font-mono uppercase text-stone-400">{c.status}</span>}
-              </Link>
-            </li>
-          ))}
-        </ul>
-      )}
-
-      {totalPages > 1 && (
-        <nav className="flex items-center justify-between mt-8 text-sm" aria-label="Pagination">
-          {page > 1 ? <Link href={qs({ page: page - 1 })} className="text-[#8B5E3C] underline">← Previous</Link> : <span />}
-          <span className="text-stone-500 text-xs">Page {page} of {totalPages}</span>
-          {page < totalPages ? <Link href={qs({ page: page + 1 })} className="text-[#8B5E3C] underline">Next →</Link> : <span />}
-        </nav>
-      )}
-
-      <DirectoryCtaSlot slots={directorySlots} />
+      <DirectorySlots slots={directorySlots} />
     </div>
   );
 }

@@ -158,9 +158,14 @@ describe('Phase D — getDueSchedules contracts', () => {
 describe('Phase D — executeScheduledPublish contracts', () => {
   const src = read('lib/cms/pageLayoutService.ts');
 
-  it('uses atomic conditional updateMany for concurrency safety', () => {
+  it('uses an atomic conditional updateMany for concurrency safety [structural]', () => {
     const fn = src.slice(src.indexOf('async function executeScheduledPublish'));
-    expect(fn).toContain('prisma.pageLayout.updateMany');
+    // Stage 08 Task B: now `tx.pageLayout.updateMany`, inside the shared
+    // transaction that also records the revision, so a published schedule can
+    // never exist without its history. Behavioural proof:
+    // tests/stage08-scheduler.test.ts.
+    expect(fn).toContain('updateMany');
+    expect(fn).toContain('publishWithRevision');
   });
 
   it('WHERE clause requires scheduledAt not null (prevents double publish)', () => {
@@ -302,8 +307,14 @@ describe('Phase D — Server actions', () => {
     expect(fn).toContain("requireActor('system.config')");
   });
 
-  it('both actions call revalidatePath', () => {
-    expect(src).toContain('rev()');
+  it('both actions revalidate the draft tier [structural]', () => {
+    /**
+     * Stage 08 Task D split the single `rev()` helper — which flushed the whole
+     * public site — into draft and publish tiers. Scheduling and cancelling
+     * write only the scheduled columns and publish nothing, so both belong to
+     * the draft tier.
+     */
+    expect(src).toContain('revalidateDraft()');
   });
 });
 
@@ -395,16 +406,23 @@ describe('Phase D — Existing publish regression', () => {
 describe('Phase D — Public rendering isolation', () => {
   const src = read('lib/cms/pageLayoutService.ts');
 
-  it('getPublishedSections reads only publishedSections (not scheduledSections)', () => {
-    const fn = src.slice(src.indexOf('async function getPublishedSections'), src.indexOf('async function getDraftSections'));
-    expect(fn).toContain('layout.publishedSections');
-    expect(fn).not.toContain('scheduledSections');
+  // Stage 03 Task G routes both through `resolveSections(pageKey, column)`, so
+  // the guarantee is now asserted on the shared resolver: it reads exactly the
+  // requested column and never consults `scheduledSections`. The behaviour is
+  // proven directly in tests/stage03-layout-observability.test.ts, which asserts
+  // draft and published retrieval return different stored columns.
+  it('retrieval routes through the shared resolver with an explicit column', () => {
+    expect(src).toContain("resolveSections(pageKey, 'publishedSections')");
+    expect(src).toContain("resolveSections(pageKey, 'draftSections')");
   });
 
-  it('getDraftSections reads only draftSections (not scheduledSections)', () => {
-    const fn = src.slice(src.indexOf('async function getDraftSections'), src.indexOf('async function listPageLayouts'));
-    expect(fn).toContain('layout.draftSections');
-    expect(fn).not.toContain('scheduledSections');
+  it('the shared resolver never reads scheduledSections', () => {
+    const resolver = src.slice(
+      src.indexOf('async function resolveSections'),
+      src.indexOf('export async function getPublishedSectionsResolved'),
+    );
+    expect(resolver).toContain('layout[column]');
+    expect(resolver).not.toContain('scheduledSections');
   });
 });
 

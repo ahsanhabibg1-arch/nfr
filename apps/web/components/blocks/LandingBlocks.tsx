@@ -36,6 +36,8 @@ export function LandingHeroBlock({ slot, data }: BlockProps) {
       tagline={meta.tagline}
       description={p('description') || meta.description}
       kicker={p('kicker', 'Primary Department')}
+      // Stage 04 Task D: previously declared in the registry and dropped here.
+      backgroundImageUrl={p('heroImageUrl')}
       breadcrumbs={[{ label: meta.name }]}
       statPills={pillsSlotVisible ? [
         { label: 'Published articles', value: String(d.totalArticleCount ?? 0) },
@@ -140,21 +142,43 @@ export function LandingGridBlock({ slot, data }: BlockProps) {
   );
 }
 
-export function CompetitionDisciplinesBlock({ data }: BlockProps) {
+/**
+ * Discipline guides grid (Stage 07 Task E).
+ *
+ * The kicker and heading were hardcoded here — "Championship Disciplines" and
+ * "NFR Discipline Guides" — on a block that had no registry definition, so no
+ * administrator could reach either string. They now come from the slot's props,
+ * with the previous literals as the registry defaults, so an unconfigured page
+ * renders exactly what it rendered before and a configured one actually changes.
+ *
+ * The discipline records themselves stay with the CMS: the resolver supplies
+ * them from `getAllDisciplines()` and nothing about them is stored in the slot.
+ */
+export function CompetitionDisciplinesBlock({ slot, data }: BlockProps) {
+  const p = (k: string, f = '') => slotStr(slot, k, f);
   const d = ld(data);
   const disciplines = d.disciplines ?? [];
   if (disciplines.length === 0) return null;
+
+  const kicker = p('kicker', 'Championship Disciplines');
+  const heading = p('title', 'NFR Discipline Guides');
+  const description = p('description');
 
   return (
     <section>
       <div className="flex items-center justify-between mb-6 pb-2 border-b border-stone-200">
         <div>
-          <span className="text-xs uppercase tracking-widest font-sans font-bold text-[#8B5E3C] block mb-1">
-            Championship Disciplines
-          </span>
+          {kicker && (
+            <span className="text-xs uppercase tracking-widest font-sans font-bold text-[#8B5E3C] block mb-1">
+              {kicker}
+            </span>
+          )}
           <h3 className="text-2xl font-serif font-bold text-[#0F1115]">
-            NFR Discipline Guides
+            {heading}
           </h3>
+          {description && (
+            <p className="mt-2 max-w-2xl text-sm text-stone-600 font-sans">{description}</p>
+          )}
         </div>
       </div>
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">

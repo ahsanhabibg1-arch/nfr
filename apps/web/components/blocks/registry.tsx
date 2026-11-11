@@ -19,10 +19,10 @@ import { EventsShoppingSection } from '@/components/sections/EventsShoppingSecti
 import { MoreRodeoSection, type MoreRodeoHubCard, type MoreRodeoEventCard } from '@/components/sections/MoreRodeoSection';
 import { LearningSection } from '@/components/sections/LearningSection';
 
-import { RichTextBlock, ImageTextBlock, StatsBanner, CtaBanner, FaqBlock, NewsletterSignup } from './PremiumBlocks';
+import { RichTextBlock, ImageTextBlock, StatsBanner, CtaBanner, FaqBlock } from './PremiumBlocks';
 import { LandingHeroBlock, LandingFeaturedBlock, LandingEmptyState, LandingGridBlock, CompetitionDisciplinesBlock } from './LandingBlocks';
 import { DetailRelatedBlock, DetailCtaBlock } from './DetailBlocks';
-import { DirectoryCtaBlock } from './DirectoryBlocks';
+import { DirectoryHeroBlock, DirectoryGridBlock, DirectoryCtaBlock } from './DirectoryBlocks';
 
 type BlockComponent = React.FC<BlockProps>;
 
@@ -30,8 +30,13 @@ function hd(data: Record<string, unknown>): HomeSlotData {
   return data as unknown as HomeSlotData;
 }
 
+/**
+ * Stage 08 Task H: no `useRouter` here any more. `EditorialHero` now renders
+ * real `next/link` anchors, so the click handler that existed only to call
+ * `router.push` is gone — along with one of the four `useRouter` dependencies
+ * Stage 07 measured when it declined the server-component conversion.
+ */
 function EditorialHeroBlock({ slot, data }: BlockProps) {
-  const router = useRouter();
   const copy = copyFromProps(slot.props);
   const d = hd(data);
   if (!d.lead) return null;
@@ -39,7 +44,6 @@ function EditorialHeroBlock({ slot, data }: BlockProps) {
     <EditorialHero
       leadArticle={d.lead}
       secondaryStories={d.secondary ?? []}
-      onSelectArticle={(a: Article) => router.push(ROUTES.ARTICLE(a.slug))}
       heroImageUrl={slotStr(slot, 'heroImageUrl')}
       heroImageAlt={slotStr(slot, 'heroImageAlt')}
       kicker={copy.kicker}
@@ -145,7 +149,11 @@ export const blockRegistry: Record<string, BlockComponent> = {
   'stats-banner': StatsBanner,
   'cta-banner': CtaBanner,
   'faq-block': FaqBlock,
-  'newsletter-signup': NewsletterSignup,
+  // 'newsletter-signup' is RETIRED (Stage 05, owner decision D-11). With no
+  // registry entry, PageRenderer skips a legacy slot: no form is rendered, no
+  // input is presented, and no visitor data can be collected. The definition
+  // remains in sectionRegistry marked `retired` so a layout stored before the
+  // retirement stays valid and editable.
 
   'landing-hero': LandingHeroBlock,
   'landing-featured': LandingFeaturedBlock,
@@ -156,5 +164,16 @@ export const blockRegistry: Record<string, BlockComponent> = {
   'detail-related': DetailRelatedBlock,
   'detail-cta': DetailCtaBlock,
 
+  /**
+   * Stage 07 Task F gave the directory hero and listing real renderers.
+   *
+   * `directory-hero` previously had its text read straight out of the resolved
+   * slot by each route, so it produced no element and could not be selected on
+   * the canvas, and its `heroImageUrl` was dropped. `directory-grid` was
+   * `required: true` with no renderer at all — unremovable and invisible.
+   * Both now render, which is what makes the Admin's "Editable" label true.
+   */
+  'directory-hero': DirectoryHeroBlock,
+  'directory-grid': DirectoryGridBlock,
   'directory-cta': DirectoryCtaBlock,
 };

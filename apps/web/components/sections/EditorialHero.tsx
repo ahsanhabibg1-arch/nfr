@@ -1,12 +1,53 @@
-'use client';
-
 import React from 'react';
+import Link from 'next/link';
 import { Article } from '../../types';
+import { ROUTES } from '../../config/routes';
 
+/**
+ * STAGE 08 TASK H - accessibility and crawlability correction.
+ *
+ * THE DEFECT, found while investigating Stage 07's Task B and reported there.
+ *
+ *   - Each secondary story was `<article onClick={() => onSelectArticle(story)}>`:
+ *     a div-with-a-click-handler. Not focusable, not reachable by keyboard, not
+ *     announced as a link by a screen reader, and carrying NO `href` - so it was
+ *     invisible to crawlers and could not be opened in a new tab or
+ *     middle-clicked.
+ *   - The lead story's call to action was a `<button>` performing client-side
+ *     navigation, with the same crawlability and new-tab consequences.
+ *
+ * On the homepage's most prominent element, that was up to five internal links
+ * that no crawler could follow and no keyboard user could reach.
+ *
+ * THE FIX. Real `next/link` anchors with real hrefs, one per article:
+ *
+ *   - the lead CTA is an anchor styled exactly as the button was;
+ *   - each secondary card is an `<article>` containing ONE anchor that wraps the
+ *     whole card, so the entire card stays clickable as before.
+ *
+ * Deliberate choices:
+ *
+ *   - ONE link per article. The directive forbids duplicating the same article
+ *     link unnecessarily, so the lead headline stays text (the CTA is its link)
+ *     and a secondary card has a single anchor rather than separate links on its
+ *     image, title and "Read" affordance. One crawlable href per article is what
+ *     crawlability needs; three would add noise and three focus stops.
+ *   - NO nested interactive elements. The card anchor contains only text and an
+ *     image, and the "Read" affordance is a plain span.
+ *   - `onSelectArticle` is GONE. It existed only to call `router.push`, which is
+ *     what an anchor does natively and better. Removing it also removes
+ *     `useRouter` from `EditorialHeroBlock`, reducing the client-component
+ *     surface Stage 07 measured in its Task B decision.
+ *   - The component no longer needs `'use client'`: with the handler gone it has
+ *     no client-side behaviour at all.
+ *
+ * Styling, layout, hover behaviour and markup structure are otherwise
+ * unchanged. Focus-visible rings are added, which paints only where a keyboard
+ * user is already focused.
+ */
 interface EditorialHeroProps {
   leadArticle: Article;
   secondaryStories: Article[];
-  onSelectArticle: (article: Article) => void;
   /** Page Builder overrides. */
   heroImageUrl?: string;
   heroImageAlt?: string;
@@ -17,7 +58,6 @@ interface EditorialHeroProps {
 export const EditorialHero: React.FC<EditorialHeroProps> = ({
   leadArticle,
   secondaryStories,
-  onSelectArticle,
   heroImageUrl,
   heroImageAlt,
   kicker,
@@ -90,12 +130,17 @@ export const EditorialHero: React.FC<EditorialHeroProps> = ({
               </div>
 
               <div className="flex items-center gap-4">
-                <button
-                  onClick={() => onSelectArticle(leadArticle)}
-                  className="px-5 py-2.5 bg-[#D4A757] hover:bg-[#C59642] text-[#0F1115] font-sans font-bold text-xs uppercase tracking-wider rounded-sm shadow-md transition-all duration-200 cursor-pointer"
+                {/* A real anchor, styled exactly as the button was. The
+                    accessible name includes the article title, so a screen
+                    reader announces "Read Full Article: <title>" instead of
+                    several identical "Read Full Article" links on one page. */}
+                <Link
+                  href={ROUTES.ARTICLE(leadArticle.slug)}
+                  aria-label={`${ctaText?.trim() || 'Read Full Article'}: ${leadArticle.title}`}
+                  className="inline-block px-5 py-2.5 bg-[#D4A757] hover:bg-[#C59642] text-[#0F1115] font-sans font-bold text-xs uppercase tracking-wider rounded-sm shadow-md transition-all duration-200 cursor-pointer focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white focus-visible:ring-offset-2 focus-visible:ring-offset-[#0F1115]"
                 >
                   {ctaText?.trim() || 'Read Full Article'} &rarr;
-                </button>
+                </Link>
               </div>
             </div>
 
@@ -112,11 +157,16 @@ export const EditorialHero: React.FC<EditorialHeroProps> = ({
         {secondaryStories.length > 0 && (
         <div className="mt-6 grid grid-cols-1 md:grid-cols-2 gap-6">
           {secondaryStories.map((story) => (
-            <article
-              key={story.id}
-              onClick={() => onSelectArticle(story)}
-              className="group cursor-pointer p-5 bg-[#1E293B]/60 hover:bg-[#1E293B] border border-white/10 rounded-sm transition-all duration-200 flex flex-col sm:flex-row gap-4 items-start"
-            >
+            <article key={story.id} className="group">
+              {/* ONE anchor wrapping the whole card. The card remains clickable
+                  exactly where it was clickable before, and is now also
+                  focusable, announced as a link, openable in a new tab and
+                  followable by a crawler. `group` moved to the <article> so
+                  every existing `group-hover:` rule still fires. */}
+              <Link
+                href={ROUTES.ARTICLE(story.slug)}
+                className="flex flex-col sm:flex-row gap-4 items-start p-5 bg-[#1E293B]/60 hover:bg-[#1E293B] border border-white/10 rounded-sm transition-all duration-200 cursor-pointer focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#D4A757] focus-visible:ring-offset-2 focus-visible:ring-offset-[#0F1115]"
+              >
               <div className="w-full sm:w-36 h-28 shrink-0 overflow-hidden rounded-sm bg-black/40">
                 <img
                   src={story.heroImage}
@@ -141,9 +191,14 @@ export const EditorialHero: React.FC<EditorialHeroProps> = ({
                 </div>
                 <div className="mt-3 flex items-center justify-between text-[11px] text-stone-400 font-sans">
                   <span>By {story.author.name}</span>
-                  <span className="text-[#D4A757] group-hover:translate-x-0.5 transition-transform">Read &rarr;</span>
+                  {/* A plain span. A nested anchor or button here would be
+                      invalid HTML and would add a second focus stop for one
+                      destination. aria-hidden because the wrapping link already
+                      carries the accessible name. */}
+                  <span aria-hidden="true" className="text-[#D4A757] group-hover:translate-x-0.5 transition-transform">Read &rarr;</span>
                 </div>
               </div>
+              </Link>
             </article>
           ))}
         </div>

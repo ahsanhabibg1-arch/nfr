@@ -99,6 +99,18 @@ export function FaqBlock({ slot }: BlockProps) {
   );
 }
 
+/**
+ * RETIRED AND UNREACHABLE — owner decision D-11 (Stage 05).
+ *
+ * `newsletter-signup` was removed from `blockRegistry`, so `PageRenderer` skips
+ * any legacy slot and this component is never mounted. It is retained, not
+ * deleted, so the block can be revived cheaply once a subscription backend and
+ * consent workflow are approved.
+ *
+ * DO NOT re-register this in `components/blocks/registry.tsx` until both exist.
+ * As written it presents a `readOnly` input and a button with no handler: it
+ * captures nothing, but it promises a subscription the site cannot deliver.
+ */
 export function NewsletterSignup({ slot }: BlockProps) {
   const p = (k: string, f = '') => slotStr(slot, k, f);
   return (

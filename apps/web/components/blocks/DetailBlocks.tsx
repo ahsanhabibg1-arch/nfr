@@ -5,6 +5,8 @@ import { RelatedArticles } from '@/components/editorial/RelatedArticles';
 
 interface DetailData {
   relatedArticles?: unknown[];
+  /** Stage 04 Task D: optional heading override from `detail-related.title`. */
+  title?: string;
   ctaText?: string;
   ctaUrl?: string;
 }
@@ -16,7 +18,8 @@ function dd(data: Record<string, unknown>): DetailData {
 export function DetailRelatedBlock({ data }: BlockProps) {
   const d = dd(data);
   if (!d.relatedArticles?.length) return null;
-  return <RelatedArticles articles={d.relatedArticles as never[]} />;
+  // `title` is omitted when unset so RelatedArticles applies its own default.
+  return <RelatedArticles articles={d.relatedArticles as never[]} {...(d.title ? { title: d.title } : {})} />;
 }
 
 export function DetailCtaBlock({ data }: BlockProps) {

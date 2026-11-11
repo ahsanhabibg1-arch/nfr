@@ -3,8 +3,16 @@
 import React, { useState, useTransition, useCallback, useRef, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
 import type { SectionSlot, PropDef, BlockCategory, SelectOption } from '@/lib/cms/sectionRegistry';
+import { resolveMaxInstances, defaultSlotId } from '@/lib/cms/sectionRegistry';
+import { SimplePropField, PropFieldShell, unmetDependency, propFieldIds, describedBy } from './PropField';
 import { saveDraftAction, publishLayoutAction, resetDraftAction, restoreDefaultsAction, schedulePublishAction, cancelScheduleAction, listFeaturedCandidatesAction, resolveArticleDetailsAction, listRevisionsAction, restoreRevisionAction, type FeaturedPickerItem, type RevisionRow } from '@/app/admin/page-layout-actions';
 import { MediaPickerModal, type SelectedMediaData } from '@/components/admin/editor/MediaPickerModal';
+import { BuilderCanvas, canvasTokenAfterSave, type DeviceMode } from './BuilderCanvas';
+import {
+  getPageCapability, classifyBlockSupport, BLOCK_SUPPORT_LABELS, BLOCK_SUPPORT_HELP,
+  PAGE_COMPOSITION_LABELS, type BlockSupport,
+} from '@/lib/cms/pageCapability';
+import { describeContentSource } from '@/lib/cms/contentSourceSummary';
 
 interface SectionDef {
   type: string;
@@ -15,15 +23,48 @@ interface SectionDef {
   required?: boolean;
   maxInstances?: number;
   duplicatable?: boolean;
+  /**
+   * Stage 06: previously absent from this interface, and absent from the server
+   * payload that fills it, so the editor could not tell a retired block from a
+   * live one — see the comment on `addableBlockTypes` below.
+   */
+  retired?: boolean;
+  /** Stage 07: per-family instance caps, so the shown cap is the enforced one. */
+  familyLimits?: Record<string, number>;
+  /** Stage 07: families where the block is offered but not seeded into defaults. */
+  excludeFromDefaultsIn?: string[];
+  /** Stage 07 Task F: content comes from authoritative CMS queries, not slot props. */
+  systemContent?: boolean;
+  /** Stage 07: which owner decision retired this block. */
+  retiredBy?: string;
   defaultProps: Record<string, unknown>;
   editableProps: PropDef[];
 }
+
+/** Badge colours per support level — keyed off the shared classification. */
+const SUPPORT_BADGE_CLASS: Record<BlockSupport, string> = {
+  canvas: 'text-emerald-700 bg-emerald-50 border-emerald-200',
+  'server-composed': 'text-sky-700 bg-sky-50 border-sky-200',
+  'resolver-flag': 'text-sky-700 bg-sky-50 border-sky-200',
+  system: 'text-stone-500 bg-stone-100 border-stone-200',
+  retired: 'text-amber-700 bg-amber-50 border-amber-200',
+  unsupported: 'text-rose-700 bg-rose-50 border-rose-200',
+};
 
 interface LayoutRow {
   pageKey: string;
   draftSections: SectionSlot[];
   publishedAt: string | null;
   scheduledAt: string | null;
+  /**
+   * The optimistic-concurrency token (Stage 08 Task B, KD-09).
+   *
+   * Before Stage 08 this interface had no version field and the server payload
+   * did not send one, so the editor was structurally incapable of telling the
+   * server which version it had loaded. Two operators on one page meant last
+   * write wins, silently.
+   */
+  version: number;
 }
 
 interface Props {
@@ -46,12 +87,34 @@ function genId(): string {
   return `blk_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
 }
 
-function buildDefaultSlotsFromRegistry(defs: SectionDef[]): SectionSlot[] {
+/**
+ * The editor's local copy of the default layout.
+ *
+ * It MUST agree with the server's `buildDefaultSlots` — same filtering, same
+ * dedupe, same ids — because the canvas renders the server's computation while
+ * the tree renders this one. Stage 06 made default ids deterministic via
+ * `defaultSlotId(family, type)` precisely so the two agree before a draft has
+ * been saved; using `genId()` here again would re-break click-to-select on
+ * every page that has no stored layout.
+ */
+function buildDefaultSlotsFromRegistry(defs: SectionDef[], family: string): SectionSlot[] {
   const seen = new Set<string>();
   return defs
+    // Retired blocks are never placed in a default layout (Stage 05 D-11, Stage 07 D-02).
+    .filter((d) => !d.retired)
+    /**
+     * Stage 07 Task E. MUST mirror the server's `buildDefaultSlots`, which
+     * applies the same filter. Omitting it here would make the tree list the
+     * four approved detail appendage blocks (and the directory rich-text block)
+     * as if the page already contained them, while the canvas — rendering the
+     * server's computation — showed none of them. Stage 06 established that a
+     * tree/canvas disagreement does not merely look wrong: it silently breaks
+     * click-to-select, because the ids no longer match.
+     */
+    .filter((d) => !d.excludeFromDefaultsIn?.includes(family))
     .filter((d) => { if (seen.has(d.type)) return false; seen.add(d.type); return true; })
     .map((d, i) => ({
-      id: genId(),
+      id: defaultSlotId(family, d.type),
       sectionType: d.type,
       visible: true,
       order: i,
@@ -59,11 +122,11 @@ function buildDefaultSlotsFromRegistry(defs: SectionDef[]): SectionSlot[] {
     }));
 }
 
-function effectiveSlots(layout: LayoutRow | undefined, registry: SectionDef[]): SectionSlot[] {
+function effectiveSlots(layout: LayoutRow | undefined, registry: SectionDef[], family: string): SectionSlot[] {
   if (layout && Array.isArray(layout.draftSections) && layout.draftSections.length > 0) {
     return layout.draftSections.map((s) => ({ ...s, id: s.id || genId() }));
   }
-  return buildDefaultSlotsFromRegistry(registry);
+  return buildDefaultSlotsFromRegistry(registry, family);
 }
 
 function getUniqueBlockTypes(defs: SectionDef[]): SectionDef[] {
@@ -119,10 +182,72 @@ export const AdminPageLayoutEditor: React.FC<Props> = ({ layouts, registries, ca
   const layout = layouts.find((l) => l.pageKey === activeKey);
   const familyKey = resolveFamily(activeKey);
   const registry = registries[familyKey] ?? [];
+  /** All unique definitions — used to LABEL a stored slot, retired ones included. */
   const uniqueBlocks = getUniqueBlockTypes(registry);
-  const initialSlots = effectiveSlots(layout, registry);
+  /**
+   * What the "Add a Block" panel may offer.
+   *
+   * STAGE 05 OVERCLAIM, CORRECTED HERE. The Stage 05 report stated that an
+   * admin "cannot add" the retired newsletter block. The service-level helper
+   * `getAvailableBlockTypes` does exclude it, and the Stage 05 test asserted
+   * that function — but `app/admin/(dashboard)/website/page.tsx` builds the
+   * editor's registry from the RAW `HOMEPAGE_SECTIONS` array, never calling
+   * that helper. So the block was still listed in the real Admin UI, the server
+   * accepted it (retired types stay saveable by design), and it then rendered
+   * nothing. The claim was true of the service and false of the product.
+   *
+   * Two changes close it: the server now passes `retired` through, and the
+   * panel filters on it here. `tests/stage06-retired-block-ui.test.ts` asserts
+   * the editor's own payload shape, not the helper, so the UI is what is proven.
+   */
+  const addableBlocks = uniqueBlocks.filter((d) => !d.retired);
+  const initialSlots = effectiveSlots(layout, registry, familyKey);
   const [slots, setSlots] = useState<SectionSlot[]>(initialSlots);
-  const [dirty, setDirty] = useState(false);
+  /**
+   * Stage 06 fix. This was `useState(false)`, while `selectPage` sets
+   * `setDirty(!l || !l.draftSections.length)` when the operator switches pages.
+   * So on FIRST load of a page with no stored layout the top bar said "Showing
+   * defaults — save draft to persist" and the Save Draft button, which is
+   * disabled unless `dirty`, was greyed out. The editor instructed an action it
+   * had disabled. Initialising from the same rule `selectPage` already uses
+   * makes the two paths agree: unsaved registry defaults count as unsaved work.
+   */
+  const [dirty, setDirty] = useState(!layout || !layout.draftSections.length);
+  /**
+   * The version this editor loaded (Stage 08 Task B).
+   *
+   * A page with no stored row has no version yet; 0 is sent, and the service
+   * treats a first save as a create. After every successful write the server
+   * returns the new version and this is advanced, so consecutive saves from one
+   * editor never self-conflict.
+   */
+  /**
+   * Has the OPERATOR actually edited this page? (Stage 08 Task I.)
+   *
+   * Distinct from `dirty` on purpose. `dirty` starts TRUE for a page with no
+   * stored layout, so Save Draft is enabled for unsaved registry defaults —
+   * that is a deliberate Stage 06 fix and it stays. But it meant the
+   * "You have unsaved changes. Discard them?" prompt fired on the FIRST page
+   * switch of every session, before the operator had touched anything, because
+   * every page starts with no stored layout.
+   *
+   * A confirmation that cries wolf is one an operator learns to dismiss, which
+   * is exactly how real unsaved work eventually gets lost. So the prompt and
+   * the `beforeunload` guard now key off `touched`, which only an actual edit
+   * sets, while Save enablement keeps keying off `dirty`.
+   *
+   * Found by browser verification: the Stage 07 spec's page switch was being
+   * silently cancelled by this prompt, and had only ever passed because a
+   * leftover PageLayout row made `dirty` false.
+   */
+  const [touched, setTouched] = useState(false);
+  const [loadedVersion, setLoadedVersion] = useState<number>(layout?.version ?? 0);
+  /**
+   * Set when the server rejects a save as stale. While it is set the editor
+   * shows a persistent banner with a reload path, because a transient toast is
+   * not an adequate response to "your work was not saved" (Task B requirement 3).
+   */
+  const [conflict, setConflict] = useState<{ currentVersion: number; lastEditedBy: string | null; lastEditedAt: string | null } | null>(null);
   const [selectedBlockId, setSelectedBlockId] = useState<string | null>(null);
   const savedRef = useRef(JSON.stringify(layout?.draftSections ?? []));
   const [mediaPicker, setMediaPicker] = useState<{ blockId: string; propKey: string } | null>(null);
@@ -138,8 +263,35 @@ export const AdminPageLayoutEditor: React.FC<Props> = ({ layouts, registries, ca
   const [dragOverId, setDragOverId] = useState<string | null>(null);
   const dragItemId = useRef<string | null>(null);
 
+  /* ── Stage 06: canvas state ──────────────────────────────────── */
+  const [deviceMode, setDeviceMode] = useState<DeviceMode>('desktop');
+  /** Bumped only after a save the server confirmed, so the canvas never
+   *  reloads into content the database does not hold. */
+  const [canvasRefreshToken, setCanvasRefreshToken] = useState(0);
+
+  const capability = getPageCapability(activeKey);
+
   const selectedSlot = slots.find((s) => s.id === selectedBlockId);
   const selectedDef = selectedSlot ? uniqueBlocks.find((d) => d.type === selectedSlot.sectionType) ?? registry.find((d) => d.type === selectedSlot.sectionType) : null;
+
+  /** Support level for a stored slot, from the shared classification. */
+  const supportFor = useCallback((sectionType: string): BlockSupport => {
+    const hasDefinition = registry.some((d) => d.type === sectionType);
+    return classifyBlockSupport(sectionType, hasDefinition);
+  }, [registry]);
+
+  /**
+   * Selection handler shared by the tree and the canvas, so both directions go
+   * through one path and cannot drift (Stage 06 Task 4). Stable identity
+   * matters: `BuilderCanvas` holds it in a message listener.
+   */
+  const selectBlock = useCallback((slotId: string | null) => {
+    setSelectedBlockId(slotId);
+    if (slotId) {
+      setShowAddPanel(false);
+      setPropTab('content');
+    }
+  }, []);
 
   const searchFeatured = async (q: string) => {
     setFeaturedLoading(true);
@@ -172,36 +324,48 @@ export const AdminPageLayoutEditor: React.FC<Props> = ({ layouts, registries, ca
     setSlots((prev) => {
       const next = fn(prev);
       setDirty(JSON.stringify(next) !== savedRef.current);
+      // Every path that changes the layout goes through here, so this is the
+      // one place that needs to record that the operator has edited something.
+      setTouched(JSON.stringify(next) !== savedRef.current);
       return next;
     });
   }, []);
 
   const selectPage = (key: string) => {
-    if (dirty && !window.confirm('You have unsaved changes. Discard them?')) return;
+    if (touched && !window.confirm('You have unsaved changes. Discard them?')) return;
     setActiveKey(key);
     const l = layouts.find((x) => x.pageKey === key);
     const fk = resolveFamily(key);
     const reg = registries[fk] ?? [];
-    const s = effectiveSlots(l, reg);
+    const s = effectiveSlots(l, reg, fk);
     setSlots(s);
     savedRef.current = JSON.stringify(l?.draftSections ?? []);
     setDirty(!l || !l.draftSections.length);
+    setTouched(false);
+    setLoadedVersion(l?.version ?? 0);
+    setConflict(null);
     setSelectedBlockId(null);
     setShowAddPanel(false);
   };
 
   useEffect(() => {
-    if (!dirty) return;
+    // `touched`, not `dirty`: see the comment on `touched`. Warning about
+    // unsaved work the operator never created trains them to ignore the warning.
+    if (!touched) return;
     const handler = (e: BeforeUnloadEvent) => { e.preventDefault(); };
     window.addEventListener('beforeunload', handler);
     return () => window.removeEventListener('beforeunload', handler);
-  }, [dirty]);
+  }, [touched]);
 
   /* ── Block management ────────────────────────────────────────── */
 
   const addBlock = (def: SectionDef) => {
-    if (def.maxInstances && countInstances(slots, def.type) >= def.maxInstances) {
-      flash(`Maximum ${def.maxInstances} instance(s) of "${def.label}" allowed.`, 'error');
+    // Family-aware (Stage 04 Task B): a shared block can carry a stricter cap on
+    // this family, and that is the cap the server enforces — so the message the
+    // admin sees must be the same number.
+    const maxForFamily = resolveMaxInstances(def, familyKey);
+    if (maxForFamily !== undefined && countInstances(slots, def.type) >= maxForFamily) {
+      flash(`Maximum ${maxForFamily} instance(s) of "${def.label}" allowed on this page.`, 'error');
       return;
     }
     const newSlot: SectionSlot = {
@@ -222,8 +386,9 @@ export const AdminPageLayoutEditor: React.FC<Props> = ({ layouts, registries, ca
     if (!slot) return;
     const def = uniqueBlocks.find((d) => d.type === slot.sectionType);
     if (!def?.duplicatable) { flash('This block cannot be duplicated.', 'error'); return; }
-    if (def.maxInstances && countInstances(slots, slot.sectionType) >= def.maxInstances) {
-      flash(`Maximum ${def.maxInstances} instance(s) of "${def.label}" reached.`, 'error');
+    const maxForFamily = resolveMaxInstances(def, familyKey);
+    if (maxForFamily !== undefined && countInstances(slots, slot.sectionType) >= maxForFamily) {
+      flash(`Maximum ${maxForFamily} instance(s) of "${def.label}" reached on this page.`, 'error');
       return;
     }
     const idx = slots.findIndex((s) => s.id === blockId);
@@ -313,14 +478,54 @@ export const AdminPageLayoutEditor: React.FC<Props> = ({ layouts, registries, ca
   /* ── Actions ─────────────────────────────────────────────────── */
 
   const saveDraft = () => startTransition(async () => {
-    const r = await saveDraftAction(activeKey, slots);
+    const r = await saveDraftAction(activeKey, slots, loadedVersion);
+    // Refresh the canvas ONLY on a confirmed save (Stage 06 Task 6). A failed
+    // save leaves the canvas showing the last good draft, so the panel never
+    // implies a change was stored when it was not. The rule lives in
+    // `canvasTokenAfterSave` so it can be asserted directly.
+    setCanvasRefreshToken((n) => canvasTokenAfterSave(r, n));
     if (r.ok) {
       savedRef.current = JSON.stringify(slots);
       setDirty(false);
+      setTouched(false);
+      setConflict(null);
+      // Advance the token to what the server just stored, so a second save
+      // from this same editor is not rejected as stale.
+      if (typeof r.version === 'number') setLoadedVersion(r.version);
       flash('Draft saved.');
       router.refresh();
+    } else if (r.code === 'conflict') {
+      /**
+       * Stage 08 Task B requirement 3 + Task I.
+       *
+       * The editor's unsaved work is DELIBERATELY left in place. Discarding it
+       * would turn a recoverable conflict into data loss, which is the opposite
+       * of the requirement. The banner explains what happened and offers the
+       * reload explicitly, so losing the edits is always the operator's choice.
+       */
+      const d = (r.details ?? {}) as { currentVersion?: number; lastEditedBy?: string | null; lastEditedAt?: string | null };
+      setConflict({
+        currentVersion: d.currentVersion ?? 0,
+        lastEditedBy: d.lastEditedBy ?? null,
+        lastEditedAt: d.lastEditedAt ?? null,
+      });
+      flash('Not saved — this page was changed by someone else.', 'error');
     } else flash(r.error || 'Error saving draft.', 'error');
   });
+
+  /**
+   * Discard local edits and reload the server's current draft (Task I).
+   *
+   * The only route out of a conflict that cannot itself lose data silently: it
+   * is behind an explicit confirmation, and it is the operator who decides.
+   */
+  const reloadAfterConflict = () => {
+    if (!window.confirm('Reload the current version? Your unsaved changes on this page will be discarded.')) return;
+    setConflict(null);
+    setDirty(false);
+    setTouched(false);
+    router.refresh();
+  };
 
   const publish = () => {
     if (!window.confirm('Publish this layout? It will immediately affect the public website.')) return;
@@ -421,6 +626,14 @@ export const AdminPageLayoutEditor: React.FC<Props> = ({ layouts, registries, ca
     setMediaPicker(null);
   };
 
+  /* ── Shared field chrome (Stage 04 Task A) ───────────────────────
+   * `helpText` previously rendered in only 3 of 9 property-editor branches, so
+   * a declared help string on a `text` prop — the type `quick-access.kicker`
+   * uses — never reached the DOM. These helpers are the single place help text
+   * and field/description association are produced, so every type inherits
+   * them and no branch can silently omit one. Rendered once per field.
+   */
+
   /* ── Render prop field ───────────────────────────────────────── */
 
   const renderPropField = (blockId: string, prop: PropDef) => {
@@ -428,53 +641,34 @@ export const AdminPageLayoutEditor: React.FC<Props> = ({ layouts, registries, ca
     if (!slot) return null;
     const val = slot.props[prop.key];
     const strVal = val === undefined || val === null ? '' : String(val);
+    const defForSlot = registry.find((d) => d.type === slot.sectionType);
+    const unmet = unmetDependency(slot, prop, defForSlot);
 
-    if (prop.type === 'number') {
+    // Everything except the two picker-backed types is rendered by the shared
+    // field component, so label / help text / ARIA association are produced in
+    // exactly one place (Stage 04 Task A).
+    if (prop.type !== 'featured' && prop.type !== 'image') {
       return (
-        <div key={prop.key} className="space-y-1">
-          <label className="text-[10px] font-mono uppercase text-stone-500">{prop.label}</label>
-          <input type="number" value={strVal} min={0} max={prop.max ?? 99}
-            onChange={(e) => updateProp(blockId, prop.key, Number(e.target.value))}
-            className="w-full p-2 bg-stone-50 border border-stone-200 rounded text-xs" />
-          {prop.helpText && <p className="text-[10px] text-stone-400">{prop.helpText}</p>}
-        </div>
+        <SimplePropField
+          key={prop.key}
+          blockId={blockId}
+          slot={slot}
+          prop={prop}
+          def={defForSlot}
+          onChange={(key, value) => updateProp(blockId, key, value)}
+        />
       );
     }
 
-    if (prop.type === 'boolean') {
-      return (
-        <div key={prop.key} className="flex items-center gap-2">
-          <input type="checkbox" checked={!!val} onChange={(e) => updateProp(blockId, prop.key, e.target.checked)}
-            className="rounded border-stone-300" />
-          <label className="text-xs text-stone-700">{prop.label}</label>
-        </div>
-      );
-    }
-
-    if (prop.type === 'select') {
-      return (
-        <div key={prop.key} className="space-y-1">
-          <label className="text-[10px] font-mono uppercase text-stone-500">{prop.label}</label>
-          <select value={strVal} onChange={(e) => updateProp(blockId, prop.key, e.target.value)}
-            className="w-full p-2 bg-stone-50 border border-stone-200 rounded text-xs">
-            {(prop.options ?? []).map((opt: SelectOption) => (
-              <option key={opt.value} value={opt.value}>{opt.label}</option>
-            ))}
-          </select>
-        </div>
-      );
-    }
-
-    if (prop.type === 'textarea' || prop.type === 'richtext') {
-      return (
-        <div key={prop.key} className="space-y-1">
-          <label className="text-[10px] font-mono uppercase text-stone-500">{prop.label}</label>
-          <textarea value={strVal} rows={3}
-            onChange={(e) => updateProp(blockId, prop.key, e.target.value)}
-            className="w-full p-2 bg-stone-50 border border-stone-200 rounded text-xs resize-y" />
-        </div>
-      );
-    }
+    const { id } = propFieldIds(blockId, prop.key);
+    const help = prop.helpText || unmet ? (
+      <p id={propFieldIds(blockId, prop.key).helpId} className="text-[10px] text-stone-400 leading-snug">
+        {prop.helpText}
+        {prop.helpText && unmet ? ' ' : null}
+        {unmet ? <span className="text-amber-600">{unmet}</span> : null}
+      </p>
+    ) : null;
+    const described = describedBy(blockId, prop, unmet);
 
     if (prop.type === 'featured') {
       const ids = typeof strVal === 'string' && strVal.length > 0 ? strVal.split(',').filter(Boolean) : [];
@@ -496,7 +690,7 @@ export const AdminPageLayoutEditor: React.FC<Props> = ({ layouts, registries, ca
         <FeaturedPickerLoader ids={ids} loadRecent={loadRecentArticles} resolveArticles={resolveSelectedArticles}>
           <div key={prop.key} className="space-y-2">
             <label className="text-[10px] font-mono uppercase text-stone-500">{prop.label}</label>
-            {prop.helpText && <p className="text-[10px] text-stone-400">{prop.helpText}</p>}
+            {help}
             {/* ── Selected articles (rich cards) ── */}
             {ids.length > 0 && (
               <div className="space-y-1.5">
@@ -582,7 +776,7 @@ export const AdminPageLayoutEditor: React.FC<Props> = ({ layouts, registries, ca
               <span className="text-[11px]">Select Image</span>
             </button>
           )}
-          {prop.helpText && <p className="text-[10px] text-stone-400">{prop.helpText}</p>}
+          {help}
         </div>
       );
     }
@@ -590,20 +784,26 @@ export const AdminPageLayoutEditor: React.FC<Props> = ({ layouts, registries, ca
     if (prop.type === 'color') {
       return (
         <div key={prop.key} className="space-y-1">
-          <label className="text-[10px] font-mono uppercase text-stone-500">{prop.label}</label>
-          <input type="color" value={strVal || '#000000'} onChange={(e) => updateProp(blockId, prop.key, e.target.value)}
+          <label htmlFor={id} className="text-[10px] font-mono uppercase text-stone-500">{prop.label}</label>
+          <input id={id} type="color" value={strVal || '#000000'} aria-describedby={described}
+            onChange={(e) => updateProp(blockId, prop.key, e.target.value)}
             className="w-10 h-8 rounded border border-stone-200 cursor-pointer" />
+          {help}
         </div>
       );
     }
 
+    // text / url fallback — the branch `quick-access.kicker` uses, and the one
+    // that previously dropped its declared help text entirely.
     return (
       <div key={prop.key} className="space-y-1">
-        <label className="text-[10px] font-mono uppercase text-stone-500">{prop.label}</label>
-        <input type={prop.type === 'url' ? 'url' : 'text'} value={strVal}
+        <label htmlFor={id} className="text-[10px] font-mono uppercase text-stone-500">{prop.label}</label>
+        <input id={id} type={prop.type === 'url' ? 'url' : 'text'} value={strVal}
           placeholder={prop.type === 'url' ? 'https://... or /path/' : ''}
+          aria-describedby={described}
           onChange={(e) => updateProp(blockId, prop.key, e.target.value)}
           className="w-full p-2 bg-stone-50 border border-stone-200 rounded text-xs" />
+        {help}
       </div>
     );
   };
@@ -616,8 +816,29 @@ export const AdminPageLayoutEditor: React.FC<Props> = ({ layouts, registries, ca
   })();
 
   const filteredAddBlocks = addCategoryFilter === 'all'
-    ? uniqueBlocks
-    : uniqueBlocks.filter((d) => d.category === addCategoryFilter);
+    ? addableBlocks
+    : addableBlocks.filter((d) => d.category === addCategoryFilter);
+
+  /* ── Keyboard navigation for the structure tree (Stage 06 Task 10) ──
+   * The tree was previously a list of divs with an onClick and no keyboard
+   * path at all, so the Builder could not be operated without a mouse. Arrow
+   * keys move the selection, Enter/Space confirm it, and Home/End jump.
+   */
+  const treeKeyDown = (e: React.KeyboardEvent, slotId: string, idx: number) => {
+    const focusAt = (i: number) => {
+      const next = slots[i];
+      if (!next) return;
+      selectBlock(next.id);
+      document.getElementById(`tree-item-${next.id}`)?.focus();
+    };
+    if (e.key === 'ArrowDown') { e.preventDefault(); focusAt(idx + 1); }
+    else if (e.key === 'ArrowUp') { e.preventDefault(); focusAt(idx - 1); }
+    else if (e.key === 'Home') { e.preventDefault(); focusAt(0); }
+    else if (e.key === 'End') { e.preventDefault(); focusAt(slots.length - 1); }
+    else if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); selectBlock(slotId); }
+    else if (canManage && e.altKey && e.key === 'ArrowRight') { e.preventDefault(); moveBlock(slotId, 'down'); }
+    else if (canManage && e.altKey && e.key === 'ArrowLeft') { e.preventDefault(); moveBlock(slotId, 'up'); }
+  };
 
   /* ── Props grouped by tab ────────────────────────────────────── */
   const propsForTab = (tab: PropTab): PropDef[] => {
@@ -654,22 +875,55 @@ export const AdminPageLayoutEditor: React.FC<Props> = ({ layouts, registries, ca
         {dirty && <span className="text-[10px] font-bold text-amber-700 bg-amber-50 border border-amber-200 px-2 py-0.5 rounded">Unsaved changes</span>}
       </div>
 
-      {/* ── Three-panel builder ──────────────────────────────────── */}
-      <div className="grid grid-cols-1 lg:grid-cols-[1fr_300px] gap-3 min-h-[500px]">
+      {/* ── Page capability notice (Stage 06 Task 7) ─────────────────
+       * Shown for every page so the Builder never implies a level of control
+       * it does not have — in particular that editing a block could change a
+       * detail template's structured body or a directory's generated list.
+       */}
+      <div
+        className={`rounded border px-3 py-2 text-[11px] ${
+          capability.level === 'composed'
+            ? 'border-emerald-200 bg-emerald-50/60 text-emerald-900'
+            : 'border-sky-200 bg-sky-50/60 text-sky-900'
+        }`}
+      >
+        <div className="flex flex-wrap items-center gap-2">
+          <span className="rounded border border-current/20 bg-white/60 px-1.5 py-0.5 font-mono text-[9px] uppercase">
+            {PAGE_COMPOSITION_LABELS[capability.level]}
+          </span>
+          <span className="font-medium">{capability.summary}</span>
+        </div>
+        {capability.fixed.length > 0 && (
+          <ul className="mt-1 list-disc space-y-0.5 pl-4 opacity-80">
+            {capability.fixed.map((f) => <li key={f}>{f}</li>)}
+          </ul>
+        )}
+      </div>
 
-        {/* ── Left: Canvas (block list) ─────────────────────────── */}
-        <div className="bg-white border border-stone-200 rounded overflow-hidden">
-          <div className="bg-stone-50 px-4 py-2 border-b border-stone-200 flex items-center justify-between">
-            <h3 className="text-[11px] font-semibold uppercase tracking-wider text-stone-600">Page Canvas</h3>
-            <div className="flex items-center gap-2">
+      {/* ── Three-panel builder (Stage 06) ───────────────────────────
+       * Structure · Canvas · Inspector. Stacks to one column below `xl`, and
+       * the canvas keeps its own internal scroll, so the Admin stays usable on
+       * a narrow screen instead of forcing a horizontal page scroll.
+       */}
+      <div className="grid grid-cols-1 gap-3 lg:grid-cols-[minmax(240px,280px)_minmax(0,1fr)] xl:grid-cols-[260px_minmax(0,1fr)_340px]">
+
+        {/* ── Left: Page structure ──────────────────────────────── */}
+        <div className="flex max-h-[80vh] flex-col overflow-hidden rounded border border-stone-200 bg-white">
+          <div className="border-b border-stone-200 bg-stone-50 px-3 py-2">
+            <div className="flex items-center justify-between">
+              <h3 className="text-[11px] font-semibold uppercase tracking-wider text-stone-600">Page Structure</h3>
               <span className="text-[10px] text-stone-400">{slots.length} blocks</span>
-              {canManage && (
-                <button onClick={() => { setShowAddPanel(!showAddPanel); setSelectedBlockId(null); }}
-                  className="px-2.5 py-1 bg-[#0F1115] text-[#D4A757] text-[10px] font-semibold rounded">
-                  + Add Section
-                </button>
-              )}
             </div>
+            <div className="mt-0.5 truncate font-mono text-[9px] uppercase text-stone-400" title={activeKey}>
+              {activeKey} · {familyKey}
+            </div>
+            {canManage && (
+              <button onClick={() => { setShowAddPanel(!showAddPanel); selectBlock(null); }}
+                aria-expanded={showAddPanel}
+                className="mt-2 w-full rounded bg-[#0F1115] px-2.5 py-1 text-[10px] font-semibold text-[#D4A757]">
+                + Add Section
+              </button>
+            )}
           </div>
 
           {/* ── Add Section panel (overlay) ─────────────────────── */}
@@ -693,7 +947,11 @@ export const AdminPageLayoutEditor: React.FC<Props> = ({ layouts, registries, ca
               </div>
               <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
                 {filteredAddBlocks.map((def) => {
-                  const atLimit = def.maxInstances ? countInstances(slots, def.type) >= def.maxInstances : false;
+                  // Stage 07: the cap SHOWN must be the cap ENFORCED. This read
+                  // `def.maxInstances` directly, so a per-family limit was
+                  // displayed and gated wrong and only caught on save.
+                  const capForFamily = resolveMaxInstances(def, familyKey);
+                  const atLimit = capForFamily !== undefined && countInstances(slots, def.type) >= capForFamily;
                   return (
                     <button key={def.type} onClick={() => !atLimit && addBlock(def)} disabled={atLimit}
                       className={`p-3 rounded border text-left transition-colors ${atLimit ? 'opacity-40 cursor-not-allowed border-stone-200 bg-stone-50' : 'border-stone-200 bg-white hover:border-[#D4A757] hover:bg-amber-50/30'}`}>
@@ -701,8 +959,8 @@ export const AdminPageLayoutEditor: React.FC<Props> = ({ layouts, registries, ca
                       {def.description && <div className="text-[10px] text-stone-500 mt-0.5 line-clamp-2">{def.description}</div>}
                       <div className="flex items-center gap-2 mt-1.5">
                         <span className="text-[9px] font-mono text-stone-400 uppercase bg-stone-100 px-1 rounded">{def.category}</span>
-                        {def.maxInstances && (
-                          <span className="text-[9px] text-stone-400">{countInstances(slots, def.type)}/{def.maxInstances}</span>
+                        {capForFamily !== undefined && (
+                          <span className="text-[9px] text-stone-400">{countInstances(slots, def.type)}/{capForFamily}</span>
                         )}
                       </div>
                     </button>
@@ -712,69 +970,136 @@ export const AdminPageLayoutEditor: React.FC<Props> = ({ layouts, registries, ca
             </div>
           )}
 
-          {/* ── Block list (canvas) ─────────────────────────────── */}
-          <div className="divide-y divide-stone-100">
+          {/* ── Structure tree ──────────────────────────────────── */}
+          <div role="tree" aria-label="Page sections" className="min-h-0 flex-1 divide-y divide-stone-100 overflow-y-auto">
             {slots.length === 0 && (
-              <div className="py-8 px-4 text-stone-400 text-center text-xs">No blocks. Click &ldquo;Add Section&rdquo; or &ldquo;Restore Defaults&rdquo; to get started.</div>
+              <div className="px-4 py-8 text-center text-xs text-stone-400">No blocks. Click &ldquo;Add Section&rdquo; or &ldquo;Restore Defaults&rdquo; to get started.</div>
             )}
             {slots.map((slot, idx) => {
               const def = uniqueBlocks.find((d) => d.type === slot.sectionType) ?? registry.find((d) => d.type === slot.sectionType);
               const isSelected = slot.id === selectedBlockId;
               const isDragOver = slot.id === dragOverId;
+              const support = supportFor(slot.sectionType);
               return (
                 <div
                   key={slot.id}
+                  id={`tree-item-${slot.id}`}
+                  role="treeitem"
+                  aria-selected={isSelected}
+                  aria-level={1}
+                  tabIndex={isSelected || (!selectedBlockId && idx === 0) ? 0 : -1}
+                  title={BLOCK_SUPPORT_HELP[support]}
                   draggable={canManage}
                   onDragStart={(e) => handleDragStart(e, slot.id)}
                   onDragOver={(e) => handleDragOver(e, slot.id)}
                   onDrop={(e) => handleDrop(e, slot.id)}
                   onDragEnd={handleDragEnd}
-                  onClick={() => { if (canManage) { setSelectedBlockId(isSelected ? null : slot.id); setShowAddPanel(false); setPropTab('content'); } }}
-                  className={`flex items-center gap-3 px-4 py-2.5 cursor-pointer transition-all select-none
-                    ${!slot.visible ? 'opacity-40' : ''}
-                    ${isSelected ? 'bg-amber-50 border-l-2 border-l-[#D4A757]' : 'hover:bg-stone-50/60 border-l-2 border-l-transparent'}
-                    ${isDragOver ? 'bg-sky-50 border-t-2 border-t-sky-400' : ''}`}
+                  onKeyDown={(e) => treeKeyDown(e, slot.id, idx)}
+                  onClick={() => selectBlock(isSelected ? null : slot.id)}
+                  className={`cursor-pointer select-none px-3 py-2 transition-all focus:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-[#D4A757]
+                    ${!slot.visible ? 'opacity-50' : ''}
+                    ${isSelected ? 'border-l-2 border-l-[#D4A757] bg-amber-50' : 'border-l-2 border-l-transparent hover:bg-stone-50/60'}
+                    ${isDragOver ? 'border-t-2 border-t-sky-400 bg-sky-50' : ''}`}
                 >
-                  {canManage && (
-                    <span className="text-stone-300 cursor-grab text-xs" title="Drag to reorder">&#x2807;</span>
-                  )}
-                  <span className="text-[10px] font-mono text-stone-400 w-5">{idx + 1}</span>
-                  <div className="flex-1 min-w-0">
-                    <div className="flex items-center gap-2">
-                      <span className="text-xs font-semibold text-stone-900 truncate">{def?.label ?? slot.sectionType}</span>
-                      {def?.required && <span className="text-[8px] font-mono text-sky-700 bg-sky-50 border border-sky-200 px-1 rounded">REQ</span>}
-                      {def?.duplicatable && <span className="text-[8px] font-mono text-violet-600 bg-violet-50 border border-violet-200 px-1 rounded">DUP</span>}
+                  <div className="flex items-start gap-2">
+                    {canManage && (
+                      <span className="mt-0.5 cursor-grab text-xs text-stone-300" title="Drag to reorder" aria-hidden="true">&#x2807;</span>
+                    )}
+                    <span className="mt-0.5 w-4 font-mono text-[10px] text-stone-400">{idx + 1}</span>
+                    <div className="min-w-0 flex-1">
+                      <div className="truncate text-xs font-semibold text-stone-900">{def?.label ?? slot.sectionType}</div>
+                      <div className="mt-1 flex flex-wrap items-center gap-1">
+                        <span className={`rounded border px-1 font-mono text-[8px] uppercase ${SUPPORT_BADGE_CLASS[support]}`}>
+                          {BLOCK_SUPPORT_LABELS[support]}
+                        </span>
+                        {def?.required && <span className="rounded border border-sky-200 bg-sky-50 px-1 font-mono text-[8px] text-sky-700">REQ</span>}
+                        <span className={`rounded px-1 font-mono text-[8px] uppercase ${slot.visible ? 'bg-emerald-50 text-emerald-700' : 'bg-stone-100 text-stone-400'}`}>
+                          {slot.visible ? 'Shown' : 'Hidden'}
+                        </span>
+                      </div>
                     </div>
-                    {def?.description && <div className="text-[10px] text-stone-400 truncate">{def.description}</div>}
+                    {canManage && (
+                      <div className="flex flex-col items-center gap-0.5" onClick={(e) => e.stopPropagation()}>
+                        <button onClick={() => moveBlock(slot.id, 'up')} disabled={idx === 0}
+                          aria-label={`Move ${def?.label ?? slot.sectionType} up`}
+                          className="text-[11px] text-stone-400 hover:text-stone-700 disabled:opacity-20">&uarr;</button>
+                        <button onClick={() => moveBlock(slot.id, 'down')} disabled={idx === slots.length - 1}
+                          aria-label={`Move ${def?.label ?? slot.sectionType} down`}
+                          className="text-[11px] text-stone-400 hover:text-stone-700 disabled:opacity-20">&darr;</button>
+                        <button onClick={() => toggleVisible(slot.id)}
+                          aria-label={`${slot.visible ? 'Hide' : 'Show'} ${def?.label ?? slot.sectionType}`}
+                          className="text-[10px] text-stone-400 hover:text-stone-700">{slot.visible ? '◉' : '◎'}</button>
+                      </div>
+                    )}
                   </div>
-                  <span className={`text-[9px] font-mono uppercase px-1.5 py-0.5 rounded ${slot.visible ? 'text-emerald-700 bg-emerald-50' : 'text-stone-400 bg-stone-100'}`}>
-                    {slot.visible ? 'Visible' : 'Hidden'}
-                  </span>
-                  {canManage && (
-                    <div className="flex items-center gap-1" onClick={(e) => e.stopPropagation()}>
-                      <button onClick={() => moveBlock(slot.id, 'up')} disabled={idx === 0} className="text-stone-400 hover:text-stone-700 text-[11px] disabled:opacity-20" title="Move up">&uarr;</button>
-                      <button onClick={() => moveBlock(slot.id, 'down')} disabled={idx === slots.length - 1} className="text-stone-400 hover:text-stone-700 text-[11px] disabled:opacity-20" title="Move down">&darr;</button>
-                      <button onClick={() => toggleVisible(slot.id)} className="text-stone-400 hover:text-stone-700 text-[10px]" title={slot.visible ? 'Hide' : 'Show'}>
-                        {slot.visible ? '◉' : '◎'}
-                      </button>
-                    </div>
-                  )}
                 </div>
               );
             })}
           </div>
+          <p className="border-t border-stone-100 px-3 py-1.5 text-[9px] leading-snug text-stone-400">
+            Arrow keys move between sections · Enter selects · Alt+Arrow reorders
+          </p>
         </div>
 
-        {/* ── Right: Properties panel ───────────────────────────── */}
-        <div className="bg-white border border-stone-200 rounded overflow-hidden flex flex-col">
-          <div className="bg-stone-50 px-4 py-2 border-b border-stone-200 flex items-center justify-between">
+        {/* ── Centre: the real draft page ───────────────────────── */}
+        <BuilderCanvas
+          pageKey={activeKey}
+          selectedBlockId={selectedBlockId}
+          onSelectBlock={selectBlock}
+          refreshToken={canvasRefreshToken}
+          stale={dirty}
+          deviceMode={deviceMode}
+          onDeviceModeChange={setDeviceMode}
+        />
+
+        {/* ── Right: Property inspector ─────────────────────────── */}
+        <div className="flex max-h-[80vh] flex-col overflow-hidden rounded border border-stone-200 bg-white">
+          <div className="flex items-center justify-between border-b border-stone-200 bg-stone-50 px-4 py-2">
             <h3 className="text-[11px] font-semibold uppercase tracking-wider text-stone-600">Properties</h3>
             {selectedSlot && <span className="text-[9px] text-stone-400">{selectedSlot.id.slice(0, 8)}</span>}
           </div>
+          {/* Announces selection changes for screen-reader users, since the
+              visible cue is an outline in another document (the canvas). */}
+          <p aria-live="polite" className="sr-only">
+            {selectedSlot
+              ? `Selected ${selectedDef?.label ?? selectedSlot.sectionType}, section ${slots.findIndex((s) => s.id === selectedSlot.id) + 1} of ${slots.length}`
+              : 'No section selected'}
+          </p>
           {!selectedSlot && (
             <div className="p-6 text-center">
-              <div className="text-stone-300 text-2xl mb-2">&#9998;</div>
-              <div className="text-xs text-stone-400">Click a block to edit</div>
+              <div className="mb-2 text-2xl text-stone-300">&#9998;</div>
+              <div className="text-xs text-stone-400">Select a section in the tree, or click one on the canvas.</div>
+            </div>
+          )}
+          {selectedSlot && (() => {
+            const support = supportFor(selectedSlot.sectionType);
+            if (support === 'canvas') return null;
+            return (
+              <div className={`border-b px-4 py-2 text-[10px] leading-snug ${SUPPORT_BADGE_CLASS[support]}`}>
+                <span className="font-semibold">{BLOCK_SUPPORT_LABELS[support]}.</span>{' '}
+                {BLOCK_SUPPORT_HELP[support]}
+                {selectedDef?.retiredBy && (
+                  <span className="ml-1 font-mono opacity-70">({selectedDef.retiredBy})</span>
+                )}
+              </div>
+            );
+          })()}
+          {/**
+            * Stage 07 Task F — where this block's CONTENT comes from.
+            *
+            * The support badge answers "can I edit this block"; it does not
+            * answer "where does what I see come from". For the directory
+            * listing those are different questions: the block is fully
+            * canvas-editable, and yet none of the entries in it are the
+            * operator's to choose. Saying so is the difference between a
+            * Builder that explains itself and one that invites an operator to
+            * hunt for a control that does not exist.
+            */}
+          {selectedSlot && selectedDef?.systemContent && (
+            <div className="border-b border-sky-200 bg-sky-50 px-4 py-2 text-[10px] leading-snug text-sky-800">
+              <span className="font-semibold">Content comes from the database.</span>{' '}
+              The entries, search, filters and pagination in this block are generated from live records. You control
+              where it sits on the page and its layout options — not what it lists.
             </div>
           )}
           {selectedSlot && selectedDef && canManage && (
@@ -815,9 +1140,34 @@ export const AdminPageLayoutEditor: React.FC<Props> = ({ layouts, registries, ca
               )}
 
               {/* Props for active tab */}
-              <div className="px-4 py-3 space-y-3 overflow-y-auto flex-1">
+              <div className="flex-1 space-y-3 overflow-y-auto px-4 py-3">
+                {/* ── Content Source inspector (Stage 06 Task 8) ──────
+                 * Describes what the raw `featuredIds` / `articleCount` fields
+                 * will actually produce, using the resolvers' own readers so
+                 * the wording cannot disagree with the rendered page.
+                 */}
+                {propTab === 'content' && (() => {
+                  const cs = describeContentSource(selectedSlot.sectionType, selectedSlot.props, selectedDef);
+                  if (!cs.configurable) return null;
+                  return (
+                    <div data-testid="content-source-summary" className="rounded border border-stone-200 bg-stone-50/70 px-3 py-2">
+                      <div className="flex items-center gap-1.5">
+                        <span className="rounded border border-stone-300 bg-white px-1 font-mono text-[8px] uppercase text-stone-500">
+                          {cs.mode}
+                        </span>
+                        <span className="text-[10px] font-mono uppercase text-stone-400">Content source</span>
+                      </div>
+                      <p className="mt-1 text-[11px] font-medium leading-snug text-stone-800">{cs.headline}</p>
+                      {cs.notes.length > 0 && (
+                        <ul className="mt-1 list-disc space-y-0.5 pl-4 text-[10px] leading-snug text-stone-500">
+                          {cs.notes.map((n) => <li key={n}>{n}</li>)}
+                        </ul>
+                      )}
+                    </div>
+                  );
+                })()}
                 {propsForTab(propTab).length === 0 && (
-                  <div className="text-[10px] text-stone-400 italic">No editable properties on this tab.</div>
+                  <div className="text-[10px] italic text-stone-400">No editable properties on this tab.</div>
                 )}
                 {propsForTab(propTab).map((p) => renderPropField(selectedSlot.id, p))}
               </div>
@@ -843,7 +1193,53 @@ export const AdminPageLayoutEditor: React.FC<Props> = ({ layouts, registries, ca
         </div>
       )}
 
-      <p className="text-[11px] text-stone-400">Click a block to edit properties. Drag blocks to reorder. Use &ldquo;Add Section&rdquo; to insert new blocks.</p>
+      {/**
+        * SAVE-CONFLICT BANNER (Stage 08 Tasks B + I).
+        *
+        * Persistent, not a toast. A toast that says "your work was not saved"
+        * and then disappears is worse than no message, because the operator
+        * carries on editing a draft the server has already rejected.
+        *
+        * The unsaved edits are still in the editor. Reloading is offered, never
+        * performed automatically, so discarding them is always a decision the
+        * operator makes with the facts in front of them.
+        */}
+      {conflict && (
+        <div
+          role="alert"
+          /* A stable hook: `role="alert"` alone also matches the success toast
+             and Next's route announcer, which made the browser assertions
+             ambiguous. */
+          data-nfr-conflict="1"
+          className="rounded border border-rose-300 bg-rose-50 px-4 py-3 text-xs text-rose-900"
+        >
+          <p className="font-semibold">Not saved — someone else changed this page.</p>
+          <p className="mt-1 leading-relaxed">
+            You opened version {loadedVersion}; the stored version is now {conflict.currentVersion}
+            {conflict.lastEditedBy ? <> , last edited by <strong className="font-semibold">{conflict.lastEditedBy}</strong></> : null}
+            {conflict.lastEditedAt ? <> at {new Date(conflict.lastEditedAt).toLocaleString()}</> : null}.
+            {' '}Your changes are still here on screen and have <strong className="font-semibold">not</strong> been
+            stored. Reload to get the current version, then re-apply what you need.
+          </p>
+          <div className="mt-2 flex items-center gap-3">
+            <button
+              onClick={reloadAfterConflict}
+              className="rounded bg-rose-700 px-3 py-1 text-[11px] font-semibold text-white hover:bg-rose-800"
+            >
+              Reload current version
+            </button>
+            <button onClick={() => setConflict(null)} className="text-[11px] text-rose-700 underline">
+              Keep editing without reloading
+            </button>
+          </div>
+        </div>
+      )}
+
+      <p className="text-[11px] text-stone-400">
+        Select a section in the tree or click it on the canvas. Drag tree items to reorder. The canvas shows the last
+        saved draft — <strong className="font-semibold text-stone-500">Save Draft</strong> to update it. Publishing is a
+        separate, explicit step.
+      </p>
       {mediaPicker && (
         <MediaPickerModal
           isOpen={!!mediaPicker}

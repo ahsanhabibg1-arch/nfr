@@ -1,4 +1,5 @@
 import 'server-only';
+import { publicSlugWhere } from './fixturePolicy';
 import { prisma } from './db';
 
 /**
@@ -148,9 +149,24 @@ function cleanQuery(q: unknown): string { return typeof q === 'string' ? q.trim(
 export interface CompetitorCard { slug: string; fullName: string; knownAs: string | null; hometown: string | null; status: string | null; disciplines: string[]; heroImage: string | null }
 export interface DirectoryResult<T> { items: T[]; total: number; page: number; pageSize: number; totalPages: number }
 
+/**
+ * STAGE 07 TASK F FINDING — fixture exclusion was missing here.
+ *
+ * `lib/fixturePolicy.ts` provides `publicSlugWhere()` for slug-addressed public
+ * entities, and it is applied at the public hub and event reads. These two
+ * directory queries never applied it, so a `fixture-` competitor or venue row
+ * would have been listed to real visitors in production. Nothing else guards
+ * it: neither model carries a publication state, so the fixture prefix is the
+ * only filter available.
+ *
+ * Added, matching the hub/event pattern exactly. `excludeFixturesFromPublic()`
+ * is true only when `appEnv() === 'production'`, so test and CI databases keep
+ * showing fixtures and the browser harness is unaffected.
+ */
 export async function listPublicCompetitors(opts: { q?: string; disciplineSlug?: string; page?: number }): Promise<DirectoryResult<CompetitorCard> & { disciplineOptions: { slug: string; name: string }[] }> {
   const q = cleanQuery(opts.q); const page = clampPage(opts.page); const disciplineSlug = cleanQuery(opts.disciplineSlug) || undefined;
   const where = {
+    ...publicSlugWhere(),
     ...(q ? { fullName: { contains: q, mode: 'insensitive' as const } } : {}),
     ...(disciplineSlug ? { disciplines: { some: { discipline: { slug: disciplineSlug } } } } : {}),
   };
@@ -170,6 +186,7 @@ export interface VenueCard { slug: string; name: string; nickname: string | null
 export async function listPublicVenues(opts: { q?: string; country?: string; page?: number }): Promise<DirectoryResult<VenueCard> & { countryOptions: string[] }> {
   const q = cleanQuery(opts.q); const page = clampPage(opts.page); const country = cleanQuery(opts.country) || undefined;
   const where = {
+    ...publicSlugWhere(),
     ...(q ? { name: { contains: q, mode: 'insensitive' as const } } : {}),
     ...(country ? { country: { equals: country, mode: 'insensitive' as const } } : {}),
   };
