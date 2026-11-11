@@ -9,6 +9,7 @@ import { ServiceError } from './articleService';
 import { getStorage, buildKey } from '../media/storage';
 import { validateUpload, DEFAULT_MAX_BYTES, MediaValidationError } from '../media/validation';
 import { processImage } from '../media/processing';
+import { report } from '../logger';
 
 /**
  * Digital Asset Management service (Batch 05). Every mutation is RBAC-checked
@@ -69,7 +70,12 @@ export async function uploadMedia(actor: Actor, input: UploadInput): Promise<Upl
   let processed;
   try {
     processed = await processImage(input.buffer);
-  } catch {
+  } catch (e) {
+    // Same reasoning as the storage catch below: "it may be corrupt" is the
+    // right message for an operator, but a deployment where `sharp` itself is
+    // unusable (missing platform binary, memory limit) would look identical.
+    // The cause is logged; the operator-facing message is unchanged.
+    report('unexpected', e, { fields: { stage: 'processImage', bytes: input.buffer.length } });
     throw new ServiceError('processing', 'The image could not be processed (it may be corrupt).');
   }
 
@@ -87,7 +93,31 @@ export async function uploadMedia(actor: Actor, input: UploadInput): Promise<Upl
       derivatives[d.name] = { key: dkey, width: d.width, height: d.height, bytes: d.buffer.length };
       stored.push(dkey);
     }
-  } catch {
+  } catch (e) {
+    /**
+     * Report the real storage failure before replacing it with the operator
+     * message.
+     *
+     * This catch used to be bare (`} catch {`), so the cause never reached the
+     * logs: a deployment whose object storage rejected the write showed only
+     * "Upload failed while saving the file." in the browser and **nothing at
+     * all** on the server, which leaves no way to tell an expired key from a
+     * read-only token, a missing bucket or a wrong endpoint.
+     *
+     * `report()` logs the error's name and message and drops the stack in
+     * production. Credentials are never part of an SDK error (it reports e.g.
+     * `AccessDenied`, `InvalidAccessKeyId`, `NoSuchBucket`), and the fields
+     * below are non-secret: which provider is active and how far the upload got.
+     * The message shown to the operator is unchanged.
+     */
+    report('storage', e, {
+      fields: {
+        provider: storage.provider,
+        objectKey: originalKey,
+        objectsWritten: stored.length,
+        derivativesPlanned: processed.derivatives.length,
+      },
+    });
     // Upload-failure cleanup: remove any partial objects.
     await Promise.all(stored.map((k) => storage.delete(k).catch(() => {})));
     throw new ServiceError('storage', 'Upload failed while saving the file.');
@@ -113,7 +143,11 @@ export async function uploadMedia(actor: Actor, input: UploadInput): Promise<Upl
       return created;
     });
     return { id: row.id, duplicate: false };
-  } catch {
+  } catch (e) {
+    // The objects reached storage but the row did not: log why before the
+    // cleanup removes the evidence, otherwise a failing migration or a
+    // constraint violation is indistinguishable from a storage fault.
+    report('database', e, { fields: { stage: 'recordMediaAsset', objectsWritten: stored.length } });
     // A database or audit failure must not leave untracked objects behind.
     await Promise.all(stored.map((k) => storage.delete(k).catch(() => {})));
     throw new ServiceError('storage', 'Upload could not be recorded; stored files were cleaned up.');
