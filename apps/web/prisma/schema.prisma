@@ -353,6 +353,15 @@ model Discipline {
   compSessions CompetitionSession[]
   compResults  CompetitionResult[]
   compStandings CompetitionStanding[]
+  /// Archive lifecycle (owner-approved, Rodeo Coverage lifecycle workstream).
+  /// Nullable with no default: every existing row reads as ACTIVE, so the
+  /// migration rewrites nothing. Archiving sets a timestamp; reactivating sets
+  /// it back to NULL. Archive is NOT publication state - an archived entity
+  /// keeps its detail URL at HTTP 200 with noindex, and leaves active listings
+  /// and the sitemap.
+  archivedAt  DateTime?
+
+  @@index([archivedAt])
 }
 
 model RodeoHub {
@@ -367,6 +376,15 @@ model RodeoHub {
   articles          ArticleHub[]
   hubEvents         RodeoHubEvent[]
   media             RodeoHubMedia[]
+  /// Archive lifecycle (owner-approved, Rodeo Coverage lifecycle workstream).
+  /// Nullable with no default: every existing row reads as ACTIVE, so the
+  /// migration rewrites nothing. Archiving sets a timestamp; reactivating sets
+  /// it back to NULL. Archive is NOT publication state - an archived entity
+  /// keeps its detail URL at HTTP 200 with noindex, and leaves active listings
+  /// and the sitemap.
+  archivedAt  DateTime?
+
+  @@index([archivedAt])
 }
 
 /// Stable recurring event identity, independent of any hub (Master Reqs §2.1).
@@ -385,6 +403,15 @@ model RodeoEvent {
   editions         RodeoEventEdition[]
   media            RodeoEventMedia[]
   hubLinks         RodeoHubEvent[]
+  /// Archive lifecycle (owner-approved, Rodeo Coverage lifecycle workstream).
+  /// Nullable with no default: every existing row reads as ACTIVE, so the
+  /// migration rewrites nothing. Archiving sets a timestamp; reactivating sets
+  /// it back to NULL. Archive is NOT publication state - an archived entity
+  /// keeps its detail URL at HTTP 200 with noindex, and leaves active listings
+  /// and the sitemap.
+  archivedAt  DateTime?
+
+  @@index([archivedAt])
 }
 
 /// Curated hub ↔ recurring-event association (Batch 10). A hub lists its associated
@@ -421,8 +448,16 @@ model RodeoEventEdition {
   sessions       CompetitionSession[]
   results        CompetitionResult[]
   standings      CompetitionStanding[]
+  /// Archive lifecycle (owner-approved, Rodeo Coverage lifecycle workstream).
+  /// Nullable with no default: every existing row reads as ACTIVE, so the
+  /// migration rewrites nothing. Archiving sets a timestamp; reactivating sets
+  /// it back to NULL. Archive is NOT publication state - an archived entity
+  /// keeps its detail URL at HTTP 200 with noindex, and leaves active listings
+  /// and the sitemap.
+  archivedAt  DateTime?
 
   @@unique([eventId, editionSlug])
+  @@index([archivedAt])
 }
 
 model Venue {
@@ -444,6 +479,15 @@ model Venue {
   editions    RodeoEventEdition[]
   media       VenueMedia[]
   compSessions CompetitionSession[]
+  /// Archive lifecycle (owner-approved, Rodeo Coverage lifecycle workstream).
+  /// Nullable with no default: every existing row reads as ACTIVE, so the
+  /// migration rewrites nothing. Archiving sets a timestamp; reactivating sets
+  /// it back to NULL. Archive is NOT publication state - an archived entity
+  /// keeps its detail URL at HTTP 200 with noindex, and leaves active listings
+  /// and the sitemap.
+  archivedAt  DateTime?
+
+  @@index([archivedAt])
 }
 
 /// Rodeo athlete/contestant editorial identity (Batch 12). Distinct from editorial
@@ -578,6 +622,26 @@ model ArticleRedirect {
   statusCode Int            @default(308)
   status     RedirectStatus @default(ACTIVE)
   createdAt  DateTime       @default(now())
+}
+
+/// Durable record that a seeded foundational entity was deliberately deleted.
+///
+/// Without this, a deletion is only as permanent as the next `prisma db seed`:
+/// the seed recreated the seven foundational disciplines whenever it could not
+/// tell "deleted on purpose" from "never installed".
+///
+/// `key` holds the SEED's stable identity - the fixed primary key, e.g.
+/// `disc-bull-riding` - not the slug. Slugs are editable, ids are not, so a
+/// renamed discipline is still recognised and an old slug can never resurrect it.
+model SeedTombstone {
+  id        String   @id @default(uuid())
+  /// Entity family, e.g. "discipline".
+  kind      String
+  /// The seeded record's stable primary key.
+  key       String
+  deletedAt DateTime @default(now())
+
+  @@unique([kind, key])
 }
 
 model SeoRule {

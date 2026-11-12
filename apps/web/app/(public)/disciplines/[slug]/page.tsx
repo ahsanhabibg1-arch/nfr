@@ -1,5 +1,5 @@
 import type { Metadata } from 'next';
-import { notFound } from 'next/navigation';
+import { notFound, redirect, permanentRedirect } from 'next/navigation';
 import { DisciplineGuideView } from '@/views/DisciplineGuideView';
 import { getDisciplineBySlug, getAllDisciplines } from '@/lib/content';
 import { buildMetadata, disciplineJsonLd, breadcrumbJsonLd, faqPageJsonLd, JsonLd } from '@/lib/seo';
@@ -12,6 +12,7 @@ import { FaqAccordion } from '@/components/FaqAccordion';
 import { isStaffDraftPreview } from '@/lib/cms/previewGuard';
 import { resolveDisciplineTemplateSlots } from '@/lib/cms/detailTemplateData';
 import { ArticleAppendageSlots } from '@/views/ArticleAppendageSlots';
+import { resolveRodeoRedirect } from '@/lib/cms/rodeoSlugs';
 
 type Params = { params: Promise<{ slug: string }> };
 
@@ -39,13 +40,21 @@ export async function generateMetadata({ params }: Params): Promise<Metadata> {
     description: d.summary,
     path: ROUTES.DISCIPLINE(d.slug),
     image: d.image,
+    // An archived discipline keeps this URL reachable at HTTP 200 but must not
+    // be indexed, per the owner-approved archive policy.
+    derivedNoindex: !!d.archivedAt,
   }));
 }
 
 export default async function DisciplinePage({ params }: Params) {
   const { slug } = await params;
   const d = await getDisciplineBySlug(slug);
-  if (!d) notFound();
+  // A renamed discipline leaves a permanent redirect behind.
+  if (!d) {
+    const moved = await resolveRodeoRedirect(`/disciplines/${slug}/`);
+    if (moved) (moved.permanent ? permanentRedirect : redirect)(moved.destination);
+    notFound();
+  }
   const draft = await isStaffDraftPreview();
   const [seo, faqs, appendageSlots] = await Promise.all([
     getEntitySeo('DISCIPLINE', d.id),

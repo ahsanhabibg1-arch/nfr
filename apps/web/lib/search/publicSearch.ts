@@ -1,6 +1,7 @@
 import 'server-only';
 import { Prisma } from '@prisma/client';
-import { excludeFixturesFromPublic, publicSlugWhere } from '../fixturePolicy';
+import { excludeFixturesFromPublic } from '../fixturePolicy';
+import { publicRodeoWhere, publicEditionWhere, ACTIVE_ONLY } from '../cms/lifecycle';
 import { FIXTURE_PREFIX } from '../../prisma/fixtures';
 import { prisma } from '../db';
 import { PRIMARY_SECTIONS } from '../../config/routes';
@@ -161,6 +162,8 @@ export async function runPublicSearch(input: Partial<SearchFilters> & { q?: stri
   let disciplines: PublicSearchResult[] = [];
   if (wantDisciplines) {
     const rows = await prisma.discipline.findMany({
+      // Search is a discovery surface: an archived discipline must not be findable.
+      where: ACTIVE_ONLY,
       select: { id: true, slug: true, name: true, shortName: true, summary: true, tagline: true, category: true, image: true },
       orderBy: { sortOrder: 'asc' },
     });
@@ -214,9 +217,9 @@ export async function runPublicSearch(input: Partial<SearchFilters> & { q?: stri
   let rodeo: PublicSearchResult[] = [];
   if (wantRodeo) {
     const [hubs, events, editions] = await Promise.all([
-      prisma.rodeoHub.findMany({ where: publicSlugWhere(), select: { id: true, slug: true, title: true, region: true, description: true } }),
-      prisma.rodeoEvent.findMany({ where: publicSlugWhere(), select: { id: true, slug: true, name: true, location: true, description: true } }),
-      prisma.rodeoEventEdition.findMany({ where: { event: publicSlugWhere() }, select: { id: true, editionSlug: true, label: true, event: { select: { slug: true, name: true } } } }),
+      prisma.rodeoHub.findMany({ where: publicRodeoWhere(), select: { id: true, slug: true, title: true, region: true, description: true } }),
+      prisma.rodeoEvent.findMany({ where: publicRodeoWhere(), select: { id: true, slug: true, name: true, location: true, description: true } }),
+      prisma.rodeoEventEdition.findMany({ where: publicEditionWhere(), select: { id: true, editionSlug: true, label: true, event: { select: { slug: true, name: true } } } }),
     ]);
     const scored: (PublicSearchResult & { _s: number })[] = [];
     for (const h of hubs) {
@@ -257,7 +260,7 @@ export async function getSearchFacets(): Promise<{
 }> {
   const [categories, disciplines] = await Promise.all([
     prisma.category.findMany({ orderBy: { sortOrder: 'asc' }, select: { slug: true, name: true } }),
-    prisma.discipline.findMany({ orderBy: { sortOrder: 'asc' }, select: { slug: true, name: true } }),
+    prisma.discipline.findMany({ where: ACTIVE_ONLY, orderBy: { sortOrder: 'asc' }, select: { slug: true, name: true } }),
   ]);
   return { categories, disciplines };
 }

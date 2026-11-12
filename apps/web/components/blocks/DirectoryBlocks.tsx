@@ -223,7 +223,19 @@ export function DirectoryGridBlock({ slot, data }: BlockProps) {
 
       {items.length === 0 ? (
         <div className="bg-stone-50 border border-stone-200 rounded-xs p-10 text-center text-stone-500 text-sm">
-          No {labelPlural} match your search yet.
+          {/*
+            QA fix: an empty directory is not the same thing as a search that
+            matched nothing. The single message "No X match your search yet"
+            rendered unconditionally, so a visitor arriving at an empty
+            directory — which is what /venues/ and /competitors/ currently are —
+            was told their search found nothing when they had not searched at
+            all. The distinguishing state was already to hand: `d.query` and
+            `d.filterValue` are the same values the Reset link and the count
+            line above use.
+          */}
+          {d.query || d.filterValue
+            ? `No ${labelPlural} match your search yet.`
+            : `No ${labelPlural} have been published yet.`}
         </div>
       ) : (
         <ul className={`grid ${COLUMN_CLASS[columns] ?? COLUMN_CLASS[3]} gap-4`}>

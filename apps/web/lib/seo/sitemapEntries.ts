@@ -4,7 +4,8 @@ import { prisma } from '../db';
 import { SITE_URL } from '../seo';
 import { PRIMARY_SECTIONS } from '../../config/routes';
 import { LEGAL_PAGES } from '../../config/legalPages';
-import { publicArticleWhere, publicSlugWhere, isHiddenFixtureSlug } from '../fixturePolicy';
+import { publicArticleWhere, isHiddenFixtureSlug } from '../fixturePolicy';
+import { publicRodeoWhere, publicEditionWhere, ACTIVE_ONLY } from '../cms/lifecycle';
 import { resolveCanonical } from '../cms/entitySeoService';
 import { getContentEligibleVenues, getContentEligibleCompetitors } from '../batch12Content';
 import { listPublicCoverageEditions } from '../cms/competitionService';
@@ -90,16 +91,16 @@ export async function loadSitemapCandidates(): Promise<SitemapCandidate[]> {
     prisma.sectionConfig.findMany({ where: { sectionKey: { in: sectionKeys } }, select: { sectionKey: true, updatedAt: true } }),
     prisma.pageLayout.findMany({ where: { pageKey: { in: ['homepage', ...sectionKeys.map((k) => `section:${k}`)] } }, select: { pageKey: true, publishedAt: true } }),
     prisma.category.findMany({ select: { id: true, slug: true } }),
-    prisma.discipline.findMany({ orderBy: { sortOrder: 'asc' }, select: { id: true, slug: true } }),
+    prisma.discipline.findMany({ where: ACTIVE_ONLY, orderBy: { sortOrder: 'asc' }, select: { id: true, slug: true } }),
     prisma.rodeoHub.findMany({
-      where: publicSlugWhere(),
+      where: publicRodeoWhere(),
       select: { id: true, slug: true, hubEvents: { select: { event: { select: { slug: true } } } }, _count: { select: { articles: { where: { article: publicArticleWhere() } } } } },
     }),
     prisma.rodeoEvent.findMany({
-      where: publicSlugWhere(),
+      where: publicRodeoWhere(),
       select: { id: true, slug: true, description: true, _count: { select: { editions: true, articles: { where: { article: publicArticleWhere() } } } } },
     }),
-    prisma.rodeoEventEdition.findMany({ where: { event: publicSlugWhere() }, select: { id: true, editionSlug: true, event: { select: { slug: true } } } }),
+    prisma.rodeoEventEdition.findMany({ where: publicEditionWhere(), select: { id: true, editionSlug: true, event: { select: { slug: true } } } }),
     getContentEligibleVenues(),
     getContentEligibleCompetitors(),
     listPublicCoverageEditions(),

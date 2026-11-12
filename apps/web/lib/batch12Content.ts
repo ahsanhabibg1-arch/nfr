@@ -1,5 +1,6 @@
 import 'server-only';
 import { publicSlugWhere } from './fixturePolicy';
+import { publicRodeoWhere, ACTIVE_ONLY } from './cms/lifecycle';
 import { prisma } from './db';
 
 /**
@@ -29,6 +30,8 @@ export interface PublicVenue {
   websiteUrl: string | null; capacity: number | null; openedYear: number | null;
   latitude: number | null; longitude: number | null; city: string | null; state: string | null; country: string | null;
   editions: PublicVenueEdition[]; articles: PublicArticleRef[]; indexable: boolean;
+  /** Archived: reachable at 200, but noindex and out of every listing. */
+  archived: boolean;
 }
 
 export async function getPublicVenueBySlug(slug: string): Promise<PublicVenue | null> {
@@ -54,19 +57,21 @@ export async function getPublicVenueBySlug(slug: string): Promise<PublicVenue | 
     websiteUrl: v.websiteUrl, capacity: v.capacity, openedYear: v.openedYear, latitude: v.latitude, longitude: v.longitude,
     city: v.city, state: v.state, country: v.country,
     editions, articles: sortByPublished(articles),
-    indexable: !!(v.summary || v.description) || editions.length > 0 || articles.length > 0,
+    archived: !!v.archivedAt,
+    // An archived venue keeps its URL at 200 but is never indexable.
+    indexable: !v.archivedAt && (!!(v.summary || v.description) || editions.length > 0 || articles.length > 0),
   };
 }
 
 export async function getAllVenueSlugs(): Promise<string[]> {
-  const rows = await prisma.venue.findMany({ select: { slug: true } });
+  const rows = await prisma.venue.findMany({ where: ACTIVE_ONLY, select: { slug: true } });
   return rows.map((r) => r.slug);
 }
 
 /** Venues meeting the existing content-eligibility rule (have real content). Batch S4:
  *  the sitemap applies EntitySeo noindex/canonical via lib/seo/policy.ts on these rows. */
 export async function getContentEligibleVenues(): Promise<{ id: string; slug: string }[]> {
-  return prisma.venue.findMany({ where: { OR: [{ summary: { not: null } }, { description: { not: null } }, { editions: { some: {} } }] }, select: { id: true, slug: true } });
+  return prisma.venue.findMany({ where: { ...ACTIVE_ONLY, OR: [{ summary: { not: null } }, { description: { not: null } }, { editions: { some: {} } }] }, select: { id: true, slug: true } });
 }
 
 /** Slugs of venues eligible for the sitemap (have real content). Editor `noindex` is
@@ -166,6 +171,9 @@ export interface DirectoryResult<T> { items: T[]; total: number; page: number; p
 export async function listPublicCompetitors(opts: { q?: string; disciplineSlug?: string; page?: number }): Promise<DirectoryResult<CompetitorCard> & { disciplineOptions: { slug: string; name: string }[] }> {
   const q = cleanQuery(opts.q); const page = clampPage(opts.page); const disciplineSlug = cleanQuery(opts.disciplineSlug) || undefined;
   const where = {
+    // Fixture exclusion only. Competitor is NOT one of the five Rodeo Coverage
+    // families and has no `archivedAt` column, so the archive filter must not
+    // be applied here — doing so made Prisma reject the query outright.
     ...publicSlugWhere(),
     ...(q ? { fullName: { contains: q, mode: 'insensitive' as const } } : {}),
     ...(disciplineSlug ? { disciplines: { some: { discipline: { slug: disciplineSlug } } } } : {}),
@@ -176,7 +184,8 @@ export async function listPublicCompetitors(opts: { q?: string; disciplineSlug?:
       where, orderBy: [{ sortOrder: 'asc' }, { fullName: 'asc' }], skip: (page - 1) * PAGE_SIZE, take: PAGE_SIZE,
       select: { slug: true, fullName: true, knownAs: true, hometownCity: true, state: true, country: true, status: true, heroImage: true, disciplines: { select: { discipline: { select: { name: true } } } } },
     }),
-    prisma.discipline.findMany({ orderBy: { sortOrder: 'asc' }, select: { slug: true, name: true } }),
+    // An archived discipline must not be offered as a filter.
+    prisma.discipline.findMany({ where: ACTIVE_ONLY, orderBy: { sortOrder: 'asc' }, select: { slug: true, name: true } }),
   ]);
   const items: CompetitorCard[] = rows.map((c) => ({ slug: c.slug, fullName: c.fullName, knownAs: c.knownAs, hometown: competitorHometown(c), status: c.status, disciplines: c.disciplines.map((d) => d.discipline.name), heroImage: c.heroImage }));
   return { items, total, page, pageSize: PAGE_SIZE, totalPages: Math.max(1, Math.ceil(total / PAGE_SIZE)), disciplineOptions };
@@ -186,7 +195,7 @@ export interface VenueCard { slug: string; name: string; nickname: string | null
 export async function listPublicVenues(opts: { q?: string; country?: string; page?: number }): Promise<DirectoryResult<VenueCard> & { countryOptions: string[] }> {
   const q = cleanQuery(opts.q); const page = clampPage(opts.page); const country = cleanQuery(opts.country) || undefined;
   const where = {
-    ...publicSlugWhere(),
+    ...publicRodeoWhere(),
     ...(q ? { name: { contains: q, mode: 'insensitive' as const } } : {}),
     ...(country ? { country: { equals: country, mode: 'insensitive' as const } } : {}),
   };

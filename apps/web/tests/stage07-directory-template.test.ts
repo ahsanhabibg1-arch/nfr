@@ -181,8 +181,28 @@ describe('Stage 07 Task F — directory functionality is preserved in real HTML'
 
   it('renders an empty state instead of an empty grid', () => {
     const html = renderBlock('directory-grid', {}, listing({ items: [], total: 0 }));
-    expect(html).toContain('No competitors match your search yet.');
+    /**
+     * UPDATED BY QA (2026-11-12). This asserted "No competitors match your
+     * search yet." for a listing with NO query and NO filter, which is how the
+     * component used to word every empty result. That message told a visitor
+     * their search had matched nothing when they had not searched — and it was
+     * live on `/venues/` and `/competitors/`, both genuinely empty. The two
+     * states are now worded separately; the filtered wording is asserted in the
+     * test below.
+     */
+    expect(html).toContain('No competitors have been published yet.');
+    expect(html, 'an unsearched directory must not blame a search').not.toContain('match your search');
     expect(html).not.toContain('<ul');
+  });
+
+  it('says a SEARCH matched nothing only when a query or filter is active', () => {
+    // The other half of the distinction, so neither message can drift back into
+    // covering both states.
+    const queried = renderBlock('directory-grid', {}, listing({ items: [], total: 0, query: 'wright' }));
+    expect(queried).toContain('No competitors match your search yet.');
+
+    const filtered = renderBlock('directory-grid', {}, listing({ items: [], total: 0, filterValue: 'bull-riding' }));
+    expect(filtered).toContain('No competitors match your search yet.');
   });
 
   it('renders pagination with the hrefs the route supplied', () => {
@@ -361,7 +381,8 @@ describe('Stage 07 Task F — directory records stay in the database', () => {
       listing({ items: [] }),
     );
     expect(html).not.toContain('INJECTED VIA PROPS');
-    expect(html).toContain('No competitors match');
+    // Unfiltered empty listing, so this is the "nothing published" wording.
+    expect(html).toContain('No competitors have been published yet.');
   });
 });
 

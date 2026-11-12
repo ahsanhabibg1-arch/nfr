@@ -142,10 +142,12 @@ export function toDiscipline(row: {
   id: string; slug: string; name: string; shortName: string | null; category: string | null;
   tagline: string | null; summary: string; image: string | null; imageCredit: string | null;
   guide: Prisma.JsonValue | null;
+  archivedAt?: Date | null;
 }): Discipline {
   const guide = (row.guide as Record<string, unknown>) ?? {};
   return {
     id: row.id,
+    archivedAt: row.archivedAt ?? null,
     slug: row.slug,
     name: row.name,
     shortName: row.shortName ?? row.name,
@@ -154,6 +156,24 @@ export function toDiscipline(row: {
     summary: row.summary,
     image: row.image ?? '',
     imageCredit: row.imageCredit ?? '',
+    /**
+     * Guide-derived collections default to empty BEFORE the spread, so real
+     * guide content still overrides them (Rodeo Coverage admin audit).
+     *
+     * `Discipline` declares `scoringBreakdown` and `rulesHighlights` as
+     * REQUIRED, but they only ever arrive via the spread of the optional `guide`
+     * JSON — and the trailing `as Discipline` cast asserted they were present
+     * without checking. For a discipline with `guide = null` they were simply
+     * undefined, and the type system had been told not to care, so
+     * `DisciplineGuideView` crashed on `.map()` and the public route failed to
+     * prerender.
+     *
+     * Defaulting here fixes every consumer at once rather than guarding at each
+     * render site, which matters now that an editor can create a discipline with
+     * no guide content from the Rodeo Coverage admin.
+     */
+    scoringBreakdown: [],
+    rulesHighlights: [],
     ...(guide as Partial<Discipline>),
   } as Discipline;
 }

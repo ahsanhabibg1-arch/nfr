@@ -64,38 +64,60 @@ export async function DisciplineGuideView({ slug }: { slug: string }) {
             </div>
           </section>
 
-          {/* Section 2: Scoring & Timing Mechanics */}
-          <section className="my-8 p-6 sm:p-8 bg-white border border-stone-200 rounded-sm">
-            <h2 className="text-xs uppercase tracking-widest font-sans font-bold text-[#8B5E3C] mb-2">
-              Judicial Standards
-            </h2>
-            <h3 className="text-xl font-serif font-bold text-[#0F1115] mb-4">
-              Scoring Criteria &amp; Timing Rules
-            </h3>
+          {/*
+            Section 2: Scoring & Timing Mechanics.
 
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 mb-6">
-              {discipline.scoringBreakdown.map((item, idx) => (
-                <div key={idx} className="p-4 bg-[#F7F3EA] border-l-2 border-[#D4A757] rounded-sm">
-                  <h4 className="text-sm font-semibold text-stone-900 font-sans">{item.title}</h4>
-                  <p className="text-xs text-stone-600 mt-1 font-sans leading-relaxed">{item.description}</p>
+            CRASH FIX (Rodeo Coverage admin audit). `scoringBreakdown` and
+            `rulesHighlights` were mapped unguarded, while `terminology` below
+            was already guarded on length — so a discipline whose `guide` JSON is
+            absent threw `Cannot read properties of undefined (reading 'map')`
+            and took the whole `/disciplines/<slug>/` route down. It surfaced as
+            a hard prerender failure that aborted `next build`.
+
+            That state is now reachable by design: the new Add Discipline flow
+            deliberately creates a discipline with `guide = null`, because
+            evergreen guide copy is written by an editor and never invented at
+            creation time. A newly added discipline must therefore render its
+            header and summary and simply omit the sections it has no content
+            for, rather than 500.
+          */}
+          {(discipline.scoringBreakdown?.length || discipline.rulesHighlights?.length) ? (
+            <section className="my-8 p-6 sm:p-8 bg-white border border-stone-200 rounded-sm">
+              <h2 className="text-xs uppercase tracking-widest font-sans font-bold text-[#8B5E3C] mb-2">
+                Judicial Standards
+              </h2>
+              <h3 className="text-xl font-serif font-bold text-[#0F1115] mb-4">
+                Scoring Criteria &amp; Timing Rules
+              </h3>
+
+              {discipline.scoringBreakdown && discipline.scoringBreakdown.length > 0 && (
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 mb-6">
+                  {discipline.scoringBreakdown.map((item, idx) => (
+                    <div key={idx} className="p-4 bg-[#F7F3EA] border-l-2 border-[#D4A757] rounded-sm">
+                      <h4 className="text-sm font-semibold text-stone-900 font-sans">{item.title}</h4>
+                      <p className="text-xs text-stone-600 mt-1 font-sans leading-relaxed">{item.description}</p>
+                    </div>
+                  ))}
                 </div>
-              ))}
-            </div>
+              )}
 
-            <div className="pt-4 border-t border-stone-200">
-              <h4 className="text-xs uppercase tracking-wider font-bold text-stone-900 font-sans mb-3">
-                Key Regulations &amp; Disqualifications:
-              </h4>
-              <ul className="space-y-2 text-xs sm:text-sm text-stone-700 font-sans list-none p-0 m-0">
-                {discipline.rulesHighlights.map((rule, idx) => (
-                  <li key={idx} className="flex items-start gap-2.5">
-                    <span className="text-[#8B5E3C] font-bold mt-0.5">&bull;</span>
-                    <span>{rule}</span>
-                  </li>
-                ))}
-              </ul>
-            </div>
-          </section>
+              {discipline.rulesHighlights && discipline.rulesHighlights.length > 0 && (
+                <div className="pt-4 border-t border-stone-200">
+                  <h4 className="text-xs uppercase tracking-wider font-bold text-stone-900 font-sans mb-3">
+                    Key Regulations &amp; Disqualifications:
+                  </h4>
+                  <ul className="space-y-2 text-xs sm:text-sm text-stone-700 font-sans list-none p-0 m-0">
+                    {discipline.rulesHighlights.map((rule, idx) => (
+                      <li key={idx} className="flex items-start gap-2.5">
+                        <span className="text-[#8B5E3C] font-bold mt-0.5">&bull;</span>
+                        <span>{rule}</span>
+                      </li>
+                    ))}
+                  </ul>
+                </div>
+              )}
+            </section>
+          ) : null}
 
           {/* Section 3: Essential Terminology */}
           {discipline.terminology && discipline.terminology.length > 0 && (

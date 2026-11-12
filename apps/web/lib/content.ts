@@ -5,6 +5,7 @@ import { publicArticleWhere } from './fixturePolicy';
 import { articleInclude, toArticle, toDiscipline } from './mappers';
 import { Article, Discipline, SearchIndexItem } from '../types';
 import { PRIMARY_SECTIONS, SectionMeta } from '../config/routes';
+import { ACTIVE_ONLY } from './cms/lifecycle';
 
 /**
  * NFRGuide — Server-only published content repository (Batch 02 §8).
@@ -251,7 +252,8 @@ export async function getCategoryBySlug(slug: string): Promise<{ id: string; slu
 }
 
 export async function getAllDisciplines(): Promise<Discipline[]> {
-  const rows = await prisma.discipline.findMany({ orderBy: { sortOrder: 'asc' } });
+  // Archived disciplines leave active listings (lib/cms/lifecycle.ts).
+  const rows = await prisma.discipline.findMany({ where: ACTIVE_ONLY, orderBy: { sortOrder: 'asc' } });
   return rows.map(toDiscipline);
 }
 

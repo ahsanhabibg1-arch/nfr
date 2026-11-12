@@ -154,6 +154,8 @@ export interface Article {
 
 export interface Discipline {
   id: string;
+  /** Archive lifecycle: set when the discipline has been archived, else null. */
+  archivedAt?: Date | null;
   name: string;
   shortName: string;
   slug: string;

@@ -223,7 +223,15 @@ describe('Phase E — Directory page refactoring', () => {
       items: [], total: 0, page: 1, totalPages: 1,
       entityLabel: 'venue', entityLabelPlural: 'venues',
     });
-    expect(html).toContain('No venues match your search yet.');
+    /**
+     * UPDATED BY QA (2026-11-12). This listing has no query and no filter, so
+     * the empty state no longer claims a search matched nothing — a message
+     * that was reaching real visitors on the empty `/venues/` and
+     * `/competitors/` directories. The filtered wording is covered in
+     * `stage07-directory-template.test.ts`.
+     */
+    expect(html).toContain('No venues have been published yet.');
+    expect(html, 'an unsearched directory must not blame a search').not.toContain('match your search');
     expect(html).not.toContain('<ul');
   });
 

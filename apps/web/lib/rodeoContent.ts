@@ -1,6 +1,7 @@
 import 'server-only';
 import { prisma } from './db';
-import { publicArticleWhere, publicSlugWhere, isHiddenFixtureSlug } from './fixturePolicy';
+import { publicArticleWhere, isHiddenFixtureSlug } from './fixturePolicy';
+import { publicRodeoWhere, publicEditionWhere } from './cms/lifecycle';
 
 /**
  * NFRGuide — Server-only public read layer for rodeo entities (Batch 10).
@@ -53,6 +54,8 @@ export interface PublicHub {
   events: PublicEventCard[];
   articles: PublicArticleRef[];
   indexable: boolean;
+  /** Archived: still reachable at 200, but noindex and out of every listing. */
+  archived: boolean;
 }
 
 export interface PublicEvent {
@@ -70,6 +73,8 @@ export interface PublicEvent {
   hubs: { slug: string; title: string }[];
   articles: PublicArticleRef[];
   indexable: boolean;
+  /** Archived: still reachable at 200, but noindex and out of every listing. */
+  archived: boolean;
 }
 
 export interface PublicEdition {
@@ -88,6 +93,8 @@ export interface PublicEdition {
   event: { slug: string; name: string; location: string | null };
   articles: PublicArticleRef[];
   indexable: boolean;
+  /** Archived: still reachable at 200, but noindex and out of every listing. */
+  archived: boolean;
 }
 
 const articleRef = {
@@ -118,12 +125,15 @@ export async function getPublicHubBySlug(slug: string): Promise<PublicHub | null
   const articles = hub.articles.map((a) => mapArticle(a.article)).sort((x, y) => (y.publishedAt ?? '').localeCompare(x.publishedAt ?? ''));
   return {
     id: hub.id, slug: hub.slug, title: hub.title, region: hub.region, circuitType: hub.circuitType, description: hub.description,
-    events, articles, indexable: events.length > 0 || articles.length > 0,
+    events, articles,
+    archived: !!hub.archivedAt,
+    // An archived entity is never indexable, whatever content it still holds.
+    indexable: !hub.archivedAt && (events.length > 0 || articles.length > 0),
   };
 }
 
 export async function listPublicHubs(): Promise<{ slug: string; title: string; region: string | null; description: string | null; eventCount: number }[]> {
-  const hubs = await prisma.rodeoHub.findMany({ where: publicSlugWhere(), orderBy: { sortOrder: 'asc' }, include: { _count: { select: { hubEvents: true } } } });
+  const hubs = await prisma.rodeoHub.findMany({ where: publicRodeoWhere(), orderBy: { sortOrder: 'asc' }, include: { _count: { select: { hubEvents: true } } } });
   return hubs.map((h) => ({ slug: h.slug, title: h.title, region: h.region, description: h.description, eventCount: h._count.hubEvents }));
 }
 
@@ -145,19 +155,20 @@ export async function getPublicEventBySlug(slug: string): Promise<PublicEvent | 
     id: ev.id, slug: ev.slug, name: ev.name, location: ev.location, traditionalMonth: ev.traditionalMonth, status: ev.status,
     description: ev.description, organizerName: ev.organizerName, officialUrl: ev.officialUrl, isFlagship: ev.isFlagship,
     editions, hubs: ev.hubLinks.filter((h) => !isHiddenFixtureSlug(h.hub.slug)).map((h) => ({ slug: h.hub.slug, title: h.hub.title })), articles,
-    indexable: editions.length > 0 || articles.length > 0 || !!ev.description,
+    archived: !!ev.archivedAt,
+    indexable: !ev.archivedAt && (editions.length > 0 || articles.length > 0 || !!ev.description),
   };
 }
 
 export async function listPublicEvents(): Promise<PublicEventCard[]> {
-  const evs = await prisma.rodeoEvent.findMany({ where: publicSlugWhere(), orderBy: [{ isFlagship: 'desc' }, { name: 'asc' }], select: { slug: true, name: true, location: true, traditionalMonth: true, isFlagship: true } });
+  const evs = await prisma.rodeoEvent.findMany({ where: publicRodeoWhere(), orderBy: [{ isFlagship: 'desc' }, { name: 'asc' }], select: { slug: true, name: true, location: true, traditionalMonth: true, isFlagship: true } });
   return evs.map((e) => ({ slug: e.slug, name: e.name, location: e.location, traditionalMonth: e.traditionalMonth, isFlagship: e.isFlagship }));
 }
 
 // ---- Editions ----
 export async function getPublicEditionBySlug(eventSlug: string, editionSlug: string): Promise<PublicEdition | null> {
   if (isHiddenFixtureSlug(eventSlug)) return null;
-  const ev = await prisma.rodeoEvent.findUnique({ where: { slug: eventSlug }, select: { id: true, slug: true, name: true, location: true } });
+  const ev = await prisma.rodeoEvent.findUnique({ where: { slug: eventSlug }, select: { id: true, slug: true, name: true, location: true, archivedAt: true } });
   if (!ev) return null;
   const ed = await prisma.rodeoEventEdition.findFirst({
     where: { eventId: ev.id, editionSlug }, // enforces edition belongs to this event
@@ -169,7 +180,12 @@ export async function getPublicEditionBySlug(eventSlug: string, editionSlug: str
     id: ed.id, editionSlug: ed.editionSlug, label: ed.label, year: ed.year,
     startAt: ed.startAt?.toISOString() ?? null, endAt: ed.endAt?.toISOString() ?? null, datesKnown: !!(ed.startAt && ed.endAt),
     timezone: ed.timezone, venue: mapVenue(ed.venue),
-    event: { slug: ev.slug, name: ev.name, location: ev.location }, articles, indexable: true,
+    event: { slug: ev.slug, name: ev.name, location: ev.location }, articles,
+    // Effective visibility: an edition is archived when IT is archived or its
+    // parent recurring event is. No child row is written when a parent is
+    // archived, so reactivating the parent restores exactly what was visible.
+    archived: !!ed.archivedAt || !!ev.archivedAt,
+    indexable: !ed.archivedAt && !ev.archivedAt,
   };
 }
 
@@ -190,9 +206,9 @@ export async function resolveRodeoEntity(slug: string): Promise<RodeoResolution>
 // ---- Params for SSG + sitemap ----
 export async function getAllRodeoSlugs(): Promise<{ hubs: string[]; events: string[]; editions: { eventSlug: string; editionSlug: string }[] }> {
   const [hubs, events, editions] = await Promise.all([
-    prisma.rodeoHub.findMany({ where: publicSlugWhere(), select: { slug: true } }),
-    prisma.rodeoEvent.findMany({ where: publicSlugWhere(), select: { slug: true } }),
-    prisma.rodeoEventEdition.findMany({ where: { event: publicSlugWhere() }, select: { editionSlug: true, event: { select: { slug: true } } } }),
+    prisma.rodeoHub.findMany({ where: publicRodeoWhere(), select: { slug: true } }),
+    prisma.rodeoEvent.findMany({ where: publicRodeoWhere(), select: { slug: true } }),
+    prisma.rodeoEventEdition.findMany({ where: publicEditionWhere(), select: { editionSlug: true, event: { select: { slug: true } } } }),
   ]);
   return {
     hubs: hubs.map((h) => h.slug),

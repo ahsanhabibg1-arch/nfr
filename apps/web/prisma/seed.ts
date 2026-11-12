@@ -67,9 +67,41 @@ async function seedReference() {
     });
   }
 
+  /**
+   * Foundational disciplines, guarded by durable tombstones.
+   *
+   * History of this block, because the reasoning matters more than the code:
+   *
+   *   1. It upserted all seven by fixed id on every run. `update: {}` meant an
+   *      admin's EDITS were never overwritten, but a discipline they had
+   *      deliberately DELETED came back on the next seed. Deletion was only as
+   *      permanent as the next deploy.
+   *   2. It was then gated on an empty table. That fixed the common case, but a
+   *      deployment which had deleted ALL seven looked identical to a fresh
+   *      install, so they all reappeared.
+   *
+   * Now each foundational record is checked against `SeedTombstone`, which is
+   * written atomically whenever a discipline is deleted. That distinguishes
+   * "never installed" from "deleted on purpose" per record, which is the only
+   * thing the two earlier attempts could not do.
+   *
+   * IDENTITY. The tombstone key is the seed's STABLE primary key
+   * (`disc-<original-slug>`), never the slug. Slugs became editable in this
+   * workstream; ids did not. So a renamed discipline is still matched, and an
+   * old slug can never resurrect a deleted one.
+   */
+  const tombstoned = new Set(
+    (await prisma.seedTombstone.findMany({ where: { kind: 'discipline' }, select: { key: true } }))
+      .map((t) => t.key),
+  );
+  let createdDisciplines = 0;
+  let skippedDisciplines = 0;
   for (let i = 0; i < NFR_DISCIPLINES.length; i++) {
     const d = NFR_DISCIPLINES[i];
     const id = `disc-${d.slug}`;
+    if (tombstoned.has(id)) { skippedDisciplines++; continue; }
+    // `update: {}` keeps an existing record exactly as the admin left it.
+    const before = await prisma.discipline.findUnique({ where: { id }, select: { id: true } });
     await prisma.discipline.upsert({
       where: { id },
       update: {},
@@ -79,7 +111,14 @@ async function seedReference() {
         guide: NEUTRAL_GUIDE, sortOrder: i,
       },
     });
+    if (!before) createdDisciplines++;
   }
+  if (skippedDisciplines > 0) {
+    console.info(
+      `[seed] ${skippedDisciplines} foundational discipline(s) were deliberately deleted and are NOT being recreated.`,
+    );
+  }
+  if (createdDisciplines > 0) console.info(`[seed] created ${createdDisciplines} foundational discipline(s).`);
 
   for (let i = 0; i < SEO_GROUPS.length; i++) {
     const code = `grp-${slugify(SEO_GROUPS[i])}`;

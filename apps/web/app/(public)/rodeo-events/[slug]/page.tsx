@@ -1,7 +1,7 @@
 import type { Metadata } from 'next';
-import { notFound } from 'next/navigation';
+import { notFound, redirect, permanentRedirect } from 'next/navigation';
 import { buildMetadata, breadcrumbJsonLd, faqPageJsonLd, JsonLd } from '@/lib/seo';
-import { ROUTES } from '@/config/routes';
+import { ROUTES, PRIMARY_SECTIONS } from '@/config/routes';
 import { resolveRodeoEntity, getPublicHubBySlug, getPublicEventBySlug, getAllRodeoSlugs } from '@/lib/rodeoContent';
 import { getEntityCommercialAssociations } from '@/lib/monetization/publicMonetization';
 import { getEntitySeo, mergeSeoMeta } from '@/lib/cms/entitySeoService';
@@ -11,6 +11,21 @@ import { ViewBeacon } from '@/components/analytics/ViewBeacon';
 import { isStaffDraftPreview } from '@/lib/cms/previewGuard';
 import { resolveRodeoHubTemplateSlots } from '@/lib/cms/detailTemplateData';
 import { ArticleAppendageSlots } from '@/views/ArticleAppendageSlots';
+import { resolveRodeoRedirect } from '@/lib/cms/rodeoSlugs';
+
+/**
+ * QA fix: the breadcrumb name for `/rodeo-events/` is taken from the section
+ * config instead of a local literal.
+ *
+ * Three breadcrumb trails hardcoded `'Rodeo Events'` for `ROUTES.MORE_RODEO`,
+ * while the page that actually lives at that URL renders its own h1, title and
+ * breadcrumb as "More Rodeo" from `PRIMARY_SECTIONS['rodeo-events'].name`. So
+ * one URL was published under two different names in BreadcrumbList structured
+ * data, and neither matched what the visitor saw on the destination page.
+ * `config/routes.ts` is the single source for a section's name.
+ */
+const MORE_RODEO_NAME = PRIMARY_SECTIONS['rodeo-events'].name;
+
 
 type Params = { params: Promise<{ slug: string }> };
 
@@ -40,7 +55,13 @@ export async function generateMetadata({ params }: Params): Promise<Metadata> {
 export default async function Page({ params }: Params) {
   const { slug } = await params;
   const r = await resolveRodeoEntity(slug);
-  if (!r) notFound();
+  // Slug changes leave a permanent redirect (lib/cms/rodeoSlugs.ts), so an old
+  // URL reaches the renamed entity in one hop instead of 404ing.
+  if (!r) {
+    const moved = await resolveRodeoRedirect(`/rodeo-events/${slug}/`);
+    if (moved) (moved.permanent ? permanentRedirect : redirect)(moved.destination);
+    notFound();
+  }
 
   const draft = await isStaffDraftPreview();
 
@@ -53,7 +74,7 @@ export default async function Page({ params }: Params) {
       listPublicFaqs('RODEO_EVENT', e.id),
       resolveRodeoHubTemplateSlots(e.id, { draft }),
     ]);
-    const crumb = breadcrumbJsonLd([{ name: 'Home', path: '/' }, { name: 'Rodeo Events', path: ROUTES.MORE_RODEO }, { name: e.name, path: ROUTES.RODEO_EVENT(e.slug) }]);
+    const crumb = breadcrumbJsonLd([{ name: 'Home', path: '/' }, { name: MORE_RODEO_NAME, path: ROUTES.MORE_RODEO }, { name: e.name, path: ROUTES.RODEO_EVENT(e.slug) }]);
     const faqLd = faqPageJsonLd(faqs);
     return (
       <>
@@ -72,7 +93,7 @@ export default async function Page({ params }: Params) {
     listPublicFaqs('RODEO_HUB', h.id),
     resolveRodeoHubTemplateSlots(h.id, { draft }),
   ]);
-  const crumb = breadcrumbJsonLd([{ name: 'Home', path: '/' }, { name: 'Rodeo Events', path: ROUTES.MORE_RODEO }, { name: h.title, path: ROUTES.RODEO_HUB(h.slug) }]);
+  const crumb = breadcrumbJsonLd([{ name: 'Home', path: '/' }, { name: MORE_RODEO_NAME, path: ROUTES.MORE_RODEO }, { name: h.title, path: ROUTES.RODEO_HUB(h.slug) }]);
   const faqLd = faqPageJsonLd(faqs);
   return (
     <>

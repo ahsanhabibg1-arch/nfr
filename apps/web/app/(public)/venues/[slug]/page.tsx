@@ -1,6 +1,6 @@
 import type { Metadata } from 'next';
 import Link from 'next/link';
-import { notFound } from 'next/navigation';
+import { notFound, redirect, permanentRedirect } from 'next/navigation';
 import { getPublicVenueBySlug, getAllVenueSlugs } from '@/lib/batch12Content';
 import { buildMetadata, venueJsonLd, breadcrumbJsonLd, faqPageJsonLd, JsonLd } from '@/lib/seo';
 import { ROUTES } from '@/config/routes';
@@ -11,6 +11,7 @@ import { FaqAccordion } from '@/components/FaqAccordion';
 import { isStaffDraftPreview } from '@/lib/cms/previewGuard';
 import { resolveVenueTemplateSlots } from '@/lib/cms/detailTemplateData';
 import { ArticleAppendageSlots } from '@/views/ArticleAppendageSlots';
+import { resolveRodeoRedirect } from '@/lib/cms/rodeoSlugs';
 
 type Params = { params: Promise<{ slug: string }> };
 
@@ -40,7 +41,12 @@ export async function generateMetadata({ params }: Params): Promise<Metadata> {
 export default async function VenuePage({ params }: Params) {
   const { slug } = await params;
   const v = await getPublicVenueBySlug(slug);
-  if (!v) notFound();
+  // A renamed venue leaves a permanent redirect behind (lib/cms/rodeoSlugs.ts).
+  if (!v) {
+    const moved = await resolveRodeoRedirect(`/venues/${slug}/`);
+    if (moved) (moved.permanent ? permanentRedirect : redirect)(moved.destination);
+    notFound();
+  }
   const draft = await isStaffDraftPreview();
   const [seo, faqs, appendageSlots] = await Promise.all([
     getEntitySeo('VENUE', v.id),

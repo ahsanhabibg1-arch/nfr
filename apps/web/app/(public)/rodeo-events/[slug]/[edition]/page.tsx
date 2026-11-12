@@ -1,7 +1,7 @@
 import type { Metadata } from 'next';
-import { notFound } from 'next/navigation';
+import { notFound, redirect, permanentRedirect } from 'next/navigation';
 import { buildMetadata, breadcrumbJsonLd, rodeoEditionJsonLd, faqPageJsonLd, JsonLd, SITE_URL } from '@/lib/seo';
-import { ROUTES } from '@/config/routes';
+import { ROUTES, PRIMARY_SECTIONS } from '@/config/routes';
 import { getPublicEditionBySlug, getAllRodeoSlugs } from '@/lib/rodeoContent';
 import { getEntityCommercialAssociations } from '@/lib/monetization/publicMonetization';
 import { getEntitySeo, mergeSeoMeta } from '@/lib/cms/entitySeoService';
@@ -13,6 +13,21 @@ import { editionCoverageSummary } from '@/lib/cms/competitionService';
 import { isStaffDraftPreview } from '@/lib/cms/previewGuard';
 import { resolveRodeoEditionTemplateSlots } from '@/lib/cms/detailTemplateData';
 import { ArticleAppendageSlots } from '@/views/ArticleAppendageSlots';
+import { resolveRodeoRedirect } from '@/lib/cms/rodeoSlugs';
+
+/**
+ * QA fix: the breadcrumb name for `/rodeo-events/` is taken from the section
+ * config instead of a local literal.
+ *
+ * Three breadcrumb trails hardcoded `'Rodeo Events'` for `ROUTES.MORE_RODEO`,
+ * while the page that actually lives at that URL renders its own h1, title and
+ * breadcrumb as "More Rodeo" from `PRIMARY_SECTIONS['rodeo-events'].name`. So
+ * one URL was published under two different names in BreadcrumbList structured
+ * data, and neither matched what the visitor saw on the destination page.
+ * `config/routes.ts` is the single source for a section's name.
+ */
+const MORE_RODEO_NAME = PRIMARY_SECTIONS['rodeo-events'].name;
+
 
 type Params = { params: Promise<{ slug: string; edition: string }> };
 
@@ -35,7 +50,16 @@ export async function generateMetadata({ params }: Params): Promise<Metadata> {
 export default async function Page({ params }: Params) {
   const { slug, edition } = await params;
   const ed = await getPublicEditionBySlug(slug, edition);
-  if (!ed) notFound();
+  /**
+   * A renamed edition — or a renamed PARENT EVENT — leaves a permanent redirect
+   * for this nested path. Without consulting it the old URL 404s, which is what
+   * the owner's custom-slug approval was meant to prevent.
+   */
+  if (!ed) {
+    const moved = await resolveRodeoRedirect(`/rodeo-events/${slug}/${edition}/`);
+    if (moved) (moved.permanent ? permanentRedirect : redirect)(moved.destination);
+    notFound();
+  }
   const draft = await isStaffDraftPreview();
   const [associations, seo, faqs, coverage, appendageSlots] = await Promise.all([
     getEntityCommercialAssociations('RODEO_EDITION', ed.id),
@@ -49,7 +73,7 @@ export default async function Page({ params }: Params) {
   const faqLd = faqPageJsonLd(faqs);
   const breadcrumb = breadcrumbJsonLd([
     { name: 'Home', path: '/' },
-    { name: 'Rodeo Events', path: ROUTES.MORE_RODEO },
+    { name: MORE_RODEO_NAME, path: ROUTES.MORE_RODEO },
     { name: ed.event.name, path: ROUTES.RODEO_EVENT(ed.event.slug) },
     { name: ed.label, path: ROUTES.RODEO_EDITION(ed.event.slug, ed.editionSlug) },
   ]);
