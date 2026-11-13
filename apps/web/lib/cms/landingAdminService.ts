@@ -8,6 +8,7 @@ import { assertEntityExists, requireEntityPerm } from './landingEntities';
 import { getEntitySeo } from './entitySeoService';
 import { listFaqsAdmin } from './faqService';
 import { PRIMARY_SECTIONS } from '../../config/routes';
+import { listAssignableClassifications, type PublicClassification } from './disciplineClassificationService';
 
 /**
  * Read model for the Landing-Page SEO & FAQ admin manager (Batch 11). Listing requires
@@ -73,8 +74,41 @@ export interface LandingDetail {
   canEdit: boolean;
   seo: EntitySeo | null;
   faqs: EntityFaq[];
-  /** Editable core fields for disciplines (Batch 11); deep guide JSON is not exposed. */
-  disciplineFields?: { shortName: string | null; category: string | null; tagline: string | null; summary: string };
+  /**
+   * Editable discipline fields. Issue 03 added `name`, `image`, `imageCredit`
+   * and the evergreen `guide` — previously the loader exposed four fields and
+   * the guide JSON was unreachable from any admin screen, so eleven of the
+   * thirteen fields the public page renders had no owner.
+   */
+  disciplineFields?: {
+    shortName: string | null;
+    /** LEGACY classification text, preserved. Read-only in the editor now. */
+    category: string | null;
+    /** Batch 05 — the managed classification reference, or null. */
+    classificationId?: string | null;
+    /**
+     * What the Classification select offers: active classifications, plus this
+     * discipline's current one even if it has been deactivated. Empty when the
+     * managed table is absent, in which case the editor falls back to the
+     * compatibility vocabulary.
+     */
+    classificationOptions?: PublicClassification[];
+    tagline: string | null;
+    summary: string;
+    name: string;
+    image: string | null;
+    imageCredit: string | null;
+    guide: {
+      introduction?: string;
+      competitionFormat?: string;
+      stockProfile?: string;
+      historicBenchmark?: string;
+      scoringBreakdown?: { title: string; description: string }[];
+      rulesHighlights?: string[];
+      terminology?: { term: string; definition: string }[];
+      beginnerTips?: string[];
+    };
+  };
 }
 
 export async function getLandingDetail(actor: Actor, entityType: LandingEntityType, entityId: string): Promise<LandingDetail> {
@@ -87,7 +121,33 @@ export async function getLandingDetail(actor: Actor, entityType: LandingEntityTy
   else if (entityType === 'RODEO_EVENT') { const e = await prisma.rodeoEvent.findUniqueOrThrow({ where: { id: entityId }, select: { name: true, slug: true } }); label = e.name; publicUrl = `/rodeo-events/${e.slug}/`; }
   else if (entityType === 'RODEO_EDITION') { const e = await prisma.rodeoEventEdition.findUniqueOrThrow({ where: { id: entityId }, select: { label: true, editionSlug: true, event: { select: { slug: true } } } }); label = e.label; publicUrl = `/rodeo-events/${e.event.slug}/${e.editionSlug}/`; }
   let disciplineFields: LandingDetail['disciplineFields'];
-  if (entityType === 'DISCIPLINE') { const d = await prisma.discipline.findUniqueOrThrow({ where: { id: entityId }, select: { name: true, slug: true, shortName: true, category: true, tagline: true, summary: true } }); label = d.name; publicUrl = `/disciplines/${d.slug}/`; disciplineFields = { shortName: d.shortName, category: d.category, tagline: d.tagline, summary: d.summary }; }
+  if (entityType === 'DISCIPLINE') {
+    const d = await prisma.discipline.findUniqueOrThrow({
+      where: { id: entityId },
+      select: { name: true, slug: true, shortName: true, category: true, classificationId: true, tagline: true, summary: true, image: true, imageCredit: true, guide: true },
+    });
+    label = d.name;
+    publicUrl = `/disciplines/${d.slug}/`;
+    // The stored guide may be null (a discipline created from the admin) or a
+    // JSON object. Anything that is not a plain object reads as empty rather
+    // than crashing the editor; the write path still preserves the original.
+    const guide = (d.guide && typeof d.guide === 'object' && !Array.isArray(d.guide)
+      ? (d.guide as NonNullable<LandingDetail['disciplineFields']>['guide'])
+      : {});
+    disciplineFields = {
+      shortName: d.shortName, category: d.category, tagline: d.tagline, summary: d.summary,
+      name: d.name, image: d.image, imageCredit: d.imageCredit, guide,
+      /**
+       * Batch 05 — the managed classification reference, plus the options to
+       * offer. `listAssignableClassifications(d.classificationId)` deliberately
+       * includes this discipline's CURRENT classification even if it has since
+       * been deactivated: otherwise the select renders with nothing chosen and
+       * the next save silently clears a real assignment.
+       */
+      classificationId: d.classificationId,
+      classificationOptions: await listAssignableClassifications(d.classificationId).catch(() => []),
+    };
+  }
   else if (entityType === 'CATEGORY') { const c = await prisma.category.findUniqueOrThrow({ where: { id: entityId }, select: { name: true, slug: true } }); label = c.name; publicUrl = `/categories/${c.slug}/`; }
   else if (entityType === 'VENUE') { const v = await prisma.venue.findUniqueOrThrow({ where: { id: entityId }, select: { name: true, slug: true } }); label = v.name; publicUrl = `/venues/${v.slug}/`; }
   else if (entityType === 'COMPETITOR') { const c = await prisma.competitor.findUniqueOrThrow({ where: { id: entityId }, select: { fullName: true, slug: true } }); label = c.fullName; publicUrl = `/competitors/${c.slug}/`; }

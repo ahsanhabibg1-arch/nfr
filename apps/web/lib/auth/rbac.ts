@@ -32,6 +32,32 @@ export type Permission =
   // Batch 04 module permissions (proposed; see RBAC_PERMISSION_MATRIX.md)
   | 'rodeo.manage'
   | 'taxonomy.manage'
+  /**
+   * Batch 04-E — managed Article Type administration: create a type, edit its
+   * label/description, reorder, activate/deactivate, archive, delete.
+   *
+   * Deliberately NOT `taxonomy.manage`, which Editors hold: an Article Type
+   * governs structured data and the evergreen surface across the whole site,
+   * so creating one is an Administrator act, not an editorial one. The two
+   * SEO-bearing settings are gated more tightly still — evergreen eligibility
+   * by `articletype.seo` and the Article/NewsArticle classification by
+   * `system.config` (Super Admin only).
+   */
+  | 'articletype.manage'
+  /**
+   * Batch 04-E.1 — Article Type EVERGREEN ELIGIBILITY, and nothing else.
+   *
+   * 04-E gated this with the existing `seo.config`, which Administrator also
+   * holds site-wide. The owner's decision is that evergreen eligibility belongs
+   * to the SEO owner alone, so it gets a permission of its own held by Super
+   * Admin and SEO Manager only.
+   *
+   * `seo.config` is untouched and keeps every other meaning it has (the SEO
+   * Intelligence module's configuration, audit thresholds). This permission is
+   * additive and narrow: holding it grants no Article Type management, and
+   * holding `articletype.manage` does not grant it.
+   */
+  | 'articletype.seo'
   | 'author.manage'
   | 'source.manage'
   | 'navigation.manage'
@@ -109,6 +135,9 @@ const ADMIN_PERMS: Permission[] = [
   'reader.view', 'reader.manage',
   // Site structure (Batch 04) — Admin/Super Admin only
   'navigation.manage',
+  // Managed Article Types (Batch 04-E) — Admin/Super Admin only. Editors keep
+  // `taxonomy.manage` for categories/subcategories/tags and are unaffected.
+  'articletype.manage',
   // Media deletion — Admin/Super Admin only (Batch 05)
   'media.delete',
   // Analytics config/export/provider + search config — Admin/Super Admin (Batch 07).
@@ -120,7 +149,11 @@ const ADMIN_PERMS: Permission[] = [
 ];
 
 export const ROLE_PERMISSIONS: Record<RoleKey, Permission[]> = {
-  super_admin: [...ADMIN_PERMS, 'system.config'],
+  /**
+   * Batch 04-E.1 — `articletype.seo` is listed HERE and in `seo_manager`, and
+   * deliberately not in `ADMIN_PERMS`: Administrator must not inherit it.
+   */
+  super_admin: [...ADMIN_PERMS, 'system.config', 'articletype.seo'],
   administrator: ADMIN_PERMS,
   editor: EDITOR_PERMS,
   author: ['cms.access', 'article.create', 'article.edit.own', 'article.submit',
@@ -134,6 +167,9 @@ export const ROLE_PERMISSIONS: Record<RoleKey, Permission[]> = {
     // on own articles via article-edit rights. No partner/link/config management.
     'monetization.view'],
   seo_manager: ['cms.access', 'seo.config',
+    // Article Type evergreen eligibility (Batch 04-E.1) — this role and Super
+    // Admin only. It carries no Article Type management rights.
+    'articletype.seo',
     // Media: browse + edit image SEO/alt metadata on any asset (no upload/delete)
     'media.view', 'media.edit.any',
     // SEO (Batch 06): full SEO operations

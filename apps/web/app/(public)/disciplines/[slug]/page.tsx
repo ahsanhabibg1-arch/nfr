@@ -12,6 +12,7 @@ import { FaqAccordion } from '@/components/FaqAccordion';
 import { isStaffDraftPreview } from '@/lib/cms/previewGuard';
 import { resolveDisciplineTemplateSlots } from '@/lib/cms/detailTemplateData';
 import { ArticleAppendageSlots } from '@/views/ArticleAppendageSlots';
+import { getPublicSiteName } from '@/lib/cms/settingsService';
 import { resolveRodeoRedirect } from '@/lib/cms/rodeoSlugs';
 
 type Params = { params: Promise<{ slug: string }> };
@@ -56,10 +57,12 @@ export default async function DisciplinePage({ params }: Params) {
     notFound();
   }
   const draft = await isStaffDraftPreview();
-  const [seo, faqs, appendageSlots] = await Promise.all([
+  const [seo, faqs, appendageSlots, publisherName] = await Promise.all([
     getEntitySeo('DISCIPLINE', d.id),
     listPublicFaqs('DISCIPLINE', d.id),
     resolveDisciplineTemplateSlots(d.id, { draft }),
+    // Stage 03 (H-06): the administrator's site name for structured data.
+    getPublicSiteName(),
   ]);
   const faqLd = faqPageJsonLd(faqs);
 
@@ -67,7 +70,7 @@ export default async function DisciplinePage({ params }: Params) {
     <>
       <JsonLd
         data={[
-          disciplineJsonLd(d),
+          disciplineJsonLd(d, { publisherName }),
           breadcrumbJsonLd([
             { name: 'Home', path: '/' },
             { name: 'NFR Competition', path: ROUTES.COMPETITION },

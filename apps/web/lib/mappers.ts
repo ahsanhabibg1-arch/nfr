@@ -9,6 +9,7 @@ import {
   Discipline,
 } from '../types';
 import { effectiveAlt, effectiveCaption, buildResponsiveSources } from './media/imageMeta';
+import { toDisciplineClassification } from './content/disciplineClassifications';
 
 /**
  * Delivery URL for a stored object — the SAME gated proxy path the storage
@@ -35,6 +36,14 @@ export const articleInclude = {
   hubs: true,
   events: true,
   editions: true,
+  /**
+   * Batch 04-B — the managed subcategory, for its display name.
+   *
+   * One narrow join in the single shared include, so every consumer of
+   * `toArticle` (article page, homepage feed, grids, related articles) resolves
+   * the label the same way without its own query.
+   */
+  subcategoryTaxon: { select: { id: true, name: true, slug: true } },
   /**
    * MED-01B/C — the DAM record behind the hero image.
    *
@@ -191,7 +200,8 @@ export function toArticle(row: ArticleWithRelations): Article {
     content: paragraphs,
     structuredBody: blocks,
     category: row.category.name as PrimarySection,
-    subcategory: row.subcategory ?? undefined,
+    // Stage 03 (R-3): from the join already in `articleInclude` — no extra query.
+    categorySlug: row.category.slug,
     articleType: (row.articleType as Article['articleType']) ?? undefined,
     status: workflowStatus === 'published' ? 'published' : workflowStatus === 'archived' ? 'archived' : 'draft',
     workflowStatus,
@@ -210,6 +220,20 @@ export function toArticle(row: ArticleWithRelations): Article {
     scheduledAt: row.scheduledAt ? row.scheduledAt.toISOString() : undefined,
     heroImage: row.heroImageUrl ?? '',
     imageCredit: row.imageCredit ?? '',
+    /**
+     * Batch 04-B — `managed ?? legacy ?? none`.
+     *
+     * The managed name wins; the legacy free-text label is the fallback, so
+     * nothing disappears while no backfill has run (and none has). `subcategory`
+     * keeps its existing meaning for every consumer that already reads it.
+     */
+    subcategory: row.subcategoryTaxon?.name ?? row.subcategory ?? undefined,
+    /** The managed row, when one is assigned — id/slug for future routes. */
+    subcategoryRef: row.subcategoryTaxon
+      ? { id: row.subcategoryTaxon.id, name: row.subcategoryTaxon.name, slug: row.subcategoryTaxon.slug }
+      : undefined,
+    /** The raw legacy label, kept distinguishable from the managed name. */
+    legacySubcategory: row.subcategory ?? undefined,
     imageCaption: row.imageCaption ?? undefined,
     imageAltText: row.imageAltText ?? undefined,
     imageSeoTitle: row.imageSeoTitle ?? undefined,
@@ -245,15 +269,72 @@ export function toDiscipline(row: {
   tagline: string | null; summary: string; image: string | null; imageCredit: string | null;
   guide: Prisma.JsonValue | null;
   archivedAt?: Date | null;
+  /**
+   * Batch 05 — the MANAGED classification, when the caller included the
+   * relation. Optional so callers that do not need it (and environments where
+   * the table does not exist) are unaffected.
+   */
+  classificationId?: string | null;
+  classification?: { id: string; name: string; pluralName: string | null } | null;
+  /**
+   * Issue 03 — the Media Library asset behind `image`, when the hero is a
+   * DAM-managed URL. Optional, so the two existing callers can supply it
+   * without every caller having to.
+   */
+  heroAsset?: {
+    altText: string | null; caption: string | null; derivatives: Prisma.JsonValue | null;
+    width: number | null; height: number | null; storageKey: string; url: string;
+  } | null;
 }): Discipline {
   const guide = (row.guide as Record<string, unknown>) ?? {};
+  /**
+   * Issue 03 — the discipline hero carried the same defect MED-01B fixed on the
+   * article hero: `DisciplineGuideHeader` passed `alt={discipline.name}` and a
+   * synthesised caption (`"<name> in action at the National Finals Rodeo."`) on
+   * every one of the seven pages. The ALT text an editor wrote on the asset was
+   * never used, and the caption was never written by anyone.
+   *
+   * Resolution is the same shared chain, so the discipline page and the article
+   * page cannot disagree: media default → (no article level here) → fallback,
+   * with an empty string meaning "decorative" and the name used only as a last
+   * resort.
+   */
+  const heroAlt = effectiveAlt({ media: row.heroAsset?.altText, fallback: row.name });
+  const heroCaption = effectiveCaption({ media: row.heroAsset?.caption });
+  const heroResponsive = row.heroAsset
+    ? buildResponsiveSources(
+        row.heroAsset.derivatives,
+        { key: row.heroAsset.storageKey, url: row.heroAsset.url, width: row.heroAsset.width },
+        mediaUrl,
+      )
+    : { widths: [] as number[] };
   return {
     id: row.id,
     archivedAt: row.archivedAt ?? null,
     slug: row.slug,
     name: row.name,
     shortName: row.shortName ?? row.name,
-    category: (row.category as Discipline['category']) ?? 'Roughstock',
+    /**
+     * `Discipline.category` is a nullable string while the public type requires
+     * a classification, so a value has to be chosen. `toDisciplineClassification`
+     * replaces a bare `as` cast that asserted any stored string was one of the
+     * two valid values: a row holding something else used to flow through as if
+     * it were valid, which the public Competition filter would then never match.
+     */
+    category: toDisciplineClassification(row.category),
+    /**
+     * Batch 05 — the managed classification, carried through for the public
+     * filter so it can group by a STABLE id rather than by the display label.
+     * Null when the discipline is unclassified, or when the caller did not
+     * include the relation (the filter then falls back to `category`).
+     */
+    classification: row.classification
+      ? {
+          id: row.classification.id,
+          name: row.classification.name,
+          pluralName: row.classification.pluralName?.trim() || row.classification.name,
+        }
+      : null,
     tagline: row.tagline ?? '',
     summary: row.summary,
     image: row.image ?? '',
@@ -277,5 +358,13 @@ export function toDiscipline(row: {
     scoringBreakdown: [],
     rulesHighlights: [],
     ...(guide as Partial<Discipline>),
+    // After the spread: resolved hero metadata is derived, never stored in the
+    // guide JSON, so it must not be overridable by it.
+    imageAlt: heroAlt.alt,
+    imageAltSource: heroAlt.source,
+    imageCaption: heroCaption,
+    imageSrcSet: heroResponsive.srcSet,
+    imageWidth: row.heroAsset?.width ?? undefined,
+    imageHeight: row.heroAsset?.height ?? undefined,
   } as Discipline;
 }

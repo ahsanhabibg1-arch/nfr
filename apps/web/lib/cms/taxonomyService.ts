@@ -1,9 +1,12 @@
 import 'server-only';
 import { z } from 'zod';
+import { Prisma } from '@prisma/client';
 import { prisma } from '../db';
 import { Actor, audit } from './guard';
 import { roleHasPermission } from '../auth/rbac';
 import { ServiceError } from './articleService';
+import { ACTIVE_ONLY, lifecycleWhere, type LifecycleFilter } from './lifecycle';
+import { normalizeSlug, slugShapeError } from './slugRules';
 
 /**
  * Editorial Organization: categories, tags, authors (Batch 04 §8/§9).
@@ -56,6 +59,211 @@ export async function deleteCategory(actor: Actor, id: string): Promise<void> {
   await audit(actor.id, 'category.delete', 'category', id, c.name);
 }
 
+// ---- Subcategories (Batch 04-B) ----
+
+/**
+ * Managed Subcategory taxonomy: a curated second level inside ONE primary
+ * section. It lives here, beside Categories and Tags, because this service and
+ * `taxonomy.manage` already own editorial organisation — a second taxonomy
+ * administration system is exactly what the brief forbids.
+ *
+ * The database is the final integrity boundary (composite FK, three unique
+ * constraints, `ON DELETE/UPDATE RESTRICT`). Every rule below is checked here
+ * FIRST so an editor reads a sentence instead of a constraint name; the
+ * constraint is what makes the rule true even if a future code path forgets it.
+ */
+export interface SubcategoryRow {
+  id: string;
+  categoryId: string;
+  categorySlug: string;
+  categoryName: string;
+  name: string;
+  slug: string;
+  description: string | null;
+  sortOrder: number;
+  archivedAt: Date | null;
+  articleCount: number;
+}
+
+export interface ListSubcategoriesParams {
+  /** Restrict to one primary section. */
+  categoryId?: string;
+  /** Matches name or slug, case-insensitively. */
+  q?: string;
+  /** Default `active` — archived rows are hidden unless asked for. */
+  lifecycle?: LifecycleFilter;
+}
+
+export async function listSubcategories(params: ListSubcategoriesParams = {}): Promise<SubcategoryRow[]> {
+  const where: Prisma.SubcategoryWhereInput = { ...lifecycleWhere(params.lifecycle ?? 'active') };
+  if (params.categoryId) where.categoryId = params.categoryId;
+  if (params.q?.trim()) {
+    const q = params.q.trim();
+    where.OR = [
+      { name: { contains: q, mode: 'insensitive' } },
+      { slug: { contains: q, mode: 'insensitive' } },
+    ];
+  }
+  const rows = await prisma.subcategory.findMany({
+    where,
+    orderBy: [{ category: { sortOrder: 'asc' } }, { sortOrder: 'asc' }, { name: 'asc' }],
+    include: { category: { select: { slug: true, name: true } }, _count: { select: { articles: true } } },
+  });
+  return rows.map((s) => ({
+    id: s.id, categoryId: s.categoryId, categorySlug: s.category.slug, categoryName: s.category.name,
+    name: s.name, slug: s.slug, description: s.description, sortOrder: s.sortOrder,
+    archivedAt: s.archivedAt, articleCount: s._count.articles,
+  }));
+}
+
+const SubcategoryInput = z.object({
+  categoryId: z.string().min(1),
+  name: z.string().trim().min(1).max(120),
+  /** Omitted on create → derived from the name. */
+  slug: z.string().trim().max(80).optional(),
+  description: z.string().max(600).optional(),
+  sortOrder: z.number().int().min(0).max(9999).optional(),
+});
+export type SubcategoryInput = z.input<typeof SubcategoryInput>;
+
+/** Shape + reserved-word rules, shared with the UI so both agree exactly. */
+function resolveSlug(name: string, raw?: string): string {
+  const slug = normalizeSlug(raw?.trim() ? raw : name);
+  const shape = slugShapeError(slug);
+  if (shape) throw new ServiceError('validation', shape);
+  return slug;
+}
+
+async function uniqueWithinCategory(categoryId: string, name: string, slug: string, excludeId?: string): Promise<void> {
+  const clash = await prisma.subcategory.findFirst({
+    where: { categoryId, OR: [{ name }, { slug }], ...(excludeId ? { id: { not: excludeId } } : {}) },
+    select: { name: true, slug: true },
+  });
+  if (!clash) return;
+  // Name the actual conflict: the two unique constraints fail for different reasons.
+  throw new ServiceError(
+    'conflict',
+    clash.name === name
+      ? `This section already has a subcategory named "${name}".`
+      : `This section already has a subcategory with the URL slug "${slug}".`,
+  );
+}
+
+export async function createSubcategory(actor: Actor, raw: SubcategoryInput): Promise<{ id: string }> {
+  requireTaxonomy(actor);
+  const v = SubcategoryInput.parse(raw);
+  const category = await prisma.category.findUnique({ where: { id: v.categoryId }, select: { id: true, name: true } });
+  if (!category) throw new ServiceError('not_found', 'That primary section does not exist.');
+  const slug = resolveSlug(v.name, v.slug);
+  await uniqueWithinCategory(v.categoryId, v.name, slug);
+  const max = await prisma.subcategory.aggregate({ where: { categoryId: v.categoryId }, _max: { sortOrder: true } });
+  const row = await prisma.subcategory.create({
+    data: {
+      categoryId: v.categoryId, name: v.name, slug,
+      description: v.description?.trim() || null,
+      sortOrder: v.sortOrder ?? (max._max.sortOrder ?? -1) + 1,
+    },
+    select: { id: true },
+  });
+  await audit(actor.id, 'subcategory.create', 'subcategory', row.id, `${category.name} / ${v.name}`);
+  return { id: row.id };
+}
+
+export async function updateSubcategory(actor: Actor, id: string, raw: SubcategoryInput): Promise<void> {
+  requireTaxonomy(actor);
+  const v = SubcategoryInput.parse(raw);
+  const existing = await prisma.subcategory.findUnique({
+    where: { id },
+    select: { id: true, categoryId: true, _count: { select: { articles: true } } },
+  });
+  if (!existing) throw new ServiceError('not_found', 'Subcategory not found');
+
+  /**
+   * A parent change is blocked while articles are attached.
+   *
+   * Moving it would put those articles' subcategory in a section they do not
+   * belong to. The database refuses it too (`ON UPDATE RESTRICT` on the
+   * composite FK), which is what makes this safe rather than merely polite —
+   * without that, Prisma's default CASCADE would have silently rewritten every
+   * attached article's `categoryId`, relocating published articles as a side
+   * effect of a taxonomy edit.
+   */
+  if (v.categoryId !== existing.categoryId && existing._count.articles > 0) {
+    throw new ServiceError(
+      'conflict',
+      `Cannot move this subcategory to another section: ${existing._count.articles} article(s) use it. Detach them first, or create a new subcategory in the other section.`,
+    );
+  }
+  if (v.categoryId !== existing.categoryId) {
+    if (!(await prisma.category.findUnique({ where: { id: v.categoryId }, select: { id: true } }))) {
+      throw new ServiceError('not_found', 'That primary section does not exist.');
+    }
+  }
+
+  const slug = resolveSlug(v.name, v.slug);
+  await uniqueWithinCategory(v.categoryId, v.name, slug, id);
+  await prisma.subcategory.update({
+    where: { id },
+    data: {
+      categoryId: v.categoryId, name: v.name, slug,
+      description: v.description?.trim() || null,
+      ...(v.sortOrder === undefined ? {} : { sortOrder: v.sortOrder }),
+    },
+  });
+  await audit(actor.id, 'subcategory.update', 'subcategory', id, v.name);
+}
+
+/**
+ * Archive / reactivate. Archiving keeps every existing article link — it only
+ * withdraws the subcategory from NEW assignment, so a published article never
+ * silently loses its classification.
+ */
+export async function setSubcategoryArchived(actor: Actor, id: string, archived: boolean): Promise<void> {
+  requireTaxonomy(actor);
+  const existing = await prisma.subcategory.findUnique({ where: { id }, select: { name: true } });
+  if (!existing) throw new ServiceError('not_found', 'Subcategory not found');
+  await prisma.subcategory.update({ where: { id }, data: { archivedAt: archived ? new Date() : null } });
+  await audit(actor.id, archived ? 'subcategory.archive' : 'subcategory.reactivate', 'subcategory', id, existing.name);
+}
+
+/**
+ * Delete only when nothing references it — ANY article, in any workflow state,
+ * blocks it. Mirrors `deleteCategory`, and the FK's `ON DELETE RESTRICT` is the
+ * backstop if a future path skips this check.
+ */
+export async function deleteSubcategory(actor: Actor, id: string): Promise<void> {
+  requireTaxonomy(actor);
+  const row = await prisma.subcategory.findUnique({
+    where: { id },
+    select: { name: true, _count: { select: { articles: true } } },
+  });
+  if (!row) throw new ServiceError('not_found', 'Subcategory not found');
+  if (row._count.articles > 0) {
+    throw new ServiceError(
+      'conflict',
+      `Cannot delete: ${row._count.articles} article(s) use this subcategory. Archive it instead to keep those links intact.`,
+    );
+  }
+  await prisma.subcategory.delete({ where: { id } });
+  await audit(actor.id, 'subcategory.delete', 'subcategory', id, row.name);
+}
+
+/**
+ * Active subcategories for one section — what the article editor offers.
+ *
+ * Archived rows are excluded so they cannot be newly assigned, while an article
+ * that already points at an archived one keeps it (the editor adds the current
+ * value separately, exactly as Batch 04-A does for a legacy article type).
+ */
+export async function listAssignableSubcategories(categoryId: string): Promise<{ id: string; name: string }[]> {
+  const rows = await prisma.subcategory.findMany({
+    where: { categoryId, ...ACTIVE_ONLY },
+    orderBy: [{ sortOrder: 'asc' }, { name: 'asc' }],
+    select: { id: true, name: true },
+  });
+  return rows;
+}
+
 // ---- Tags ----
 export interface TagRow { id: string; slug: string; name: string; articleCount: number; }
 export async function listTags(q?: string): Promise<TagRow[]> {
@@ -71,6 +279,49 @@ export async function createTag(actor: Actor, name: string): Promise<{ id: strin
   await audit(actor.id, 'tag.create', 'tag', id, clean);
   return { id };
 }
+/**
+ * Stage 03 (G-03) — rename a tag IN PLACE.
+ *
+ * A tag could only be created and deleted, so the only way to correct a name
+ * was delete-and-recreate — which drops every `ArticleTag` link, silently
+ * unlabelling articles. This updates the row, so the id and all associations
+ * survive by construction: nothing touches `ArticleTag` at all.
+ *
+ * The SLUG moves with the name, because the slug is derived from it and no
+ * public tag route exists for an old slug to keep serving. The id does NOT
+ * move: it is the association key, and `createTag` derives it from the
+ * original name, so a renamed tag keeps an id that reflects its first name.
+ * That is deliberate — an id is an identity, not a label.
+ */
+export async function updateTag(actor: Actor, id: string, name: string): Promise<void> {
+  requireTaxonomy(actor);
+  const clean = z.string().trim().min(1).max(60).parse(name);
+  const existing = await prisma.tag.findUnique({ where: { id }, select: { id: true, name: true } });
+  if (!existing) throw new ServiceError('not_found', 'Tag not found');
+  if (existing.name === clean) return; // nothing to do; not an error
+
+  const slug = slugify(clean);
+  if (!slug) throw new ServiceError('validation', 'That tag name has no usable characters.');
+  // Uniqueness is checked here for a readable message; the unique index on
+  // `slug` is what makes it true under a concurrent rename.
+  const clash = await prisma.tag.findFirst({
+    where: { id: { not: id }, OR: [{ name: clean }, { slug }] },
+    select: { name: true },
+  });
+  if (clash) throw new ServiceError('conflict', `Another tag is already called "${clash.name}".`);
+
+  try {
+    await prisma.tag.update({ where: { id }, data: { name: clean, slug } });
+  } catch (e) {
+    // A concurrent rename to the same name loses the race on the unique index.
+    if ((e as { code?: string }).code === 'P2002') {
+      throw new ServiceError('conflict', `Another tag is already called "${clean}".`);
+    }
+    throw e;
+  }
+  await audit(actor.id, 'tag.update', 'tag', id, `${existing.name} → ${clean}`);
+}
+
 export async function deleteTag(actor: Actor, id: string): Promise<void> {
   requireTaxonomy(actor);
   const t = await prisma.tag.findUnique({ where: { id } });

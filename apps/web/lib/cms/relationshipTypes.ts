@@ -20,9 +20,19 @@ export interface ArticleRelationshipOptions {
   hubs: RelationshipOption[];
   events: RelationshipOption[];
   editions: EditionOption[];
+  /**
+   * Batch 04-B — ACTIVE managed subcategories, keyed by primary-section NAME.
+   *
+   * Keyed by name because that is what the editor's `category` state holds (a
+   * `PrimarySection`), so the selector can filter without a round trip and
+   * without the client ever learning a category id. Archived rows are excluded:
+   * they must not be newly assignable. An article already pointing at an
+   * archived one keeps it — the editor adds that single current value itself.
+   */
+  subcategoriesBySection: Record<string, RelationshipOption[]>;
 }
 
-export const EMPTY_RELATIONSHIP_OPTIONS: ArticleRelationshipOptions = { disciplines: [], hubs: [], events: [], editions: [] };
+export const EMPTY_RELATIONSHIP_OPTIONS: ArticleRelationshipOptions = { disciplines: [], hubs: [], events: [], editions: [], subcategoriesBySection: {} };
 
 /** A row of the real Source directory (DB), offered by the editor's "attach existing" picker. */
 export interface SourceDirectoryOption {

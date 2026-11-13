@@ -3,8 +3,24 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import Link from 'next/link';
 import { useParams, useRouter } from 'next/navigation';
-import { Article, ArticleWorkflowStatus, ArticleType, PrimarySection, ContentBlock, SourceReference, DisclosureType, ArticleRevision } from '../../types';
+import { Article, ArticleWorkflowStatus, PrimarySection, ContentBlock, SourceReference, DisclosureType, ArticleRevision } from '../../types';
 import { ROUTES } from '../../config/routes';
+/**
+ * Batch 04-E — the managed Article Type definitions arrive as a SNAPSHOT prop.
+ *
+ * This is a client component, so it cannot read the database, and §11 forbids
+ * fetching the list from the browser. The two server pages that render this
+ * shell resolve the snapshot and pass it down; when they do not (an older
+ * caller, a test), `fallbackSnapshot()` supplies the compiled-in compatibility
+ * vocabulary, which is exactly what this control offered before 04-E.
+ */
+import {
+  fallbackSnapshot,
+  assignableTypes,
+  findType,
+  labelIn,
+  type ArticleTypeSnapshot,
+} from '../../lib/content/articleTypeShape';
 
 /** Database-backed author bylines supplied by the server (Batch 16) — replaces the Phase-0 mock map. */
 export interface AuthorOption { id: string; name: string; role: string }
@@ -23,28 +39,39 @@ import { MediaPickerModal, SelectedMediaData } from '../../components/admin/edit
 import { ArticleDraftPreview } from '../../components/admin/editor/ArticleDraftPreview';
 import { EMPTY_RELATIONSHIP_OPTIONS, NEW_SOURCE_ID_PREFIX, type ArticleRelationshipOptions, type SourceDirectoryOption } from '../../lib/cms/relationshipTypes';
 
-const ALL_ARTICLE_TYPES: ArticleType[] = [
-  'News',
-  'Event Update',
-  'Event Guide',
-  'Schedule',
-  'Results & Standings',
-  'How to Watch',
-  'Preview',
-  'Competitor Profile',
-  'Rules & Format',
-  'History',
-  'Records & Past Winners',
-  'Entertainment Guide',
-  'Ticket Guide',
-  'Venue Guide',
-  'Travel Guide',
-  'Product Buying Guide',
-  'Product Review',
-  'General Information',
-];
+/** Stage 02 (H-01) — a managed Category, as the server page supplies it. */
+export interface CategoryOption { id: string; name: string; slug: string }
 
-const PRIMARY_SECTIONS: PrimarySection[] = [
+/**
+ * Batch 04-A — the local Article Type list has been removed.
+ *
+ * It was one of six independent vocabularies for a single free-text column, and
+ * it matched none of the 11 stored values. The editor stopped keeping its own
+ * list and read the one authoritative registry instead — the same one the write
+ * validator, the archive filter, the evergreen query and the JSON-LD check use,
+ * so the dropdown could no longer disagree with the rest of the application.
+ *
+ * Batch 04-E — that single source is now the MANAGED registry in the database,
+ * resolved by the server page and handed to this client component as the
+ * `articleTypes` snapshot prop. The guarantee is unchanged and the mechanism is
+ * the same: one source, no local list.
+ */
+
+/**
+ * Stage 02 (H-01) — the FALLBACK section list, not the source of truth.
+ *
+ * This array used to be rendered straight into the Primary Section dropdown, so
+ * a category an administrator created was invisible to the editor and could
+ * never be assigned: the CMS could make a record the CMS could not use. The
+ * dropdown now renders the `categories` prop, which the two editor server pages
+ * resolve from `listCategories()`.
+ *
+ * It stays as the fallback for a caller that supplies no categories (a test, an
+ * older entry point), so the control is never empty. The server has always
+ * validated by database lookup — `resolveCategoryId` — so this list has never
+ * been a security or integrity boundary, only a UI restriction.
+ */
+const FALLBACK_SECTIONS: PrimarySection[] = [
   'NFR Competition',
   'NFR Entertainment',
   'NFR Events & Shopping',
@@ -73,6 +100,13 @@ interface AdminArticleEditorShellProps {
   relationshipOptions?: ArticleRelationshipOptions;
   /** The real Source directory (DB) for "attach existing source". */
   sourceDirectory?: SourceDirectoryOption[];
+  /** Batch 04-E — managed Article Type definitions, resolved server-side. */
+  articleTypes?: ArticleTypeSnapshot;
+  /**
+   * Stage 02 (H-01) — the managed categories, resolved server-side. Omitted
+   * falls back to the five foundational section names.
+   */
+  categories?: CategoryOption[];
 }
 
 export const AdminArticleEditorShell: React.FC<AdminArticleEditorShellProps> = ({
@@ -84,7 +118,18 @@ export const AdminArticleEditorShell: React.FC<AdminArticleEditorShellProps> = (
   authors = [],
   relationshipOptions = EMPTY_RELATIONSHIP_OPTIONS,
   sourceDirectory = [],
+  articleTypes,
+  categories,
 }) => {
+  /**
+   * Resolved once per render. `useMemo` so the fallback is not rebuilt on every
+   * keystroke in the editor — this component re-renders constantly.
+   */
+  const typeSnapshot = useMemo<ArticleTypeSnapshot>(
+    () => articleTypes ?? fallbackSnapshot(),
+    [articleTypes],
+  );
+  const offeredTypes = useMemo(() => assignableTypes(typeSnapshot), [typeSnapshot]);
   const params = useParams<{ id: string }>();
   const id = params?.id;
   const router = useRouter();
@@ -92,6 +137,20 @@ export const AdminArticleEditorShell: React.FC<AdminArticleEditorShellProps> = (
 
   // Initial article is loaded server-side (DB) and passed in as a prop.
   const existingArticle = initialArticle;
+  /**
+   * Stage 02 (H-01) — section names offered by the dropdown.
+   *
+   * Managed categories when the server supplied them, the five foundational
+   * names otherwise. The article's CURRENT value is appended when it is not in
+   * the list, so an article classified under a category that was later renamed
+   * or removed still shows what it actually stores instead of reading as
+   * unclassified — the same rule the Article Type selector follows.
+   */
+  const sectionOptions = useMemo<string[]>(() => {
+    const base = categories?.length ? categories.map((c) => c.name) : [...FALLBACK_SECTIONS];
+    const current = existingArticle?.category;
+    return current && !base.includes(current) ? [...base, current] : base;
+  }, [categories, existingArticle?.category]);
   const [version, setVersion] = useState<number | undefined>(initialVersion);
   const [saving, setSaving] = useState(false);
 
@@ -113,9 +172,23 @@ export const AdminArticleEditorShell: React.FC<AdminArticleEditorShellProps> = (
   // title as the author types (see effect below). Existing articles preserve their values.
   const [slug, setSlug] = useState(existingArticle?.slug || '');
   const [isSlugCustom, setIsSlugCustom] = useState(Boolean(existingArticle?.slug));
-  const [category, setCategory] = useState<PrimarySection | ''>(existingArticle?.category || '');
-  const [subcategory, setSubcategory] = useState(existingArticle?.subcategory || '');
-  const [articleType, setArticleType] = useState<ArticleType | ''>(existingArticle?.articleType || '');
+  // Stage 02 (H-01): a plain string — the valid set is managed in the database.
+  const [category, setCategory] = useState<string>(existingArticle?.category || '');
+  /**
+   * Batch 04-B - the MANAGED subcategory id, plus the legacy label kept as
+   * read-only context.
+   *
+   * `legacySubcategory` is the raw stored text; `existingArticle.subcategory`
+   * already resolves `managed ?? legacy` in `toArticle`, so it is NOT the right
+   * source for the legacy line.
+   */
+  const [subcategoryId, setSubcategoryId] = useState<string>(existingArticle?.subcategoryRef?.id ?? '');
+  const legacySubcategory = existingArticle?.legacySubcategory ?? '';
+  /** Set when a section change forced the subcategory to be cleared. */
+  const [sectionChangeNotice, setSectionChangeNotice] = useState<string | null>(null);
+  // Batch 04-E: a plain string — the valid set is managed in the database, so a
+  // compiled-in union would reject types an administrator has created.
+  const [articleType, setArticleType] = useState<string>(existingArticle?.articleType || '');
   const [workflowStatus, setWorkflowStatus] = useState<ArticleWorkflowStatus>(
     (existingArticle?.workflowStatus || existingArticle?.status || 'draft') as ArticleWorkflowStatus
   );
@@ -218,9 +291,9 @@ export const AdminArticleEditorShell: React.FC<AdminArticleEditorShellProps> = (
       excerpt,
       content: blocks.filter((b) => b.type === 'paragraph').map((b: any) => b.text),
       structuredBody: blocks,
-      category: category as PrimarySection,
-      subcategory,
-      articleType: articleType as ArticleType,
+      category,
+      subcategoryId: subcategoryId || null,
+      articleType,
       status: workflowStatus,
       workflowStatus,
       readTime: `${Math.max(1, Math.ceil(blocks.reduce((acc, b: any) => acc + (b.text || '').split(/\s+/).length, 0) / 225))} min read`,
@@ -260,7 +333,7 @@ export const AdminArticleEditorShell: React.FC<AdminArticleEditorShellProps> = (
     excerpt,
     blocks,
     category,
-    subcategory,
+    subcategoryId,
     articleType,
     workflowStatus,
     authorKey,
@@ -359,7 +432,7 @@ export const AdminArticleEditorShell: React.FC<AdminArticleEditorShellProps> = (
     metaDescription,
     imageSeoTitle,
     imageAltText,
-    subcategory,
+    subcategoryId: subcategoryId || null,
     articleType,
     categoryName: category,
     authorName: selectedAuthor.name,
@@ -1112,20 +1185,65 @@ export const AdminArticleEditorShell: React.FC<AdminArticleEditorShellProps> = (
             <div className="space-y-3">
               <div>
                 <label htmlFor="editor-article-type" className="block text-[11px] font-semibold text-stone-600 uppercase tracking-wider mb-1">
-                  Article Type (18 Typologies)
+                  Article Type
                 </label>
                 <select id="editor-article-type"
                   value={articleType}
                   onChange={(e) => {
-                    setArticleType(e.target.value as ArticleType | '');
+                    setArticleType(e.target.value);
                     markDirty();
                   }}
                   className="w-full p-2 bg-stone-50 border border-stone-200 rounded-xs text-xs text-stone-800"
                 >
+                  {/*
+                    Batch 04-A — a stored LEGACY value must be visible, not blank.
+
+                    THE DEFECT. The options were the 18 Title-Case typologies,
+                    while all 11 published articles store a lowercase legacy
+                    value (`guide`, `analysis`, `feature`). A select whose
+                    `value` matches no `<option>` renders as if nothing were
+                    chosen, so every existing article looked unclassified. The
+                    state still held the real value, so an untouched save
+                    preserved it — but the control invited an editor to "fix" a
+                    field that was not broken, and once touched the original
+                    value could never be chosen again.
+
+                    THE FIX. When the current value is a recognised legacy type
+                    it is rendered as its own option, clearly marked, and stays
+                    selected. It is deliberately NOT added to the general list:
+                    legacy values stay preservable but are not offered for new
+                    classification. Nothing is silently converted — `guide`
+                    never becomes `Event Guide`.
+                  */}
+                  {/*
+                    Batch 04-E — the same rule, now over MANAGED definitions.
+
+                    The current value is rendered as its own option whenever it
+                    is not among the offered ones. That one condition covers
+                    every case the 04-A legacy check covered and the three
+                    04-E adds: a type an administrator deactivated, one they
+                    archived, and a value the registry does not define at all
+                    (which can only happen if a row was removed by hand).
+
+                    It is deliberately NOT added to the offered list: those
+                    values stay preservable but are never offered for new
+                    classification, and nothing is silently converted —
+                    `guide` never becomes `Event Guide`. The server enforces
+                    the same rule in `saveArticle`, which is the boundary; this
+                    is only what the editor sees.
+                  */}
                   <option value="">Select article type…</option>
-                  {ALL_ARTICLE_TYPES.map((t) => (
-                    <option key={t} value={t}>
-                      {t}
+                  {articleType !== '' && !offeredTypes.some((t) => t.value === articleType) && (
+                    <option value={articleType}>
+                      {labelIn(typeSnapshot, articleType)}
+                      {findType(typeSnapshot, articleType)
+                        ? ' — no longer offered'
+                        : ' — unrecognised'}
+                    </option>
+                  )}
+                  {offeredTypes.map((t) => (
+                    <option key={t.value} value={t.value}>
+                      {t.label}
                     </option>
                   ))}
                 </select>
@@ -1138,13 +1256,42 @@ export const AdminArticleEditorShell: React.FC<AdminArticleEditorShellProps> = (
                 <select id="editor-primary-section"
                   value={category}
                   onChange={(e) => {
-                    setCategory(e.target.value as PrimarySection | '');
+                    /**
+                     * Batch 04-B - a subcategory belongs to ONE section, so a
+                     * section change cannot silently keep an incompatible one.
+                     * It is cleared here and the editor is told explicitly;
+                     * saving it anyway would be refused by the service and by
+                     * the composite foreign key, so a silent carry-over would
+                     * only produce a confusing error later.
+                     */
+                    const next = e.target.value;
+                    if (subcategoryId && next !== category) {
+                      const cleared = (relationshipOptions.subcategoriesBySection[category] ?? [])
+                        .find((o) => o.id === subcategoryId)?.label;
+                      setSubcategoryId('');
+                      setSectionChangeNotice(
+                        cleared
+                          ? 'Subcategory "' + cleared + '" was cleared: it belongs to ' + category + '. Choose one from ' + (next || 'the new section') + '.'
+                          : 'The subcategory was cleared because it belongs to the previous section.',
+                      );
+                    } else {
+                      setSectionChangeNotice(null);
+                    }
+                    setCategory(next);
                     markDirty();
                   }}
                   className="w-full p-2 bg-stone-50 border border-stone-200 rounded-xs text-xs text-stone-800"
                 >
+                  {/*
+                    Stage 02 (H-01) — rendered from the MANAGED categories the
+                    server page resolved, so a category an administrator creates
+                    appears here without a code change. The article's current
+                    value is included even when it is no longer in the list, so
+                    nothing reads as unclassified and nothing is silently
+                    converted.
+                  */}
                   <option value="">Select primary section…</option>
-                  {PRIMARY_SECTIONS.map((sec) => (
+                  {sectionOptions.map((sec) => (
                     <option key={sec} value={sec}>
                       {sec}
                     </option>
@@ -1152,20 +1299,74 @@ export const AdminArticleEditorShell: React.FC<AdminArticleEditorShellProps> = (
                 </select>
               </div>
 
+              {/*
+                Batch 04-B - managed Subcategory selector.
+
+                THE DEFECT IT REPLACES. This was a free-text box whose
+                placeholder offered three unrelated examples - one of them
+                ("Roughstock") a Discipline classification, not a subcategory.
+                Eleven articles produced eleven distinct one-off labels, so the
+                field grouped nothing.
+
+                Options come from the server, already filtered to ACTIVE
+                subcategories of the selected section, so an archived one cannot
+                be newly assigned and a cross-section one is never offered. The
+                legacy label is shown read-only underneath: it is preserved in
+                the database, no backfill has run, and the public page still
+                falls back to it.
+              */}
               <div>
                 <label htmlFor="editor-subcategory" className="block text-[11px] font-semibold text-stone-600 uppercase tracking-wider mb-1">
                   Subcategory
                 </label>
-                <input id="editor-subcategory"
-                  type="text"
-                  value={subcategory}
-                  onChange={(e) => {
-                    setSubcategory(e.target.value);
-                    markDirty();
-                  }}
-                  placeholder="e.g. Roughstock, Arena Logistics, Ticketing..."
-                  className="w-full p-2 bg-stone-50 border border-stone-200 rounded-xs text-xs text-stone-800"
-                />
+                {(() => {
+                  const options = relationshipOptions.subcategoriesBySection[category] ?? [];
+                  // An article may point at an ARCHIVED subcategory. It is not in
+                  // `options`, so it is added here - otherwise saving an
+                  // unrelated field would silently drop the classification.
+                  const current = existingArticle?.subcategoryRef;
+                  const archivedCurrent =
+                    current && current.id === subcategoryId && !options.some((o) => o.id === current.id)
+                      ? current
+                      : null;
+                  return (
+                    <>
+                      <select id="editor-subcategory"
+                        value={subcategoryId}
+                        disabled={!category}
+                        onChange={(e) => { setSubcategoryId(e.target.value); setSectionChangeNotice(null); markDirty(); }}
+                        className="w-full p-2 bg-stone-50 border border-stone-200 rounded-xs text-xs text-stone-800 disabled:opacity-60"
+                      >
+                        <option value="">No subcategory</option>
+                        {archivedCurrent && (
+                          <option value={archivedCurrent.id}>{archivedCurrent.name} (archived)</option>
+                        )}
+                        {options.map((o) => (
+                          <option key={o.id} value={o.id}>{o.label}</option>
+                        ))}
+                      </select>
+                      {!category && (
+                        <p className="mt-1 text-[11px] text-stone-500">Choose a primary section first.</p>
+                      )}
+                      {category && options.length === 0 && !archivedCurrent && (
+                        <p className="mt-1 text-[11px] text-stone-500">
+                          {category} has no subcategories yet - add them in Editorial Organization.
+                        </p>
+                      )}
+                      {sectionChangeNotice && (
+                        <p className="mt-1 text-[11px] text-amber-700 bg-amber-50 border border-amber-200 rounded-xs px-2 py-1">
+                          {sectionChangeNotice}
+                        </p>
+                      )}
+                      {legacySubcategory && (
+                        <p className="mt-1 text-[11px] text-stone-500">
+                          Previous free-text label: <span className="font-mono text-stone-600">{legacySubcategory}</span>
+                          {' '}- kept on the record and still shown publicly until a managed subcategory is chosen.
+                        </p>
+                      )}
+                    </>
+                  );
+                })()}
               </div>
 
               <div>
@@ -1408,6 +1609,7 @@ export const AdminArticleEditorShell: React.FC<AdminArticleEditorShellProps> = (
       {previewOpen && (
         <ArticleDraftPreview
           article={currentArticleSnapshot}
+          articleTypes={typeSnapshot}
           onClose={() => setPreviewOpen(false)}
         />
       )}

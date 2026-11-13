@@ -79,6 +79,29 @@ async function readGroup<T>(key: string, fallback: T): Promise<T> {
   return { ...fallback, ...((row?.value as Partial<T> | undefined) ?? {}) };
 }
 
+/**
+ * Stage 03 (H-06) — the site's published name, for PUBLIC surfaces.
+ *
+ * `getSystemSettings` is gated by `system.config` because it returns operational
+ * configuration. The site NAME is not sensitive — it is printed on every page —
+ * so structured data reads it through this narrow accessor instead of being
+ * given administrator rights it does not need.
+ *
+ * `SystemSetting` has no draft/published split: the stored value IS the live
+ * one, so there is no draft branding to leak. A missing or blank value falls
+ * back to the shipped default, which is why `NFRGuide` remains the answer on a
+ * database that was never configured.
+ */
+export async function getPublicSiteName(): Promise<string> {
+  try {
+    const identity = await readGroup(SITE_IDENTITY_KEY, DEFAULT_SITE_IDENTITY);
+    return identity.siteName?.trim() || DEFAULT_SITE_IDENTITY.siteName;
+  } catch {
+    // Branding must never take down a public page.
+    return DEFAULT_SITE_IDENTITY.siteName;
+  }
+}
+
 export interface SystemSettings { siteIdentity: SiteIdentity; editorial: EditorialDefaults; rodeo: RodeoDefaults }
 export async function getSystemSettings(actor: Actor): Promise<SystemSettings> {
   need(actor, 'system.config');

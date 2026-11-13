@@ -16,6 +16,7 @@ interface LandingData {
   sectionMeta?: { name: string; tagline: string; description: string; path: string };
   sectionKey?: string;
   totalArticleCount?: number;
+  sectionHeroImage?: string | null;
 }
 
 function ld(data: Record<string, unknown>): LandingData {
@@ -36,8 +37,20 @@ export function LandingHeroBlock({ slot, data }: BlockProps) {
       tagline={meta.tagline}
       description={p('description') || meta.description}
       kicker={p('kicker', 'Primary Department')}
-      // Stage 04 Task D: previously declared in the registry and dropped here.
-      backgroundImageUrl={p('heroImageUrl')}
+      /*
+        Stage 04 Task D: previously declared in the registry and dropped here.
+
+        Stage 02 (H-04) — DETERMINISTIC PRECEDENCE, Builder first:
+          1. `landing-hero.heroImageUrl` — the Visual Builder property. When an
+             operator has set it, it wins, always. SectionConfig never overwrites
+             an explicitly configured Builder image.
+          2. `SectionConfig.heroImage` — the Settings field, which until now
+             saved and was read by nothing.
+          3. neither — the hero renders exactly as before, with no image.
+        The Settings value applies only where a `landing-hero` block exists in
+        the layout; it does not introduce a hero where the Builder placed none.
+      */
+      backgroundImageUrl={p('heroImageUrl') || d.sectionHeroImage || ''}
       breadcrumbs={[{ label: meta.name }]}
       statPills={pillsSlotVisible ? [
         { label: 'Published articles', value: String(d.totalArticleCount ?? 0) },

@@ -143,6 +143,48 @@ export async function loadSitemapCandidates(): Promise<SitemapCandidate[]> {
     });
   }
 
+  /**
+   * Stage 03 (R-1) — administrator-created category archives, conditionally.
+   *
+   * Stage 02 made a managed category usable and publicly reachable, but the
+   * sitemap still listed only the five foundational archives, so a real,
+   * populated section of the site was never offered to search engines.
+   *
+   * ELIGIBILITY — all of these, and nothing beyond them:
+   *   - the archive resolves (a `Category` row exists, which is what this list is);
+   *   - it holds at least one PUBLISHED article. `articles` is already filtered
+   *     by `publicArticleWhere()`, so drafts, archived and hidden fixtures are
+   *     excluded by construction — an empty or draft-only category produces no
+   *     entry;
+   *   - it is not one of the five canonical archives, which are pushed above.
+   *
+   * NO MINIMUM ARTICLE COUNT beyond "has published content" is invented here.
+   *
+   * EDITOR NOINDEX AND CANONICAL ARE NOT DECIDED HERE. `entity('CATEGORY', id)`
+   * attaches the stored `EntitySeo`, and the shared evaluator applies noindex,
+   * canonical ownership and URL de-duplication exactly as it does for every
+   * other family — so sitemap inclusion cannot override SEO Intelligence.
+   *
+   * COSTS NOTHING EXTRA: both `categories` and `articles` are already loaded.
+   */
+  const canonicalCategorySlugs = new Set(
+    sectionKeys.map((key) => slugifyCategory(PRIMARY_SECTIONS[key].categoryKey)),
+  );
+  const publishedCountBySlug = new Map<string, number>();
+  for (const a of articles) {
+    publishedCountBySlug.set(a.category.slug, (publishedCountBySlug.get(a.category.slug) ?? 0) + 1);
+  }
+  for (const cat of categories) {
+    if (canonicalCategorySlugs.has(cat.slug)) continue;
+    if ((publishedCountBySlug.get(cat.slug) ?? 0) === 0) continue;
+    out.push({
+      family: 'category',
+      subject: { path: `/categories/${cat.slug}/`, published: true, ...entity('CATEGORY', cat.id) },
+      lastModified: newestArticle((a) => a.category.slug === cat.slug),
+      changeFrequency: 'weekly', priority: 0.5,
+    });
+  }
+
   // Disciplines (no content-based noindex on the page)
   for (const d of disciplines) {
     out.push({ family: 'discipline', subject: { path: `/disciplines/${d.slug}/`, published: true, ...entity('DISCIPLINE', d.id) }, changeFrequency: 'monthly', priority: 0.6 });

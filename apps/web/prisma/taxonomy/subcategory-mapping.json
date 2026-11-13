@@ -1,0 +1,116 @@
+{
+  "version": 1,
+  "_readme": [
+    "Issue 04-C/04-D - the reviewed legacy-subcategory mapping.",
+    "",
+    "Every (categorySlug, legacyLabel) pair that exists in the database MUST appear",
+    "here with an explicit action. The backfill refuses to run on an unmapped label:",
+    "nothing is inferred, no slug is auto-suffixed, no legacy text is ever modified.",
+    "",
+    "  CREATE - make a managed Subcategory with the given name + slug and attach the article(s).",
+    "  MERGE  - attach the article(s) to an EXISTING managed Subcategory with the given slug.",
+    "  RETAIN - leave the article with its legacy label only. No managed assignment.",
+    "",
+    "APPROVAL GATE: `approval.status` must be exactly \"APPROVED\", with approvedBy and",
+    "approvedAt filled in, before the backfill will write anything. Until then every",
+    "run is a dry run, by refusal rather than by convention.",
+    "",
+    "The `recommendation` and `rationale` fields are the agent's proposal ONLY. They",
+    "carry no authority. See docs/PRODUCTION_STABILIZATION_ISSUE_04C_MAPPING.md."
+  ],
+  "approval": {
+    "status": "PENDING_OWNER_APPROVAL",
+    "approvedBy": null,
+    "approvedAt": null
+  },
+  "entries": [
+    {
+      "categorySlug": "nfr-competition",
+      "legacyLabel": "Championship Analysis",
+      "action": "RETAIN",
+      "note": "PROPOSED. Overlaps Article Type 'analysis' (this article's own type) and reads as a genre, not a topic. One article. See mapping doc C-1."
+    },
+    {
+      "categorySlug": "nfr-competition",
+      "legacyLabel": "Discipline Deep Dive",
+      "action": "RETAIN",
+      "note": "PROPOSED. Duplicates the Discipline axis, which already has its own pages and article links. One article. See mapping doc C-2."
+    },
+    {
+      "categorySlug": "nfr-competition",
+      "legacyLabel": "Scoring & Tactics",
+      "action": "CREATE",
+      "name": "Scoring & Tactics",
+      "slug": "scoring-tactics",
+      "description": "How events are judged and the tactics competitors use.",
+      "note": "PROPOSED. A durable, reusable topic distinct from every other axis. See mapping doc C-3."
+    },
+    {
+      "categorySlug": "nfr-entertainment",
+      "legacyLabel": "Concerts & Nightlife",
+      "action": "CREATE",
+      "name": "Concerts & Nightlife",
+      "slug": "concerts-nightlife",
+      "description": "Music residencies, after-parties and evening programming around the NFR.",
+      "note": "PROPOSED. The clearest recurring topic in this section. See mapping doc C-4."
+    },
+    {
+      "categorySlug": "nfr-events-shopping",
+      "legacyLabel": "Exhibition & Tack",
+      "action": "CREATE",
+      "name": "Exhibition & Tack",
+      "slug": "exhibition-tack",
+      "description": "Trade-show floors, vendors and western gear.",
+      "note": "PROPOSED. Names the section's core subject matter. See mapping doc C-5."
+    },
+    {
+      "categorySlug": "nfr-plan-watch",
+      "legacyLabel": "Accommodations",
+      "action": "CREATE",
+      "name": "Accommodations",
+      "slug": "accommodations",
+      "description": "Where to stay: hotels, resort corridors and districts.",
+      "note": "PROPOSED. See mapping doc C-6."
+    },
+    {
+      "categorySlug": "nfr-plan-watch",
+      "legacyLabel": "Broadcast Intelligence",
+      "action": "CREATE",
+      "name": "Watching & Broadcast",
+      "slug": "watching-broadcast",
+      "description": "Streaming, cable and how to follow the rounds.",
+      "note": "PROPOSED. Renamed from the house-style original to something a reader would recognise. See mapping doc C-7."
+    },
+    {
+      "categorySlug": "nfr-plan-watch",
+      "legacyLabel": "Spectator Strategy",
+      "action": "MERGE",
+      "slug": "visiting-las-vegas",
+      "note": "PROPOSED. Merges with 'Venue Navigation' into one visitor-logistics topic; requires C-9's CREATE to run first. See mapping doc C-8."
+    },
+    {
+      "categorySlug": "nfr-plan-watch",
+      "legacyLabel": "Tickets",
+      "action": "CREATE",
+      "name": "Tickets",
+      "slug": "tickets",
+      "description": "Buying, pricing and avoiding resale traps.",
+      "note": "PROPOSED. See mapping doc C-10."
+    },
+    {
+      "categorySlug": "nfr-plan-watch",
+      "legacyLabel": "Venue Navigation",
+      "action": "CREATE",
+      "name": "Visiting Las Vegas",
+      "slug": "visiting-las-vegas",
+      "description": "Getting around the arena and the city during finals week.",
+      "note": "PROPOSED. The CREATE half of the C-8/C-9 merge. See mapping doc C-9."
+    },
+    {
+      "categorySlug": "more-rodeo",
+      "legacyLabel": "Global Rodeo Hubs",
+      "action": "RETAIN",
+      "note": "PROPOSED. Duplicates the existing Rodeo Hub axis, which has its own entities and pages. One article. See mapping doc C-11."
+    }
+  ]
+}

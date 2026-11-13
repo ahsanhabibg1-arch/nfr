@@ -6,13 +6,21 @@ import { ArticleBody } from '../../editorial/ArticleBody';
 import { AuthorBio } from '../../editorial/AuthorBio';
 import { SourceList } from '../../editorial/SourceList';
 import { DisclosureBanner } from '../../editorial/DisclosureBanner';
+import { fallbackSnapshot, labelIn, type ArticleTypeSnapshot } from '../../../lib/content/articleTypeShape';
 
 interface ArticleDraftPreviewProps {
   article: Article;
   onClose: () => void;
+  /**
+   * Batch 04-E — managed Article Type definitions, forwarded by the editor
+   * shell. Omitted (an older caller, a test) falls back to the compiled-in
+   * compatibility vocabulary, which is what this preview showed before 04-E.
+   */
+  articleTypes?: ArticleTypeSnapshot;
 }
 
-export const ArticleDraftPreview: React.FC<ArticleDraftPreviewProps> = ({ article, onClose }) => {
+export const ArticleDraftPreview: React.FC<ArticleDraftPreviewProps> = ({ article, onClose, articleTypes }) => {
+  const typeSnapshot = articleTypes ?? fallbackSnapshot();
   const [viewport, setViewport] = useState<'desktop' | 'tablet' | 'mobile'>('desktop');
 
   const viewportWidthClass = {
@@ -89,7 +97,11 @@ export const ArticleDraftPreview: React.FC<ArticleDraftPreviewProps> = ({ articl
             <div className="flex items-center gap-2 text-xs font-mono text-[#8B5E3C] uppercase tracking-wider font-semibold">
               <span>{article.category}</span>
               <span>&bull;</span>
-              <span>{article.articleType || 'Feature'}</span>
+              {/* Batch 04-A: the literal 'Feature' here was a seventh vocabulary — a
+                  value absent from the registry, the dropdown and the database.
+                  The registry label is used, and an unknown value is shown as
+                  stored rather than replaced. */}
+              <span>{labelIn(typeSnapshot, article.articleType) || 'Unclassified'}</span>
               <span>&bull;</span>
               <span>{article.readTime || '4 min read'}</span>
             </div>

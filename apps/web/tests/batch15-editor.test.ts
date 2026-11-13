@@ -24,7 +24,13 @@ describe('Batch 15 — article editor demo cleanup (source guard)', () => {
   });
   it('no preselected demo category / subcategory / article type', () => {
     expect(editor).toContain("existingArticle?.category || ''");
-    expect(editor).toContain("existingArticle?.subcategory || ''");
+    /**
+     * Batch 04-B changed this contract deliberately: the free-text subcategory
+     * box became a managed selector, so the state is the subcategory's ID and
+     * the default is still "nothing preselected" — which is what this test is
+     * actually guarding.
+     */
+    expect(editor).toContain("existingArticle?.subcategoryRef?.id ?? ''");
     expect(editor).toContain("existingArticle?.articleType || ''");
     expect(editor).not.toMatch(/useState<PrimarySection>\(existingArticle\?\.category \|\| 'NFR Competition'\)/);
   });

@@ -82,7 +82,47 @@ export const ArticleInputSchema = z.object({
   imageSeoTitle: z.string().max(300).optional().default(''),
   imageAltText: z.string().max(600).optional().default(''),
   subcategory: z.string().max(120).optional().default(''),
-  articleType: z.string().max(80).default('General Information'),
+  /**
+   * Batch 04-B — the MANAGED subcategory, by id. `null`/absent means none.
+   * The legacy free-text `subcategory` above is preserved and is NEVER
+   * overwritten when a managed value is chosen: the two coexist during the
+   * transition, and the public mapper prefers the managed name.
+   */
+  subcategoryId: z.string().min(1).nullable().optional(),
+  /**
+   * Batch 04-A — validated against the authoritative registry.
+   *
+   * This was `z.string().max(80)`, i.e. anything at all, which is how six
+   * surfaces came to disagree about the vocabulary. It now accepts exactly the
+   * 18 selectable types plus the 5 recognised legacy values, so an untouched
+   * legacy article still saves while a typo or an invented value is refused.
+   *
+   * The check is EXACT, not case-insensitive, on purpose: the evergreen query
+   * is an exact SQL `IN`, so accepting a case variant would store something
+   * that passes validation and then never matches. See `isKnownArticleType`.
+   *
+   * `.default()` is unchanged, so an omitted field keeps its previous meaning.
+   */
+  /**
+   * Batch 04-E — SHAPE here, ASSIGNABILITY in `saveArticle`.
+   *
+   * The 04-A `.refine(isKnownArticleType)` was an exact match against the 23
+   * compiled-in values. Once an administrator can create a type, that check
+   * would reject the very types the CMS exists to add — a newly created value
+   * is not in the bundle. And the registry read is asynchronous, which a Zod
+   * `.refine()` on a `.parse()` (not `parseAsync`) cannot do; this schema is
+   * parsed synchronously in three places, one of them revision restore, where
+   * a historical value must be accepted unconditionally.
+   *
+   * So the schema enforces only what is true of any stored value, and
+   * `assertArticleTypeAssignable` below enforces the vocabulary against the
+   * managed registry at the single write boundary that matters.
+   */
+  articleType: z
+    .string()
+    .max(80)
+    .default('General Information')
+    .refine((s) => s.trim().length > 0, { message: 'Choose an article type.' }),
   categoryName: z.string().min(1),
   authorName: z.string().min(1),
   authorRole: z.string().optional().default('Staff Writer'),
@@ -337,6 +377,41 @@ async function writeChildren(
   });
 }
 
+/**
+ * Batch 04-B — a managed subcategory must belong to the article's own section.
+ *
+ * The composite foreign key `Article(categoryId, subcategoryId) ->
+ * Subcategory(categoryId, id)` already makes a cross-section assignment
+ * impossible at the database level. This check runs first so the editor reads a
+ * sentence naming both sections instead of a Postgres constraint, and so the
+ * transaction fails before anything else is written.
+ *
+ * Archived subcategories are accepted HERE on purpose: an article that already
+ * points at one must stay editable, and saving unrelated fields must not drop
+ * its classification. Archiving withdraws a subcategory from the editor's
+ * options (`listAssignableSubcategories`), not from articles already using it.
+ */
+async function assertSubcategoryInCategory(
+  tx: Prisma.TransactionClient,
+  categoryId: string,
+  subcategoryId: string | null,
+): Promise<void> {
+  if (!subcategoryId) return;
+  const sub = await tx.subcategory.findUnique({
+    where: { id: subcategoryId },
+    select: { categoryId: true, name: true, category: { select: { name: true } } },
+  });
+  if (!sub) throw new ServiceError('validation', 'That subcategory no longer exists.', { field: 'subcategoryId' });
+  if (sub.categoryId !== categoryId) {
+    const target = await tx.category.findUnique({ where: { id: categoryId }, select: { name: true } });
+    throw new ServiceError(
+      'validation',
+      `The subcategory "${sub.name}" belongs to ${sub.category.name}, not ${target?.name ?? 'this section'}. Clear it or choose one from this section.`,
+      { field: 'subcategoryId' },
+    );
+  }
+}
+
 function scalarData(v: ParsedInput) {
   return {
     slug: v.slug,
@@ -344,6 +419,9 @@ function scalarData(v: ParsedInput) {
     deck: v.deck || null,
     excerpt: v.excerpt,
     subcategory: v.subcategory || null,
+    // Batch 04-B: `undefined` would leave the column untouched on update, which
+    // is wrong for a field the editor always submits — an explicit null clears.
+    subcategoryId: v.subcategoryId ?? null,
     articleType: v.articleType,
     readTime: `${Math.max(1, Math.ceil(v.blocks.reduce<number>((a, b) => a + ((b as { text?: string }).text || '').split(/\s+/).length, 0) / 225))} min read`,
     heroImageUrl: v.heroImage || null,
@@ -407,6 +485,7 @@ async function loadArticleInput(articleId: string): Promise<ParsedInput | null> 
     id: a.id, slug: a.slug, title: a.title, deck: a.deck ?? '', excerpt: a.excerpt,
     blocks: a.blocks.map((b) => b.data), seoTitle: a.seo?.seoTitle ?? '', metaDescription: a.seo?.metaDescription ?? '',
     imageSeoTitle: a.imageSeoTitle ?? '', imageAltText: a.imageAltText ?? '', subcategory: a.subcategory ?? '',
+    subcategoryId: a.subcategoryId ?? null,
     articleType: a.articleType, categoryName: a.category.name, authorName: a.author.name, authorRole: a.author.role ?? undefined,
     heroImage: a.heroImageUrl ?? '', imageCredit: a.imageCredit ?? '', imageCaption: a.imageCaption ?? '',
     imageRightsStatus: RIGHTS_LABEL[a.imageRightsStatus], disclosure: a.disclosureType, disclosureNote: a.disclosureNote ?? '',
@@ -482,6 +561,7 @@ async function persistArticle(
     if (clash) throw new ServiceError('conflict', `The slug "${v.slug}" is already used by another article.`, { field: 'slug' });
 
     const categoryId = await resolveCategoryId(tx, v.categoryName);
+    await assertSubcategoryInCategory(tx, categoryId, v.subcategoryId ?? null);
     const authorId = await resolveAuthorId(tx, v.authorName, v.authorRole);
     const rel = await resolveRelationships(tx, v);
     await resolveSources(tx, v);
@@ -530,14 +610,53 @@ async function persistArticle(
   });
 }
 
+/**
+ * Batch 04-E — the article-type write boundary.
+ *
+ * Two rules, and the second one is the point:
+ *
+ *  1. A NEW assignment must be ASSIGNABLE: recognised, selectable and not
+ *     archived. Deactivating a type therefore stops new classification
+ *     immediately, server-side, whatever the form offered.
+ *
+ *  2. KEEPING the value the article already stores is always allowed. Without
+ *     this, deactivating or archiving a type would make every article of that
+ *     type unsavable — a title fix on a published `guide` article would fail
+ *     because of a taxonomy decision taken elsewhere. Lifecycle governs new
+ *     classification; it must never hold existing work hostage, and it must
+ *     never silently substitute a different type either.
+ *
+ * `current` is the value stored right now (`null` when creating).
+ */
+async function assertArticleTypeAssignable(value: string, current: string | null): Promise<void> {
+  if (current !== null && value === current) return;
+  const { isAssignableArticleType, isStorableArticleType } = await import('./articleTypeRegistry');
+  if (await isAssignableArticleType(value)) return;
+  if (await isStorableArticleType(value)) {
+    throw new ServiceError(
+      'validation',
+      `"${value}" is no longer offered for new classification. Choose a current article type, or leave this article's existing type unchanged.`,
+    );
+  }
+  throw new ServiceError(
+    'validation',
+    'Unrecognised article type. Choose one of the current editorial typologies.',
+  );
+}
+
 /** Create or update an article (draft-safe; never auto-publishes). */
 export async function saveArticle(actor: ActorContext, rawInput: ArticleInput): Promise<SaveResult> {
   const v = ArticleInputSchema.parse(rawInput);
   if (!v.id) {
     assert(actor, 'article.create');
+    await assertArticleTypeAssignable(v.articleType, null);
     return persistArticle(actor, null, v, { summary: 'Created article', action: 'article.create' });
   }
   const existing = await loadEditable(actor, v.id);
+  // Read the stored type separately: `EditableRow` is the shape `persistArticle`
+  // consumes and is deliberately not widened for a validation-only field.
+  const stored = await prisma.article.findUnique({ where: { id: v.id }, select: { articleType: true } });
+  await assertArticleTypeAssignable(v.articleType, stored?.articleType ?? null);
   if (typeof v.expectedVersion === 'number' && v.expectedVersion !== existing.version) {
     throw new ServiceError('conflict', 'This article was changed by someone else. Reload and reapply your edits.');
   }

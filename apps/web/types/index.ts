@@ -3,7 +3,23 @@
  * Phase 0 Prompt 02: Editorial Page System, Dedicated Templates & Routing Foundation
  */
 
-export type PrimarySection = 
+import type { DisciplineClassification } from '../lib/content/disciplineClassifications';
+
+/**
+ * The five FOUNDATIONAL primary sections.
+ *
+ * Stage 02 (H-01): this is no longer the type of `Article.category`. Categories
+ * are administrator-creatable, so the set of valid values is database state and
+ * a compiled-in union could not describe it — a union missing a category an
+ * administrator created makes legitimate data a type error and invites casts
+ * that hide real mistakes (the same reasoning that widened `ArticleType` in
+ * Batch 04-E).
+ *
+ * It remains exported, unchanged, because the five canonical sections keep
+ * their own routes, navigation, EntitySeo ids and sitemap entries, and plenty
+ * of code legitimately means *these five* rather than "any category".
+ */
+export type PrimarySection =
   | 'NFR Competition'
   | 'NFR Entertainment'
   | 'NFR Events & Shopping'
@@ -14,7 +30,16 @@ export type ArticleStatus = 'published' | 'draft' | 'archived' | 'in_review' | '
 
 export type ArticleWorkflowStatus = 'draft' | 'in_review' | 'approved' | 'scheduled' | 'published' | 'archived';
 
-export type ArticleType = 
+/**
+ * The COMPATIBILITY article-type vocabulary: the 18 selectable typologies plus
+ * the 5 recognised legacy values that this release ships with and bootstraps
+ * the managed `ArticleType` table from (Batch 04-A, 04-E).
+ *
+ * It is no longer the type of `Article.articleType` — administrators can create
+ * types, so stored values are database state. Use it where the compiled-in set
+ * is genuinely what is meant (the bootstrap definitions, the fallback registry).
+ */
+export type ArticleType =
   | 'News'
   | 'Event Update'
   | 'Event Guide'
@@ -111,9 +136,39 @@ export interface Article {
   excerpt?: string; // Concise summary
   content: string[]; // Editorial paragraphs (preserved for backward compatibility)
   structuredBody?: ContentBlock[]; // Rich structured blocks
-  category: PrimarySection;
+  /**
+   * The article's primary section, as the managed `Category` record names it.
+   *
+   * Stage 02 (H-01): widened from `PrimarySection` to `string` so an
+   * administrator-created category is representable. The five foundational
+   * sections are still exactly the values `PrimarySection` lists; validation of
+   * what may actually be stored happens server-side in `resolveCategoryId`,
+   * which looks the name up in the database and refuses an unknown one.
+   */
+  category: string;
+  /**
+   * Stage 03 (R-3) — the category's URL slug, carried from the same join that
+   * already supplies the name. Breadcrumbs need it to link a non-canonical
+   * category to `/categories/<slug>/` instead of guessing, and taking it from
+   * the existing `include` costs no extra query.
+   */
+  categorySlug?: string;
   subcategory?: string;
-  articleType?: ArticleType;
+  /**
+   * Batch 04-E — the STORED article type, as a plain string.
+   *
+   * It was the `ArticleType` union below. Once administrators can create types
+   * (Batch 04-E), the set of valid values is database state, so a compiled-in
+   * union could no longer describe it — and a union that is missing values an
+   * administrator has created is worse than no union: it makes legitimate data
+   * a type error and invites casts that hide real mistakes.
+   *
+   * `ArticleType` is still exported, unchanged, as the compatibility vocabulary
+   * (the 18 selectable + 5 legacy values this release ships and bootstraps
+   * with). Validation of what may actually be stored is enforced at the write
+   * boundary in `saveArticle`, against the managed registry.
+   */
+  articleType?: string;
   status?: ArticleStatus;
   workflowStatus?: ArticleWorkflowStatus;
   readTime: string;
@@ -129,6 +184,17 @@ export interface Article {
   imageSeoTitle?: string;
   imageAltText?: string;
   imageCaption?: string;
+  /**
+   * Batch 04-B — the managed subcategory, when one is assigned.
+   *
+   * `subcategory` above stays the DISPLAY label and already resolves
+   * `managed ?? legacy` in `toArticle`, so every existing consumer keeps
+   * working untouched. These two exist for the cases that need to tell them
+   * apart: an editor showing the legacy value as context, and a future
+   * subcategory route needing the id/slug.
+   */
+  subcategoryRef?: { id: string; name: string; slug: string };
+  legacySubcategory?: string;
   /**
    * MED-01B/C — hero image metadata RESOLVED on the server (`lib/mappers.ts`
    * via `lib/media/imageMeta.ts`). Components render these instead of
@@ -177,7 +243,20 @@ export interface Discipline {
   name: string;
   shortName: string;
   slug: string;
-  category: 'Roughstock' | 'Timed Event';
+  /**
+   * LEGACY classification text, preserved. Still populated and still used as
+   * the fallback when the managed vocabulary is unavailable; `classification`
+   * below is the authority when present. NOT the editorial section taxonomy,
+   * which is administrator-owned `Category` rows.
+   */
+  category: DisciplineClassification;
+  /**
+   * Batch 05 — the MANAGED classification. Carries a stable `id`, so the public
+   * filter groups by identity rather than by a mutable display label and a
+   * rename cannot break it. Null when unclassified or when the managed table is
+   * unavailable.
+   */
+  classification?: { id: string; name: string; pluralName: string } | null;
   tagline: string;
   summary: string;
   introduction?: string;
@@ -195,6 +274,17 @@ export interface Discipline {
   image: string;
   imageCredit: string;
   relatedArticleSlugs?: string[];
+  /**
+   * Issue 03 — hero metadata resolved on the server from the Media Library
+   * asset behind `image`, exactly as the article hero does (MED-01B). The
+   * component renders these and derives nothing.
+   */
+  imageAlt?: string;
+  imageAltSource?: 'usage' | 'article' | 'media' | 'fallback';
+  imageCaption?: string;
+  imageSrcSet?: string;
+  imageWidth?: number;
+  imageHeight?: number;
 }
 
 export interface QuickLinkItem {

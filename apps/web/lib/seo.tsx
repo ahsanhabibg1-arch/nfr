@@ -14,6 +14,7 @@ import type { Metadata } from 'next';
 import { Article, Discipline } from '../types';
 import { INDEX_FOLLOW, LEGACY_NOINDEX, type RobotsPolicy } from './seo/robots';
 import { PRODUCTION_SITE_URL } from './seo/canonical';
+import { ARTICLE_TYPES, isNewsType } from './content/articleTypes';
 
 export const SITE_URL = (
   process.env.NEXT_PUBLIC_SITE_URL || PRODUCTION_SITE_URL
@@ -108,16 +109,76 @@ export function buildMetadata({
  * Article types that are time-bound news reporting and therefore NewsArticle (owner
  * decision D2, Batch A). Every other editorial type is a general Article.
  */
-export const NEWS_ARTICLE_TYPES: ReadonlySet<string> = new Set(['news', 'event update']);
+/**
+ * Batch 04-A — kept as an export for compatibility, now DERIVED from the
+ * authoritative registry so it cannot drift from the editor's vocabulary.
+ *
+ * The membership is unchanged: `news`, `event update` (and therefore `News` and
+ * `Event Update`, since the comparison lower-cases). Structured data on live
+ * pages is deliberately untouched by this batch.
+ */
+export const NEWS_ARTICLE_TYPES: ReadonlySet<string> = new Set(
+  ARTICLE_TYPES.filter((t) => t.news).map((t) => t.value.toLowerCase()),
+);
 
+/**
+ * Batch 04-A — delegates to the registry so the editor's vocabulary and the
+ * structured-data decision cannot diverge. Behaviour is identical: still
+ * case-insensitive, still exactly `News` / `Event Update` / legacy `news`.
+ */
 export function isNewsArticleType(articleType: string | null | undefined): boolean {
-  return NEWS_ARTICLE_TYPES.has((articleType ?? '').trim().toLowerCase());
+  return isNewsType(articleType);
 }
 
-export function articleJsonLd(article: Article): Record<string, unknown> {
+/**
+ * Batch 04-E — how a MANAGED classification reaches this synchronous builder.
+ *
+ * This module is isomorphic and every function in it is synchronous, and four
+ * existing suites pin those signatures. Rather than make the SEO layer async
+ * (and with it every caller, including client-reachable code), the server
+ * resolves the classification and passes it in.
+ *
+ * `schemaType` omitted → the in-repository compatibility registry decides,
+ * which is exactly today's behaviour. So a caller that has not been updated,
+ * a test, or a deploy running ahead of its migration all keep working.
+ *
+ * It can only ever be one of the two supported classifications, and anything
+ * unrecognised resolves to `Article`: a page must never be able to claim
+ * `NewsArticle` because a definition was missing.
+ */
+/**
+ * Stage 03 (H-06) — the shipped publisher name.
+ *
+ * Kept as the fallback for every structured-data builder: a page rendered
+ * before the setting exists, a caller that passes nothing, or a failed read
+ * all still declare a publisher rather than omitting one.
+ */
+export const DEFAULT_PUBLISHER_NAME = 'NFRGuide';
+
+export interface ArticleJsonLdOptions {
+  schemaType?: 'Article' | 'NewsArticle';
+  /**
+   * Stage 03 (H-06) — the publisher name, resolved from the administrator's
+   * site identity by the Server Component that renders the page.
+   *
+   * Passed in rather than read here for the same reason `schemaType` is: these
+   * builders are synchronous and isomorphic, and four suites pin that. Omitted
+   * or blank keeps `DEFAULT_PUBLISHER_NAME`, which is the behaviour that
+   * shipped, so no caller breaks and no page loses its publisher.
+   */
+  publisherName?: string;
+}
+
+function resolveSchemaType(article: Article, opts?: ArticleJsonLdOptions): 'Article' | 'NewsArticle' {
+  if (opts?.schemaType === 'NewsArticle') return 'NewsArticle';
+  if (opts?.schemaType === 'Article') return 'Article';
+  return isNewsArticleType(article.articleType) ? 'NewsArticle' : 'Article';
+}
+
+export function articleJsonLd(article: Article, opts?: ArticleJsonLdOptions): Record<string, unknown> {
   return {
     '@context': 'https://schema.org',
-    '@type': isNewsArticleType(article.articleType) ? 'NewsArticle' : 'Article',
+    '@type': resolveSchemaType(article, opts),
     headline: article.title,
     description: article.deck || article.excerpt,
     image: absolute(article.heroImage),
@@ -130,7 +191,9 @@ export function articleJsonLd(article: Article): Record<string, unknown> {
     },
     publisher: {
       '@type': 'Organization',
-      name: 'NFRGuide',
+      // Stage 03 (H-06): the administrator's site name when the page resolved
+      // one; the shipped default otherwise. Author identity is separate above.
+      name: opts?.publisherName?.trim() || DEFAULT_PUBLISHER_NAME,
       url: SITE_URL,
     },
     articleSection: article.category,
@@ -138,7 +201,10 @@ export function articleJsonLd(article: Article): Record<string, unknown> {
   };
 }
 
-export function disciplineJsonLd(discipline: Discipline): Record<string, unknown> {
+export function disciplineJsonLd(
+  discipline: Discipline,
+  opts?: { publisherName?: string },
+): Record<string, unknown> {
   return {
     '@context': 'https://schema.org',
     '@type': 'Article',
@@ -147,7 +213,7 @@ export function disciplineJsonLd(discipline: Discipline): Record<string, unknown
     image: absolute(discipline.image),
     publisher: {
       '@type': 'Organization',
-      name: 'NFRGuide',
+      name: opts?.publisherName?.trim() || DEFAULT_PUBLISHER_NAME,
       url: SITE_URL,
     },
     mainEntityOfPage: `${SITE_URL}/disciplines/${discipline.slug}/`,

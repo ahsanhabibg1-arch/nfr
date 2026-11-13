@@ -18,14 +18,50 @@ import {
 import type { RodeoEntityKind } from '../../lib/cms/rodeoService';
 import type { DependencySnapshot } from '../../lib/cms/rodeoDependencies';
 import { normalizeSlug, slugShapeError } from '../../lib/cms/slugRules';
+import {
+  DISCIPLINE_CLASSIFICATIONS,
+  DISCIPLINE_CLASSIFICATION_HELP,
+  isDisciplineClassification,
+} from '../../lib/content/disciplineClassifications';
+import type { ClassificationRow, PublicClassification } from '../../lib/cms/disciplineClassificationService';
+import {
+  createClassificationAction, updateClassificationAction,
+  setClassificationActiveAction, reorderClassificationsAction,
+  deleteClassificationAction, bootstrapClassificationsAction,
+} from '../../app/admin/discipline-classification-actions';
+
+/**
+ * The id order produced by moving row `i` one step in `dir`.
+ *
+ * Reorder sends the WHOLE order rather than a single index, so the server never
+ * has to infer neighbours from a stale view.
+ */
+function moveId(rows: { id: string }[], i: number, dir: -1 | 1): string[] {
+  const ids = rows.map((r) => r.id);
+  const j = i + dir;
+  if (j < 0 || j >= ids.length) return ids;
+  [ids[i], ids[j]] = [ids[j], ids[i]];
+  return ids;
+}
 
 interface Props {
   hubs: HubRow[]; events: EventRow[]; editions: EditionRow[]; venues: VenueRow[]; disciplines: DisciplineRef[];
   eventOptions: { id: string; name: string }[]; venueOptions: { id: string; name: string }[];
   canManage: boolean;
+  /** Batch 05 — managed classifications, all states; the tab filters them. */
+  classifications?: ClassificationRow[];
+  /** Offered for a NEW assignment (active only). */
+  assignableClassifications?: PublicClassification[];
+  /**
+   * `'absent'` means the table does not exist (migration not applied) and
+   * `'not-initialised'` that it exists but holds no rows. In both cases the tab
+   * says so and the discipline form falls back to the compatibility vocabulary,
+   * rather than offering an empty dropdown.
+   */
+  classificationState?: 'database' | 'not-initialised' | 'absent';
 }
 
-type Tab = 'hubs' | 'events' | 'editions' | 'venues' | 'disciplines';
+type Tab = 'hubs' | 'events' | 'editions' | 'venues' | 'disciplines' | 'classifications';
 const btn = 'px-3 py-1.5 bg-[#0F1115] text-[#D4A757] text-xs font-semibold rounded-xs';
 const inp = 'w-full p-2 bg-stone-50 border border-stone-200 rounded-xs';
 const lbl = 'block text-[10px] font-mono uppercase text-stone-500 mb-1';
@@ -34,7 +70,10 @@ const Field: React.FC<{ label: string; children: React.ReactNode }> = ({ label, 
   <div><label className={lbl}>{label}</label>{children}</div>
 );
 
-export const AdminRodeoCoveragePage: React.FC<Props> = ({ hubs, events, editions, venues, disciplines, eventOptions, venueOptions, canManage }) => {
+export const AdminRodeoCoveragePage: React.FC<Props> = ({
+  hubs, events, editions, venues, disciplines, eventOptions, venueOptions, canManage,
+  classifications = [], assignableClassifications = [], classificationState = 'absent',
+}) => {
   const router = useRouter();
   const [tab, setTab] = useState<Tab>('hubs');
   const [isPending, startTransition] = useTransition();
@@ -50,7 +89,46 @@ export const AdminRodeoCoveragePage: React.FC<Props> = ({ hubs, events, editions
   const [ev, setEv] = useState({ name: '', location: '', status: '', organizerName: '', description: '', isFlagship: false });
   const [ed, setEd] = useState({ eventId: '', editionSlug: '', label: '', year: '', purseBenchmark: '', venueId: '' });
   const [ven, setVen] = useState({ name: '', city: '', state: '', country: '' });
-  const [disc, setDisc] = useState({ name: '', summary: '', shortName: '', category: '', tagline: '' });
+  const [disc, setDisc] = useState({ name: '', summary: '', shortName: '', category: '', classificationId: '', tagline: '' });
+
+  /**
+   * Batch 05 — classification tab state.
+   *
+   * `value` is shown but not editable when editing: it is the immutable machine
+   * identity, and the form must not suggest otherwise.
+   */
+  const [cls, setCls] = useState({ name: '', pluralName: '', description: '', sortOrder: '' });
+  const [clsEditId, setClsEditId] = useState<string | null>(null);
+  const [clsShowInactive, setClsShowInactive] = useState(false);
+  const openClsCreate = () => {
+    setClsEditId(null);
+    setCls({ name: '', pluralName: '', description: '', sortOrder: '' });
+    setModal('classifications');
+  };
+  const openClsEdit = (c: ClassificationRow) => {
+    setClsEditId(c.id);
+    setCls({
+      name: c.name,
+      pluralName: c.pluralName ?? '',
+      description: c.description ?? '',
+      sortOrder: String(c.sortOrder),
+    });
+    setModal('classifications');
+  };
+  const submitCls = () => {
+    const payload = {
+      name: cls.name,
+      pluralName: cls.pluralName || undefined,
+      description: cls.description || undefined,
+      sortOrder: cls.sortOrder === '' ? undefined : Number(cls.sortOrder),
+    };
+    run(
+      clsEditId ? updateClassificationAction(clsEditId, payload) : createClassificationAction(payload),
+      clsEditId ? 'Classification updated.' : 'Classification created.',
+    );
+    setModal(null);
+  };
+  const visibleCls = classifications.filter((c) => clsShowInactive || c.active);
 
   /**
    * Lifecycle filter + free-text search.
@@ -178,7 +256,7 @@ export const AdminRodeoCoveragePage: React.FC<Props> = ({ hubs, events, editions
    * Landing SEO, which already owns that editor — building a second one here
    * would be exactly the duplicate-editor problem this audit set out to avoid.
    */
-  const openDiscipline = () => { setEditId(null); setDisc({ name: '', summary: '', shortName: '', category: '', tagline: '' }); setModal('disciplines'); };
+  const openDiscipline = () => { setEditId(null); setDisc({ name: '', summary: '', shortName: '', category: '', classificationId: '', tagline: '' }); setModal('disciplines'); };
   const close = () => { setModal(null); setEditId(null); };
 
   const save = () => startTransition(async () => {
@@ -194,7 +272,15 @@ export const AdminRodeoCoveragePage: React.FC<Props> = ({ hubs, events, editions
         name: disc.name,
         summary: disc.summary,
         shortName: disc.shortName || undefined,
-        category: (disc.category || undefined) as 'Roughstock' | 'Timed Event' | undefined,
+        /**
+         * Whichever route the dropdown above actually used. A managed id is
+         * preferred and sent alone; the legacy text is narrowed by the shared
+         * guard rather than asserted with a cast, so blank (the "—" option)
+         * sends nothing and only a real classification is sent.
+         */
+        ...(disc.classificationId
+          ? { classificationId: disc.classificationId }
+          : { category: isDisciplineClassification(disc.category) ? disc.category : undefined }),
         tagline: disc.tagline || undefined,
       });
     } else return;
@@ -207,6 +293,7 @@ export const AdminRodeoCoveragePage: React.FC<Props> = ({ hubs, events, editions
     { id: 'editions', label: 'Editions', count: editions.length },
     { id: 'venues', label: 'Venues', count: venues.length },
     { id: 'disciplines', label: 'Disciplines', count: disciplines.length },
+    { id: 'classifications', label: 'Classifications', count: classifications.filter((c) => c.active).length },
   ];
 
   return (
@@ -375,6 +462,158 @@ export const AdminRodeoCoveragePage: React.FC<Props> = ({ hubs, events, editions
             be deleted once nothing references them, but note that a re-run of the database seed recreates them.
           </p>
         </div>
+      )}
+
+      {tab === 'classifications' && (
+        <div className="space-y-3">
+          <p className="text-[11px] text-stone-500 max-w-3xl">
+            How a discipline is <strong>contested</strong> &mdash; Roughstock (judged rides on bucking stock) or
+            Timed Event (fastest time). These are <em>not</em> the five editorial sections in Editorial
+            Organization: those organise <strong>articles</strong>, these classify <strong>disciplines</strong>.
+            The public Competition page filters readers on whatever is listed here.
+          </p>
+
+          {classificationState === 'absent' && (
+            <div className="bg-amber-50 border border-amber-200 rounded-xs p-3 text-[11px] text-amber-900 space-y-1">
+              <p><strong>The managed classification table does not exist yet.</strong> This environment is still
+                running on the two compatibility definitions (Roughstock, Timed Event), which is exactly how it
+                behaved before this feature &mdash; nothing is broken, and nothing here is editable.</p>
+              <p className="font-mono">Apply migration 20261113200000_add_managed_discipline_classification, then reload.</p>
+            </div>
+          )}
+
+          {classificationState === 'not-initialised' && (
+            <div className="bg-amber-50 border border-amber-200 rounded-xs p-3 text-[11px] text-amber-900 space-y-2">
+              <p><strong>The registry is empty.</strong> The table exists but holds no classifications, so the
+                application is using the two compatibility definitions. Initialising creates them as real records
+                and attaches the disciplines that already carry the matching text.</p>
+              {canManage && (
+                <button onClick={() => run(bootstrapClassificationsAction(true), 'Classifications initialised.')} className={btn}>
+                  Initialise from the existing values
+                </button>
+              )}
+            </div>
+          )}
+
+          <div className="flex flex-wrap items-center gap-3">
+            <label className="flex items-center gap-1.5 text-[11px] text-stone-600">
+              <input type="checkbox" checked={clsShowInactive} onChange={(e) => setClsShowInactive(e.target.checked)} />
+              Show inactive
+            </label>
+            {canManage && classificationState === 'database' && (
+              <button onClick={openClsCreate} className={`${btn} ml-auto`}>+ Add Classification</button>
+            )}
+          </div>
+
+          <Table head={['Identity', 'Name', 'Public filter label', 'Order', 'State', 'Disciplines', '']}>
+            {visibleCls.map((c, i) => (
+              <tr key={c.id} className={`hover:bg-stone-50/60 ${c.active ? '' : 'opacity-60'}`}>
+                <td className={`${th} font-mono text-[11px] text-stone-700`}>{c.value}</td>
+                <td className={`${th} font-semibold text-stone-900`}>{c.name}</td>
+                <td className={`${th} text-stone-600`}>{c.pluralName?.trim() || c.name}</td>
+                <td className={`${th} text-stone-600`}>{c.sortOrder}</td>
+                <td className={th}>
+                  {c.active
+                    ? <span className="text-[9px] font-mono px-1 rounded border bg-emerald-50 border-emerald-200 text-emerald-700">ACTIVE</span>
+                    : <span className="text-[9px] font-mono px-1 rounded border bg-amber-50 border-amber-200 text-amber-700">INACTIVE</span>}
+                </td>
+                <td className={`${th} text-right font-mono text-stone-600`}>{c.disciplineCount}</td>
+                <td className="py-2.5 px-4 text-right space-x-2 whitespace-nowrap">
+                  {canManage ? <>
+                    <button onClick={() => openClsEdit(c)} className="text-[#8B5E3C] hover:underline font-bold">Edit</button>
+                    <button
+                      onClick={() => run(setClassificationActiveAction(c.id, !c.active), c.active ? 'Withdrawn from new assignment.' : 'Offered for new assignment.')}
+                      className="text-stone-600 hover:underline"
+                    >
+                      {c.active ? 'Deactivate' : 'Activate'}
+                    </button>
+                    <button
+                      onClick={() => run(reorderClassificationsAction(moveId(visibleCls, i, -1)), 'Order updated.')}
+                      disabled={i === 0}
+                      className="text-stone-500 hover:underline disabled:opacity-30"
+                      title="Move up"
+                    >↑</button>
+                    <button
+                      onClick={() => run(reorderClassificationsAction(moveId(visibleCls, i, 1)), 'Order updated.')}
+                      disabled={i === visibleCls.length - 1}
+                      className="text-stone-500 hover:underline disabled:opacity-30"
+                      title="Move down"
+                    >↓</button>
+                    {/*
+                      Offered only when nothing references it. The service
+                      re-counts and refuses otherwise, and PostgreSQL's
+                      ON DELETE RESTRICT refuses it a second time, so the button
+                      never promises an operation the backend would reject.
+                    */}
+                    {c.disciplineCount === 0 && (
+                      <button
+                        onClick={() => { if (confirm(`Delete "${c.name}" permanently? Deactivating keeps it out of new assignment without removing the record.`)) run(deleteClassificationAction(c.id), 'Classification deleted.'); }}
+                        className="text-rose-600 hover:underline"
+                      >Delete</button>
+                    )}
+                  </> : <span className="text-stone-400">read-only</span>}
+                </td>
+              </tr>
+            ))}
+          </Table>
+          <p className="text-[11px] text-stone-400">
+            The <span className="font-mono">Identity</span> column is the permanent machine value. It is set once and
+            cannot be edited, which is what lets a classification be renamed without orphaning the disciplines that
+            use it. A classification still used by a discipline cannot be deleted &mdash; deactivate it instead.
+          </p>
+        </div>
+      )}
+
+      {modal === 'classifications' && (
+        <AdminModal
+          isOpen
+          onClose={() => setModal(null)}
+          title={clsEditId ? 'Edit Classification' : 'Add Classification'}
+          footerActions={<ModalFooter onClose={() => setModal(null)} onSave={submitCls} pending={isPending} />}
+        >
+          {/*
+            These fields use explicit `htmlFor`/`id` rather than the local
+            `Field` helper, which renders a bare <label> with no association —
+            so its inputs have no accessible name and cannot be found by their
+            visible label. The helper is used by the older modals and is left
+            alone here; the new dialog is built associated from the start.
+          */}
+          <div className="space-y-3 text-xs font-sans">
+            <div>
+              <label className={lbl} htmlFor="cls-name">Name</label>
+              <input id="cls-name" value={cls.name} onChange={(e) => setCls({ ...cls, name: e.target.value })} className={inp} />
+            </div>
+            {clsEditId ? (
+              <p className="text-[11px] text-stone-500">
+                The permanent identity cannot be changed. Renaming here updates every surface that displays this
+                classification; the disciplines using it are unaffected.
+              </p>
+            ) : (
+              <p className="text-[11px] text-stone-500">
+                The permanent machine identity is taken from the name at creation and can never be changed
+                afterwards, so choose the name carefully.
+              </p>
+            )}
+            <div>
+              <label className={lbl} htmlFor="cls-plural">Public filter label (optional)</label>
+              <input
+                id="cls-plural"
+                value={cls.pluralName}
+                onChange={(e) => setCls({ ...cls, pluralName: e.target.value })}
+                className={inp}
+                placeholder="Plural wording for the Competition filter, e.g. Timed Events"
+              />
+            </div>
+            <div>
+              <label className={lbl} htmlFor="cls-description">Description (optional)</label>
+              <textarea id="cls-description" rows={2} value={cls.description} onChange={(e) => setCls({ ...cls, description: e.target.value })} className={inp} />
+            </div>
+            <div>
+              <label className={lbl} htmlFor="cls-order">Display order (optional)</label>
+              <input id="cls-order" type="number" min={0} value={cls.sortOrder} onChange={(e) => setCls({ ...cls, sortOrder: e.target.value })} className={inp} />
+            </div>
+          </div>
+        </AdminModal>
       )}
 
       {modal === 'hubs' && (
@@ -609,13 +848,42 @@ export const AdminRodeoCoveragePage: React.FC<Props> = ({ hubs, events, editions
             <Field label="Short name (optional)">
               <input value={disc.shortName} onChange={(e) => setDisc({ ...disc, shortName: e.target.value })} className={inp} />
             </Field>
-            <Field label="Category (optional)">
-              <select value={disc.category} onChange={(e) => setDisc({ ...disc, category: e.target.value })} className={inp}>
-                <option value="">—</option>
-                <option value="Roughstock">Roughstock</option>
-                <option value="Timed Event">Timed Event</option>
-              </select>
+            {/*
+              Labelled "Classification", not "Category". The field writes
+              `Discipline.category`, which is how the event is CONTESTED — it is
+              unrelated to the five editorial Category rows managed in Editorial
+              Organization, and calling both "Category" is what made the two
+              look like one setting. The database field keeps its name; only the
+              visible label and the help text changed.
+            */}
+            {/*
+              Batch 05 — the managed vocabulary when it is available, the
+              compatibility pair when it is not.
+
+              Two code paths rather than one because they send different fields:
+              a managed row is sent as `classificationId` (a real reference that
+              survives a rename), while the fallback can only send the legacy
+              `category` text. Offering an EMPTY dropdown when the migration has
+              not been applied would make an existing, working field look broken.
+            */}
+            <Field label="Classification (optional)">
+              {classificationState === 'database' && assignableClassifications.length > 0 ? (
+                <select value={disc.classificationId} onChange={(e) => setDisc({ ...disc, classificationId: e.target.value })} className={inp}>
+                  <option value="">—</option>
+                  {assignableClassifications.map((c) => (
+                    <option key={c.id} value={c.id}>{c.name}</option>
+                  ))}
+                </select>
+              ) : (
+                <select value={disc.category} onChange={(e) => setDisc({ ...disc, category: e.target.value })} className={inp}>
+                  <option value="">—</option>
+                  {DISCIPLINE_CLASSIFICATIONS.map((c) => (
+                    <option key={c} value={c}>{c}</option>
+                  ))}
+                </select>
+              )}
             </Field>
+            <p className="text-[11px] text-stone-500">{DISCIPLINE_CLASSIFICATION_HELP}</p>
             <Field label="Tagline (optional)">
               <input value={disc.tagline} onChange={(e) => setDisc({ ...disc, tagline: e.target.value })} className={inp} />
             </Field>

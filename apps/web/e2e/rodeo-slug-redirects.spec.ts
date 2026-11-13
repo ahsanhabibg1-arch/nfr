@@ -188,6 +188,36 @@ test.describe('Slug editor and HTTP redirects', () => {
     expect(moved.status(), 'nested old URL must redirect, not 404').toBe(308);
     expect(locationOf(moved.headers())).toBe(`/rodeo-events/${newEventSlug}/${editionSlug}/`);
     expect((await request.get(`/rodeo-events/${newEventSlug}/${editionSlug}/`, { maxRedirects: 0 })).status()).toBe(200);
+
+    /**
+     * RESTORE THE SEEDED SLUG. This test is the only one that renames a real
+     * seeded event, and it used to leave it renamed.
+     *
+     * That had two consequences. Across runs the suffixes accumulated, until
+     * the event read
+     * `calgary-stampede-renamed-akrp-renamed-...-renamed-78jr`. And WITHIN a
+     * run it broke `public.spec.ts`, which asserts HTTP 200 for the canonical
+     * `/rodeo-events/calgary-stampede/2026/` — once this test had moved the
+     * slug, that URL answered 308 and a spec failed for a reason it did not
+     * contain. Whether the suite passed depended on which file Playwright ran
+     * first.
+     *
+     * Restoring here makes both specs order-independent. The redirect rows this
+     * rename created are left in place: they are real history, the assertions
+     * above have already been made, and `global-setup` tolerates them.
+     */
+    await page.locator('#rodeo-search').fill(newEventSlug);
+    const renamedRow = page.locator('tbody tr');
+    await expect(renamedRow).toHaveCount(1);
+    await renamedRow.getByRole('button', { name: 'Slug' }).click();
+    const restore = page.getByRole('dialog');
+    await restore.locator('#slug-input').fill(eventSlug);
+    await restore.getByRole('button', { name: 'Save slug' }).click();
+    await expect(restore).toBeHidden();
+    expect(
+      (await request.get(nestedOld, { maxRedirects: 0 })).status(),
+      'the seeded canonical URL must serve again, so sibling specs are unaffected',
+    ).toBe(200);
   });
 
   test('renaming twice never produces a redirect chain over HTTP', async ({ page, request }) => {

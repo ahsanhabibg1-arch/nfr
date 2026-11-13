@@ -30,6 +30,55 @@ model Category {
   description String?
   sortOrder   Int       @default(0)
   articles    Article[]
+  /// Batch 04-B — the managed second level inside this primary section.
+  subcategories Subcategory[]
+}
+
+/// Batch 04-B — managed Subcategory taxonomy.
+///
+/// A curated second level that belongs to exactly ONE primary section
+/// (`Category`). It is deliberately separate from the other classification
+/// axes: Article Type is a code-level typology (Batch 04-A), `Tag` is open
+/// many-to-many keywords, and `Discipline` is which rodeo event — with its own
+/// Roughstock/Timed Event classification from Issue 03.
+///
+/// WHY A TABLE, when Article Type stays in code: nothing branches on a
+/// subcategory, so an editor adding one cannot strand a code path. The audit
+/// measured the opposite for Article Type, which is why only this axis is
+/// database-managed.
+///
+/// Slugs are unique WITHIN the parent, following the existing
+/// `RodeoEventEdition.@@unique([eventId, editionSlug])` precedent: the intended
+/// public route is nested (`/categories/<cat>/<sub>/`), so global uniqueness is
+/// not required and would needlessly forbid "Tickets" under two sections.
+/// Choosing a FLAT route later would need a global unique added after rows
+/// exist — a migration that can fail on real data. No public route exists yet.
+model Subcategory {
+  id          String    @id @default(uuid())
+  categoryId  String
+  name        String
+  slug        String
+  description String?
+  sortOrder   Int       @default(0)
+  /// Archive lifecycle, matching the Discipline convention: nullable with NO
+  /// default, so every row reads as ACTIVE and the migration rewrites nothing.
+  /// Archiving preserves existing article links; it only withdraws the
+  /// subcategory from new assignment.
+  archivedAt  DateTime?
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @default(now()) @updatedAt
+
+  category    Category  @relation(fields: [categoryId], references: [id], onDelete: Restrict)
+  articles    Article[] @relation("ArticleSubcategory")
+
+  @@unique([categoryId, slug])
+  @@unique([categoryId, name])
+  /// Not redundant: this is the TARGET of Article's composite foreign key
+  /// below. PostgreSQL requires a unique constraint on the referenced column
+  /// pair, and `id` alone being unique is not enough for a two-column FK.
+  @@unique([categoryId, id])
+  @@index([categoryId, sortOrder])
+  @@index([archivedAt])
 }
 
 model Tag {
@@ -37,6 +86,68 @@ model Tag {
   slug     String       @unique
   name     String
   articles ArticleTag[]
+}
+
+/// Batch 04-E — the MANAGED Article Type definition.
+///
+/// Batch 04-A made `lib/content/articleTypes.ts` the one authoritative registry
+/// after finding seven competing vocabularies. That registry stays in the
+/// repository as the immutable BOOTSTRAP + FALLBACK definition; this table is
+/// what administrators edit, and it wins whenever it holds rows.
+///
+/// WHY NO FOREIGN KEY FROM `Article`. `Article.articleType` keeps its existing
+/// `String` column, unchanged and unrewritten. A FK would have to be satisfied
+/// by every one of the existing rows the instant it is created, which means
+/// rewriting data as part of a schema change — exactly what this programme
+/// forbids. Integrity is instead enforced where it is cheap and reversible: the
+/// service refuses to delete or hard-remove a value any article still stores.
+model ArticleType {
+  id          String            @id @default(uuid())
+  /// The IMMUTABLE stored identity — byte-for-byte what `Article.articleType`
+  /// holds. Never rewritten, never renamed; the display label carries change.
+  /// Exact-unique, and deliberately NOT case-folded.
+  ///
+  /// A case-folded unique constraint was the first design, and the data refused
+  /// it: the compatibility vocabulary contains BOTH `News` (the current
+  /// selectable typology) and `news` (a legacy value six articles-worth of
+  /// history stores). They are two distinct stored strings, each held by real
+  /// rows, so a constraint on `lower(value)` cannot express this column —
+  /// it would have made one of the 23 definitions unrepresentable.
+  ///
+  /// Case-collision is therefore refused by `articleTypeService` at CREATE,
+  /// where the policy actually applies: an administrator may not add a variant
+  /// of a value that already exists. The pre-existing `News`/`news` pair is
+  /// grandfathered by the bootstrap, which writes exact values directly.
+  value       String            @unique
+  label       String
+  description String?
+  sortOrder   Int               @default(0)
+  /// Offered for NEW classification. False keeps the value fully readable and
+  /// editable on the articles that already store it.
+  selectable  Boolean           @default(true)
+  evergreen   Boolean           @default(false)
+  /// The SINGLE authoritative structured-data classification. Deliberately not
+  /// a `news` boolean beside an `Article`/`NewsArticle` field: two overlapping
+  /// SEO flags are two things to disagree, and this is the one setting that
+  /// changes what search engines are told about a published page.
+  schemaType  ArticleSchemaType @default(ARTICLE)
+  /// Archive lifecycle, same convention as Subcategory and Discipline:
+  /// nullable with NO default, so every bootstrapped row reads as ACTIVE.
+  archivedAt  DateTime?
+  createdAt   DateTime          @default(now())
+  updatedAt   DateTime          @default(now()) @updatedAt
+
+  @@index([sortOrder])
+  @@index([selectable])
+  @@index([archivedAt])
+}
+
+/// Supported structured-data classifications for an Article Type. A constrained
+/// enum rather than free text: an unrecognised value must never be able to
+/// reach `articleJsonLd`, and `NewsArticle` must never be reachable by accident.
+enum ArticleSchemaType {
+  ARTICLE
+  NEWS_ARTICLE
 }
 
 model Article {
@@ -48,6 +159,10 @@ model Article {
   imageSeoTitle       String?
   imageAltText        String?
   subcategory         String?
+  /// Batch 04-B — the MANAGED subcategory. Nullable by design (optional), and
+  /// NULL for every existing row, so the migration rewrites nothing. The legacy
+  /// `subcategory` text column above is deliberately preserved and untouched.
+  subcategoryId       String?
   articleType         String
   workflowStatus      WorkflowStatus                 @default(DRAFT)
   readTime            String?
@@ -75,6 +190,31 @@ model Article {
   competitors         ArticleCompetitor[]
   author              Author                         @relation(fields: [authorId], references: [id])
   category            Category                       @relation(fields: [categoryId], references: [id])
+  /// Batch 04-B — COMPOSITE foreign key: (categoryId, subcategoryId) must match
+  /// a Subcategory's (categoryId, id). PostgreSQL therefore REFUSES a
+  /// subcategory belonging to another primary section — the invariant is
+  /// structural, not dependent on every future code path remembering it. The
+  /// service validates first so an editor sees a sentence, not a constraint.
+  ///
+  /// Named `subcategoryTaxon` because the legacy string column already owns the
+  /// name `subcategory`; renaming that column mid-transition would be breaking,
+  /// so the rename belongs to a later clean-up migration.
+  ///
+  /// `onDelete: Restrict` is the final boundary behind the service's
+  /// "cannot delete while articles reference it" check.
+  ///
+  /// `onUpdate: Restrict` matters more than it looks. Prisma's default is
+  /// CASCADE, which would mean that moving a Subcategory to another primary
+  /// section silently rewrote the `categoryId` of every article using it —
+  /// relocating published articles between sections as a side effect of a
+  /// taxonomy edit. RESTRICT makes the database refuse that move while any
+  /// article references the subcategory, which is exactly the rule the service
+  /// enforces with a readable message.
+  ///
+  /// NULL semantics are deliberate: a multi-column FK is MATCH SIMPLE, so when
+  /// `subcategoryId` is NULL the constraint does not apply at all. That is what
+  /// keeps the subcategory genuinely optional.
+  subcategoryTaxon    Subcategory?                   @relation("ArticleSubcategory", fields: [categoryId, subcategoryId], references: [categoryId, id], onDelete: Restrict, onUpdate: Restrict)
   createdBy           User?                          @relation("ArticleCreatedBy", fields: [createdById], references: [id])
   blocks              ArticleBlock[]
   disciplines         ArticleDiscipline[]
@@ -95,6 +235,7 @@ model Article {
 
   @@index([workflowStatus])
   @@index([categoryId])
+  @@index([subcategoryId])
   @@index([publishedAt])
   @@index([workflowStatus, publishedAt])
   @@index([searchVector], type: Gin)
@@ -339,7 +480,27 @@ model Discipline {
   slug        String                 @unique
   name        String
   shortName   String?
+  /// LEGACY classification text, deliberately preserved and never rewritten.
+  ///
+  /// Dynamic Discipline Classification replaced this as the source of truth with
+  /// `classificationId` below, but the column stays: it is what every existing
+  /// row holds, what the full-text `searchVector` already indexes, and what the
+  /// application reads if the classification table is absent. Exactly the
+  /// transition shape Batch 04-B used for `Article.subcategory`.
   category    String?
+  /// Batch 05 — the MANAGED classification. Nullable by design: a discipline
+  /// need not be classified, and the backfill attaches rows without ever
+  /// requiring one.
+  ///
+  /// A foreign key to a STABLE id, not the display name. This is the whole point
+  /// of the change: renaming "Timed Event" now rewrites one row in one table and
+  /// every discipline follows it, where previously the name WAS the relationship
+  /// key and a rename orphaned every discipline still holding the old string.
+  classificationId String?
+  /// `onDelete: Restrict` is the deletion guard, enforced by PostgreSQL rather
+  /// than only by the service: a classification that any discipline still
+  /// references cannot be deleted, however the delete is attempted.
+  classification   DisciplineClassification? @relation("DisciplineClassificationAssignment", fields: [classificationId], references: [id], onDelete: Restrict, onUpdate: Restrict)
   tagline     String?
   summary     String
   image       String?
@@ -362,6 +523,53 @@ model Discipline {
   archivedAt  DateTime?
 
   @@index([archivedAt])
+  @@index([classificationId])
+}
+
+/// Batch 05 — the MANAGED Discipline Classification vocabulary.
+///
+/// How a rodeo discipline is contested: judged rides on bucking stock, or
+/// fastest time. Previously a fixed pair written into the code in six places;
+/// now administrator-managed rows, on the owner's approval.
+///
+/// NOT the editorial Category taxonomy. `Category` rows organise ARTICLES into
+/// the five navigation sections; these rows classify DISCIPLINES. The two
+/// models stay separate, and `Discipline` carries no second relation to
+/// `Category`.
+model DisciplineClassification {
+  id          String   @id @default(uuid())
+  /// The IMMUTABLE machine identity. Set once at creation and never editable,
+  /// so a rename cannot break a reference.
+  ///
+  /// For the two pre-existing classifications it is byte-for-byte the legacy
+  /// `Discipline.category` text ("Roughstock", "Timed Event"), which is what
+  /// lets the backfill match existing rows exactly without rewriting any of
+  /// them, and what lets the application fall back to the legacy column when
+  /// this table is absent.
+  value       String   @unique
+  /// The display name. Mutable — this is what a rename changes.
+  name        String
+  /// URL-safe form, unique. Reserved for a future public route; nothing routes
+  /// on it yet, so renaming `name` without touching `slug` breaks no URL.
+  slug        String   @unique
+  /// Plural wording for the public Competition filter button, which reads as a
+  /// group ("Timed Events") while `name` names one discipline's classification
+  /// ("Timed Event"). Nullable: it falls back to `name`, so an administrator
+  /// who does not care never has to think about it.
+  pluralName  String?
+  description String?
+  sortOrder   Int      @default(0)
+  /// Offered for NEW assignment. False leaves every discipline already
+  /// classified by it fully readable, editable and publicly filterable —
+  /// the same convention as `ArticleType.selectable`.
+  active      Boolean  @default(true)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @default(now()) @updatedAt
+
+  disciplines Discipline[] @relation("DisciplineClassificationAssignment")
+
+  @@index([sortOrder])
+  @@index([active])
 }
 
 model RodeoHub {
@@ -1621,6 +1829,16 @@ model SectionConfig {
   tagline     String?
   description String?
   heroImage   String?
+  /// Stage 03 (H-05) — DEPRECATED, retained for compatibility only.
+  ///
+  /// Nothing reads it, and nothing should: the Navigation CMS is the single
+  /// authority for whether a section appears in a menu. A second visibility
+  /// flag here could hide a section's menu entry while its published articles
+  /// and canonical URL stayed live — two owners disagreeing about one
+  /// question, which is the defect class this programme exists to remove.
+  ///
+  /// The column is NOT dropped: that would need a migration, and a migration
+  /// for cleanup alone is not worth the risk. No admin control writes it.
   visible     Boolean  @default(true)
   updatedById String?
   updatedAt   DateTime @default(now()) @updatedAt

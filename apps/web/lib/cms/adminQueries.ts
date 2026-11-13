@@ -49,7 +49,7 @@ export async function getEditableArticle(id: string): Promise<EditableArticlePay
 
 /** Database-backed choices for the article editor's rodeo relationships panel. */
 export async function listArticleRelationshipOptions(): Promise<ArticleRelationshipOptions> {
-  const [disciplines, hubs, events, editions] = await Promise.all([
+  const [disciplines, hubs, events, editions, subcategories] = await Promise.all([
     prisma.discipline.findMany({ orderBy: { sortOrder: 'asc' }, select: { id: true, name: true, category: true } }),
     prisma.rodeoHub.findMany({ orderBy: { sortOrder: 'asc' }, select: { id: true, title: true, region: true } }),
     prisma.rodeoEvent.findMany({ orderBy: { name: 'asc' }, select: { id: true, name: true, location: true } }),
@@ -57,12 +57,28 @@ export async function listArticleRelationshipOptions(): Promise<ArticleRelations
       orderBy: [{ eventId: 'asc' }, { editionSlug: 'desc' }],
       select: { id: true, label: true, eventId: true, editionSlug: true },
     }),
+    /**
+     * Batch 04-B — active managed subcategories with their section's NAME.
+     * `archivedAt: null` is what keeps an archived subcategory out of new
+     * assignments while leaving articles that already use it untouched.
+     */
+    prisma.subcategory.findMany({
+      where: { archivedAt: null },
+      orderBy: [{ categoryId: 'asc' }, { sortOrder: 'asc' }, { name: 'asc' }],
+      select: { id: true, name: true, category: { select: { name: true } } },
+    }),
   ]);
+
+  const subcategoriesBySection: Record<string, { id: string; label: string }[]> = {};
+  for (const sub of subcategories) {
+    (subcategoriesBySection[sub.category.name] ??= []).push({ id: sub.id, label: sub.name });
+  }
   return {
     disciplines: disciplines.map((d) => ({ id: d.id, label: d.name, detail: d.category })),
     hubs: hubs.map((h) => ({ id: h.id, label: h.title, detail: h.region })),
     events: events.map((e) => ({ id: e.id, label: e.name, detail: e.location })),
     editions: editions.map((e) => ({ id: e.id, label: e.label, detail: e.editionSlug, eventId: e.eventId })),
+    subcategoriesBySection,
   };
 }
 

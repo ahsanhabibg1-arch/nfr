@@ -4,21 +4,23 @@ import { Breadcrumbs } from './Breadcrumbs';
 import { AuthorByline } from './AuthorByline';
 import { ImageWithCredit } from '../ImageWithCredit';
 import { IMAGE_SIZES } from '../../lib/media/imageMeta';
-import { PRIMARY_SECTIONS } from '../../config/routes';
+import { articleCategoryCrumb } from '../../lib/seo/articleBreadcrumb';
 
 interface ArticleHeaderProps {
   article: Article;
 }
 
 export const ArticleHeader: React.FC<ArticleHeaderProps> = ({ article }) => {
-  // Find category path
-  const sectionEntry = Object.values(PRIMARY_SECTIONS).find(
-    (s) => s.categoryKey === article.category
-  );
-  const categoryPath = sectionEntry?.path || '/competition/';
+  /**
+   * Stage 03 (R-3) — resolved by the shared helper, so the visible breadcrumb
+   * and the JSON-LD on the same page cannot disagree. It previously fell back
+   * to `/competition/` for any category outside the compiled-in five, which
+   * silently pointed an administrator-created category at NFR Competition.
+   */
+  const crumb = articleCategoryCrumb(article);
 
   const breadcrumbs = [
-    { label: article.category, path: categoryPath },
+    { label: crumb.name, path: crumb.path },
     ...(article.subcategory ? [{ label: article.subcategory }] : []),
     { label: article.title },
   ];

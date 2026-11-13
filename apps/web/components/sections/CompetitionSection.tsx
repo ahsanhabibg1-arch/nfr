@@ -5,6 +5,12 @@ import { Discipline } from '../../types';
 import { SectionHeading } from '../SectionHeading';
 import { ImageWithCredit } from '../ImageWithCredit';
 import { type SectionCopy, copyOr } from './sectionCopy';
+import {
+  DISCIPLINE_CLASSIFICATIONS,
+  DISCIPLINE_CLASSIFICATION_PLURAL,
+  toDisciplineClassification,
+  type DisciplineClassification,
+} from '../../lib/content/disciplineClassifications';
 
 interface CompetitionSectionProps {
   disciplines: Discipline[];
@@ -18,11 +24,54 @@ export const CompetitionSection: React.FC<CompetitionSectionProps> = ({
   onSelectDiscipline,
   copy = {},
 }) => {
-  const [filter, setFilter] = useState<'all' | 'Roughstock' | 'Timed Event'>('all');
+  const [filter, setFilter] = useState<string>('all');
+
+  /**
+   * The filter buttons, DERIVED entirely from the disciplines on the page.
+   *
+   * Batch 05 made classifications administrator-managed, so neither the button
+   * set nor the counts can be written down any more. Three properties matter:
+   *
+   *   STABLE KEYS. A managed classification is keyed by its `id`, never by its
+   *   name, so renaming "Timed Event" renames the button and breaks nothing.
+   *   Only disciplines with no managed classification fall back to keying on the
+   *   legacy `category` text.
+   *
+   *   ONLY CLASSIFICATIONS WITH ELIGIBLE DISCIPLINES APPEAR. The set is built
+   *   from the disciplines actually rendered — which `getAllDisciplines()` has
+   *   already filtered to active ones — so an archived discipline cannot put a
+   *   button on the page, and a classification nothing uses does not appear. An
+   *   inactive classification still shows while disciplines reference it, which
+   *   is the point of deactivating rather than deleting: it stops NEW
+   *   assignment without hiding published content.
+   *
+   *   COUNTS ARE COUNTED. They used to read "All 7 Events", "Roughstock (3)"
+   *   and "Timed Events (4)" literally, which was true only for exactly the
+   *   seven seeded disciplines.
+   */
+  const groups = useMemo(() => {
+    const byKey = new Map<string, { key: string; label: string; sortOrder: number; count: number }>();
+    disciplines.forEach((d, i) => {
+      const managed = d.classification;
+      const key = managed ? managed.id : `legacy:${toDisciplineClassification(d.category)}`;
+      const label = managed
+        ? managed.pluralName
+        : DISCIPLINE_CLASSIFICATION_PLURAL[toDisciplineClassification(d.category)];
+      const existing = byKey.get(key);
+      if (existing) existing.count += 1;
+      // Without managed rows there is no stored order, so the first appearance
+      // in `disciplines` (already sorted by sortOrder) decides it.
+      else byKey.set(key, { key, label, sortOrder: i, count: 1 });
+    });
+    return [...byKey.values()].sort((a, b) => a.sortOrder - b.sortOrder);
+  }, [disciplines]);
+
+  const matches = (d: Discipline, key: string) =>
+    d.classification ? d.classification.id === key : `legacy:${toDisciplineClassification(d.category)}` === key;
 
   const filtered = useMemo(() => {
     if (filter === 'all') return disciplines;
-    return disciplines.filter((d) => d.category === filter);
+    return disciplines.filter((d) => matches(d, filter));
   }, [disciplines, filter]);
 
   return (
@@ -37,17 +86,18 @@ export const CompetitionSection: React.FC<CompetitionSectionProps> = ({
         {/* Filter Toggle */}
         <div className="flex items-center justify-between mb-8 pb-3 border-b border-stone-200">
           <div className="flex items-center gap-2">
-            {(['all', 'Roughstock', 'Timed Event'] as const).map((mode) => (
+            {[{ key: 'all', label: `All ${disciplines.length} Events` },
+              ...groups.map((g) => ({ key: g.key, label: `${g.label} (${g.count})` }))].map((mode) => (
               <button
-                key={mode}
-                onClick={() => setFilter(mode)}
+                key={mode.key}
+                onClick={() => setFilter(mode.key)}
                 className={`px-3 py-1.5 text-xs font-semibold uppercase tracking-wider rounded-sm transition-colors ${
-                  filter === mode
+                  filter === mode.key
                     ? 'bg-[#0F1115] text-[#D4A757]'
                     : 'text-stone-600 hover:text-stone-900 bg-stone-100 hover:bg-stone-200'
                 }`}
               >
-                {mode === 'all' ? 'All 7 Events' : mode === 'Roughstock' ? 'Roughstock (3)' : 'Timed Events (4)'}
+                {mode.label}
               </button>
             ))}
           </div>

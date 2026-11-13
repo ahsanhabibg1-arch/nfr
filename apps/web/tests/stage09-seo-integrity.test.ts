@@ -413,13 +413,33 @@ describe('Stage 09 D-14 — the publisher identity already in the markup', () =>
     });
   });
 
-  it('the publisher name is a hardcoded brand string, not owner-verified data', () => {
-    // Pinned so the Package 3 question is answerable from the code: if the owner
-    // corrects the name, exactly these two call sites change.
-    const src = read('lib/seo.tsx');
-    const claims = [...src.matchAll(/'@type':\s*'Organization',\s*\n\s*name:\s*'([^']+)'/g)].map((m) => m[1]);
-    expect(claims, 'two builders each hardcode the same unverified name').toEqual(['NFRGuide', 'NFRGuide']);
-    expect(src, 'the name is not sourced from SiteConfig').not.toMatch(/name:\s*siteConfig/);
+  /**
+   * UPDATED BY STAGE 03 (H-06). This used to pin the publisher as a hardcoded
+   * brand string in two call sites, which is what D-14 asked to be answerable
+   * from the code. The owner's answer is now implemented: the name comes from
+   * the administrator's site identity (`SystemSetting.site_identity.siteName`,
+   * already editable in Settings), resolved by the Server Component and passed
+   * in, because these builders are synchronous and four suites pin that.
+   *
+   * The question D-14 really guards — "is the publisher claim owner-verified
+   * rather than invented?" — is now answered YES, and the assertion checks the
+   * behaviour instead of the source: a configured name is used, and an absent
+   * one falls back to the shipped default rather than omitting a publisher.
+   */
+  it('the publisher name comes from the owner-configured site identity, with a safe default', () => {
+    const configured = seo.articleJsonLd(article(), { publisherName: 'Owner Configured Media' });
+    expect((configured.publisher as { name: string }).name).toBe('Owner Configured Media');
+
+    const unconfigured = seo.articleJsonLd(article());
+    expect((unconfigured.publisher as { name: string }).name).toBe('NFRGuide');
+    expect((unconfigured.publisher as { '@type': string })['@type']).toBe('Organization');
+
+    // Both builders behave identically, so the two surfaces cannot diverge.
+    const d = seo.disciplineJsonLd(
+      { name: 'Bull Riding', slug: 'bull-riding', summary: 's', image: '/i.jpg' } as never,
+      { publisherName: 'Owner Configured Media' },
+    );
+    expect((d.publisher as { name: string }).name).toBe('Owner Configured Media');
   });
 
   it('claims no logo, address, legal name, founding date or contact point', () => {

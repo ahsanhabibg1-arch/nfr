@@ -97,10 +97,21 @@ test.describe('Admin hydration', () => {
     await login(page);
     await page.goto('/admin/rodeo-coverage/');
 
-    const firstRowImmediate = await page.locator('tbody tr').first().innerText();
+    /**
+     * `textContent`, not `innerText`.
+     *
+     * `innerText` is CSS-dependent: it applies `text-transform` and derives
+     * whitespace from layout. Sampling it "immediately" therefore races the
+     * stylesheet, and the same unchanged DOM reads as `Active` before styles
+     * apply and `ACTIVE` after — a flake that says nothing about hydration.
+     * `textContent` is CSS-independent and still carries every rendered string,
+     * so a Date formatted differently on server and client — the mismatch this
+     * test exists to catch — is detected exactly as before.
+     */
+    const firstRowImmediate = await page.locator('tbody tr').first().textContent();
     await page.waitForLoadState('networkidle');
     await page.waitForTimeout(800);
-    const firstRowSettled = await page.locator('tbody tr').first().innerText();
+    const firstRowSettled = await page.locator('tbody tr').first().textContent();
 
     expect(firstRowSettled, 'row content must not change once React takes over').toBe(firstRowImmediate);
   });

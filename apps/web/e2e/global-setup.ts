@@ -13,6 +13,62 @@ import { STATE_FILE, testDb, type E2EState } from './support';
  *  - an ACTIVE redirect from a renamed slug to the published fixture article.
  * Requires the seeded `fixture-` records (prisma/fixtures.ts).
  */
+/**
+ * Undoes the slug renames the slug-redirect spec performs, so the suite is
+ * RE-RUNNABLE.
+ *
+ * THE DEFECT THIS FIXES. `rodeo-slug-redirects.spec.ts` renames a real seeded
+ * event to `<slug>-renamed-<4 chars>` and leaves it renamed; nothing restored
+ * it. The suffixes therefore accumulated across runs — one event reached
+ * `calgary-stampede-renamed-akrp-renamed-eeod-renamed-uutj-renamed-78jr` — and
+ * once the canonical slug had moved, `public.spec.ts` started getting HTTP 308
+ * where it asserts 200 for `/rodeo-events/calgary-stampede/2026/`. Two specs
+ * failed for a reason neither of them contained, and a clean run depended on
+ * nobody having run the suite before.
+ *
+ * The suffix the spec appends is a fixed shape, so stripping it is exact rather
+ * than a guess. Redirect rows created by those renames are left alone: they are
+ * real history, and the specs that assert on redirects create their own.
+ */
+async function restoreRenamedRodeoSlugs(db: ReturnType<typeof testDb>): Promise<void> {
+  const RENAMED = /(-renamed-[a-z0-9]{4})+$/;
+  const events = await db.rodeoEvent.findMany({ select: { id: true, slug: true } });
+  for (const e of events) {
+    if (!RENAMED.test(e.slug)) continue;
+    const canonical = e.slug.replace(RENAMED, '');
+    // Skip if something already occupies the canonical slug: colliding would
+    // fail the setup for every spec, which is worse than one stale slug.
+    const taken = await db.rodeoEvent.findFirst({ where: { slug: canonical }, select: { id: true } });
+    if (taken) continue;
+    await db.rodeoEvent.update({ where: { id: e.id }, data: { slug: canonical } });
+  }
+}
+
+/**
+ * Clears the durable rate limiter in the ISOLATED test database.
+ *
+ * THE DEFECT THIS FIXES. `admin.spec.ts` and `account-menu.spec.ts` each
+ * register a reader through the real public sign-up flow. Registration is rate
+ * limited per IP (5 per window) and the limiter is durable — it lives in
+ * `RateLimitHit`, which nothing reset between runs. Every run therefore spent
+ * two of five, and after a few runs the counter for `register:::1` stood at 13
+ * with the window still open. Sign-up then failed CLOSED and silently, which is
+ * correct product behaviour (it must not reveal whether an account exists), so
+ * both specs simply timed out waiting for a redirect, with no error on the page
+ * and nothing in the server log. The suite could be run about twice an hour.
+ *
+ * Clearing it is safe and correct here: these rows are ephemeral
+ * infrastructure state in a disposable database, not fixture data, and
+ * `testDb()` refuses anything that is not the isolated test database. The
+ * limiter's own behaviour is covered by `tests/batch21-ratelimit.test.ts` and
+ * `tests/batch22-auth.test.ts`, which inject their own storage rather than
+ * relying on accumulated rows — so nothing is weakened by starting each browser
+ * run from a clean window.
+ */
+async function clearRateLimiterState(db: ReturnType<typeof testDb>): Promise<void> {
+  await db.rateLimitHit.deleteMany({});
+}
+
 export default async function globalSetup() {
   const db = testDb();
   try {
@@ -20,6 +76,8 @@ export default async function globalSetup() {
     if (!fixture) throw new Error(`Seeded fixture "${FIXTURE_SLUGS.publishedArticle}" not found — run \`npx prisma db seed\` against the isolated test database first.`);
 
     await syncRolesAndPermissions(db);
+    await restoreRenamedRodeoSlugs(db);
+    await clearRateLimiterState(db);
     const runId = crypto.randomBytes(4).toString('hex');
     const adminPassword = crypto.randomBytes(18).toString('base64url');
     const role = await db.role.findUniqueOrThrow({ where: { key: 'super_admin' } });

@@ -1,11 +1,13 @@
 import 'server-only';
 import { z } from 'zod';
+import { Prisma } from '@prisma/client';
 import { prisma } from '../db';
 import { Actor, audit } from './guard';
 import { roleHasPermission } from '../auth/rbac';
 import { ServiceError } from './articleService';
 import { deleteEntitySeoForEntity } from './entitySeoService';
 import { deleteFaqsForEntity } from './faqService';
+import { DISCIPLINE_CLASSIFICATIONS } from '../content/disciplineClassifications';
 
 /** Remove polymorphic SEO/FAQ rows when an owning entity is deleted (Batch 11/12). */
 async function cleanupLandingRows(entityType: 'RODEO_HUB' | 'RODEO_EVENT' | 'RODEO_EDITION' | 'DISCIPLINE' | 'CATEGORY' | 'VENUE', id: string): Promise<void> {
@@ -301,20 +303,141 @@ export async function listDisciplinesRef(): Promise<DisciplineRef[]> {
       d._count.compResults + d._count.compSessions + d._count.compStandings,
   }));
 }
-/// Batch 11: editable discipline fields (slug/name/deep guide JSON are intentionally
-/// NOT editable here — the evergreen guide content is preserved).
+/**
+ * Discipline editing (Batch 11, completed in Issue 03).
+ *
+ * WHAT WAS WRONG. This schema used to carry four fields and a comment saying
+ * `slug`/`name`/the guide JSON were "intentionally NOT editable here — the
+ * evergreen guide content is preserved". Protecting that content was the right
+ * instinct and the wrong mechanism: a public discipline page renders thirteen
+ * content fields, and eleven of them had **no administrative owner at all**.
+ * The Rodeo Coverage modal even told operators to "add the evergreen guide…in
+ * Landing SEO", where no such editor existed either. Every word of the guide
+ * could only be changed by editing the database directly.
+ *
+ * HOW THE CONTENT IS STILL PROTECTED — and this is the part that matters.
+ * `guide` is merged KEY BY KEY, so a caller that sends `introduction` alone
+ * cannot disturb `scoringBreakdown`, and keys this schema does not model at all
+ * (`sources`, `relatedArticleSlugs`) are carried through untouched. Nothing is
+ * ever replaced wholesale, and no default is ever invented: an absent key means
+ * "leave it exactly as it is", not "reset it".
+ *
+ * THE ASYMMETRY IS DELIBERATE, because the alternative loses data.
+ *   - `shortName` / `category` / `tagline`: absent → **null**. This is the
+ *     pre-existing contract — the Landing SEO form sends `f.shortName ||
+ *     undefined`, so clearing the box is expressed by omitting the key. Moving
+ *     these to merge-on-absent would break "clear this field".
+ *   - `name` / `image` / `imageCredit` / `guide`: absent → **unchanged**. These
+ *     are new, and existing callers do not send them. If absence cleared them,
+ *     every save of the four-field Landing SEO form would erase a discipline's
+ *     name and hero image. `tests/issue03-discipline-cms.test.ts` pins that.
+ *
+ * `slug` is NOT here on purpose: `lib/cms/rodeoSlugs.ts#changeSlug` already
+ * changes it, and it also writes the redirect from the old path, checks
+ * uniqueness and refuses a collision. Duplicating that here would be a second,
+ * worse implementation of a solved problem.
+ */
+const ScoringItemInput = z.object({
+  title: z.string().trim().min(1).max(160),
+  description: z.string().trim().min(1).max(1500),
+});
+const TerminologyItemInput = z.object({
+  term: z.string().trim().min(1).max(120),
+  definition: z.string().trim().min(1).max(1500),
+});
+
+/**
+ * The evergreen guide. Every key optional; order within an array IS the public
+ * display order, so reordering is expressed by sending the array reordered.
+ */
+const DisciplineGuideInput = z.object({
+  introduction: z.string().max(4000).optional(),
+  competitionFormat: z.string().max(4000).optional(),
+  stockProfile: z.string().max(4000).optional(),
+  historicBenchmark: z.string().max(4000).optional(),
+  scoringBreakdown: z.array(ScoringItemInput).max(24).optional(),
+  rulesHighlights: z.array(z.string().trim().min(1).max(600)).max(40).optional(),
+  terminology: z.array(TerminologyItemInput).max(80).optional(),
+  beginnerTips: z.array(z.string().trim().min(1).max(600)).max(40).optional(),
+});
+export type DisciplineGuideInput = z.input<typeof DisciplineGuideInput>;
+
+/** Guide keys this schema owns. Anything else in the stored JSON is preserved. */
+const GUIDE_KEYS = [
+  'introduction', 'competitionFormat', 'stockProfile', 'historicBenchmark',
+  'scoringBreakdown', 'rulesHighlights', 'terminology', 'beginnerTips',
+] as const;
+
 const DisciplineInput = z.object({
+  // Pre-existing fields: absent clears (see the note above).
   shortName: z.string().max(80).optional(),
-  category: z.enum(['Roughstock', 'Timed Event']).optional(),
+  /**
+   * LEGACY classification text. Still accepted so that callers written before
+   * Batch 05 (and the fallback selectors used when the managed table is absent)
+   * keep working; constrained to the compatibility vocabulary as before.
+   */
+  category: z.enum(DISCIPLINE_CLASSIFICATIONS).optional(),
+  /**
+   * Batch 05 — the MANAGED classification, by stable id. Preferred over
+   * `category`: it is a real reference, so a later rename follows automatically.
+   * `null` clears the classification.
+   */
+  classificationId: z.string().trim().min(1).max(64).nullable().optional(),
   tagline: z.string().max(240).optional(),
   summary: z.string().min(1).max(2000),
+  // Added in Issue 03: absent leaves unchanged.
+  name: z.string().trim().min(1).max(120).optional(),
+  image: z.string().trim().max(600).optional(),
+  imageCredit: z.string().trim().max(200).optional(),
+  guide: DisciplineGuideInput.optional(),
 });
 export type DisciplineInput = z.input<typeof DisciplineInput>;
+
 export async function updateDiscipline(a: Actor, id: string, raw: DisciplineInput): Promise<void> {
   req(a); const v = DisciplineInput.parse(raw);
-  if (!(await prisma.discipline.findUnique({ where: { id }, select: { id: true } }))) throw new ServiceError('not_found', 'Discipline not found');
-  await prisma.discipline.update({ where: { id }, data: { shortName: v.shortName ?? null, category: v.category ?? null, tagline: v.tagline ?? null, summary: v.summary } });
-  await audit(a.id, 'rodeo.discipline.update', 'discipline', id);
+  const existing = await prisma.discipline.findUnique({ where: { id }, select: { id: true, guide: true } });
+  if (!existing) throw new ServiceError('not_found', 'Discipline not found');
+
+  const data: Prisma.DisciplineUpdateInput = {
+    shortName: v.shortName ?? null,
+    category: v.category ?? null,
+    tagline: v.tagline ?? null,
+    summary: v.summary,
+  };
+
+  /**
+   * A managed reference, when the caller sent one, overrides the legacy text —
+   * including the `category: v.category ?? null` above, which exists so that an
+   * absent field clears the value (the convention this form has always used).
+   */
+  const managed = await resolveClassification(v);
+  if (managed) {
+    data.category = managed.category;
+    data.classification = managed.classificationId
+      ? { connect: { id: managed.classificationId } }
+      : { disconnect: true };
+  }
+  if (v.name !== undefined) data.name = v.name;
+  if (v.image !== undefined) data.image = v.image === '' ? null : v.image;
+  if (v.imageCredit !== undefined) data.imageCredit = v.imageCredit === '' ? null : v.imageCredit;
+
+  if (v.guide !== undefined) {
+    // Merge onto whatever is stored, so unmodelled keys and untouched sections
+    // survive. An empty array is a real value (the editor removed every entry);
+    // `undefined` is not.
+    const current = (existing.guide && typeof existing.guide === 'object' && !Array.isArray(existing.guide)
+      ? (existing.guide as Record<string, unknown>)
+      : {});
+    const merged: Record<string, unknown> = { ...current };
+    for (const k of GUIDE_KEYS) {
+      const next = (v.guide as Record<string, unknown>)[k];
+      if (next !== undefined) merged[k] = next;
+    }
+    data.guide = merged as Prisma.InputJsonValue;
+  }
+
+  await prisma.discipline.update({ where: { id }, data });
+  await audit(a.id, 'rodeo.discipline.update', 'discipline', id, v.guide ? 'core+guide' : 'core');
 }
 /**
  * Creating and deleting disciplines (Rodeo Coverage admin audit).
@@ -337,9 +460,45 @@ const DisciplineCreateInput = z.object({
   name: z.string().min(1).max(120),
   summary: z.string().min(1).max(2000),
   shortName: z.string().max(80).optional(),
-  category: z.enum(['Roughstock', 'Timed Event']).optional(),
+  // Same two routes as DisciplineInput above: legacy text, or managed id.
+  category: z.enum(DISCIPLINE_CLASSIFICATIONS).optional(),
+  classificationId: z.string().trim().min(1).max(64).nullable().optional(),
   tagline: z.string().max(240).optional(),
 });
+
+/**
+ * Resolves a managed classification reference into the two columns that record
+ * it, or returns `undefined` when the caller did not mention one.
+ *
+ * BOTH COLUMNS ARE WRITTEN. `classificationId` is the truth; `category` is kept
+ * as a mirror of the classification's immutable `value`, because the legacy
+ * column is what the full-text `searchVector` indexes and what the application
+ * falls back to when the managed table is unreachable. Letting them drift would
+ * make the fallback lie.
+ *
+ * An unknown id is a validation error rather than a silently dropped field: a
+ * form offering a classification that has since been deleted must say so, not
+ * save the discipline unclassified.
+ */
+async function resolveClassification(
+  v: { classificationId?: string | null },
+): Promise<{ classificationId: string | null; category: string | null } | undefined> {
+  if (v.classificationId === undefined) return undefined;
+  if (v.classificationId === null) return { classificationId: null, category: null };
+  let row: { id: string; value: string } | null = null;
+  try {
+    row = await prisma.disciplineClassification.findUnique({
+      where: { id: v.classificationId },
+      select: { id: true, value: true },
+    });
+  } catch {
+    // The managed table is absent or unreachable (e.g. the migration has not
+    // been applied on this environment). Refuse rather than write a dangling id.
+    throw new ServiceError('validation', 'Managed classifications are not available on this environment.');
+  }
+  if (!row) throw new ServiceError('validation', 'That classification no longer exists. Reload and choose another.');
+  return { classificationId: row.id, category: row.value };
+}
 export type DisciplineCreateInput = z.input<typeof DisciplineCreateInput>;
 
 export async function createDiscipline(a: Actor, raw: DisciplineCreateInput): Promise<{ id: string }> {
@@ -352,11 +511,13 @@ export async function createDiscipline(a: Actor, raw: DisciplineCreateInput): Pr
   const existing = await prisma.discipline.findFirst({ where: { OR: [{ id }, { slug }] }, select: { id: true } });
   if (existing) throw new ServiceError('conflict', `A discipline with the URL slug "${slug}" already exists.`);
   const max = await prisma.discipline.aggregate({ _max: { sortOrder: true } });
+  const managed = await resolveClassification(v);
   await prisma.discipline.create({
     data: {
       id, slug, name: v.name,
       shortName: v.shortName ?? null,
-      category: v.category ?? null,
+      category: managed ? managed.category : (v.category ?? null),
+      ...(managed?.classificationId ? { classificationId: managed.classificationId } : {}),
       tagline: v.tagline ?? null,
       summary: v.summary,
       // `guide` is left null on purpose: evergreen guide content is written by an

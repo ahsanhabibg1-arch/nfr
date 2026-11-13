@@ -69,6 +69,8 @@ export const PERMISSION_CATALOGUE: PermissionGroup[] = [
   { module: 'Rodeo, Taxonomy, Sources, Navigation', permissions: [
     { key: 'rodeo.manage', label: 'Manage rodeo coverage' },
     { key: 'taxonomy.manage', label: 'Manage taxonomy' },
+    { key: 'articletype.manage', label: 'Manage article types' },
+    { key: 'articletype.seo', label: 'Set article type evergreen eligibility' },
     { key: 'source.manage', label: 'Manage sources' },
     { key: 'navigation.manage', label: 'Manage navigation' },
   ] },

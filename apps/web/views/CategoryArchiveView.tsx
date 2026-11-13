@@ -5,7 +5,12 @@ import { Breadcrumbs } from '../components/editorial/Breadcrumbs';
 import { EditorialArticleGrid } from '../components/editorial/EditorialArticleGrid';
 import { ArticlePagination } from '../components/editorial/ArticlePagination';
 import { ContentEmptyState } from '../components/editorial/ContentEmptyState';
-import { Article, ArticleType } from '../types';
+import { Article } from '../types';
+import {
+  archiveFilterOptions,
+  fallbackSnapshot,
+  type ArticleTypeSnapshot,
+} from '../lib/content/articleTypeShape';
 
 const PAGE_SIZE = 6;
 
@@ -14,6 +19,12 @@ export interface CategoryArchiveViewProps {
   categoryName: string;
   description?: string;
   sectionPath?: string;
+  /**
+   * Batch 04-E — managed Article Type definitions, resolved by the server page
+   * so this client view can label the filter without a browser round trip.
+   * Omitted falls back to the compiled-in compatibility vocabulary.
+   */
+  articleTypes?: ArticleTypeSnapshot;
 }
 
 // Client view: receives the published category articles from the server page
@@ -23,9 +34,28 @@ export const CategoryArchiveView: React.FC<CategoryArchiveViewProps> = ({
   categoryName,
   description,
   sectionPath,
+  articleTypes,
 }) => {
-  const [activeType, setActiveType] = useState<'all' | ArticleType>('all');
+  const [activeType, setActiveType] = useState<string>('all');
   const [currentPage, setCurrentPage] = useState(1);
+
+  /**
+   * "All Types" plus exactly the types present in this category (Batch 04-A),
+   * labelled from the managed definitions (Batch 04-E).
+   *
+   * Derived from the articles actually here, which is what keeps a deactivated
+   * or archived type in the filter while its articles remain published:
+   * lifecycle withdraws a type from NEW classification and never from public
+   * discovery of work already published.
+   */
+  const typeSnapshot = useMemo<ArticleTypeSnapshot>(
+    () => articleTypes ?? fallbackSnapshot(),
+    [articleTypes],
+  );
+  const typeOptions = useMemo(
+    () => [{ value: 'all', label: 'All Types' }, ...archiveFilterOptions(typeSnapshot, articles)],
+    [typeSnapshot, articles],
+  );
 
   const filteredArticles = useMemo(() => {
     if (activeType === 'all') return articles;
@@ -38,7 +68,7 @@ export const CategoryArchiveView: React.FC<CategoryArchiveViewProps> = ({
     return filteredArticles.slice(start, start + PAGE_SIZE);
   }, [filteredArticles, currentPage]);
 
-  const handleTypeChange = (type: 'all' | ArticleType) => {
+  const handleTypeChange = (type: string) => {
     setActiveType(type);
     setCurrentPage(1);
   };
@@ -66,17 +96,33 @@ export const CategoryArchiveView: React.FC<CategoryArchiveViewProps> = ({
             <span className="text-[11px] font-mono text-ink-muted uppercase tracking-wider mr-1">
               Article Type:
             </span>
-            {(['all', 'feature', 'analysis', 'guide', 'news'] as const).map((type) => (
+            {/*
+              Batch 04-A — options derived from the articles actually present.
+
+              This list used to be hardcoded as
+              `['all','feature','analysis','guide','news']` — the legacy
+              vocabulary. It matched the stored data by luck, and it meant an
+              article an editor "corrected" to any of the 18 selectable types
+              vanished from every button except "All". Deriving from the data
+              makes both failure directions impossible: no option can be empty,
+              and no present type can be missing (including a value the registry
+              does not recognise, which is listed verbatim rather than hidden).
+
+              The filter is category-wide, not page-wide: `articles` is the whole
+              category set and pagination is applied AFTER filtering, so the
+              counts a reader sees are honest.
+            */}
+            {typeOptions.map((opt) => (
               <button
-                key={type}
-                onClick={() => handleTypeChange(type)}
+                key={opt.value}
+                onClick={() => handleTypeChange(opt.value)}
                 className={`px-3 py-1.5 text-xs font-semibold uppercase tracking-wider rounded-sm transition-colors whitespace-nowrap ${
-                  activeType === type
+                  activeType === opt.value
                     ? 'bg-[#0F1115] text-[#D4A757]'
                     : 'bg-white text-stone-600 hover:text-stone-900 border border-stone-200 hover:bg-stone-50'
                 }`}
               >
-                {type === 'all' ? 'All Types' : type}
+                {opt.label}
               </button>
             ))}
           </div>

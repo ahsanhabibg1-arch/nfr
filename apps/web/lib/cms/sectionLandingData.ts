@@ -14,6 +14,13 @@ export interface LandingSlotData {
   sectionKey?: string;
   totalArticleCount?: number;
   pillsVisible?: boolean;
+  /**
+   * Stage 02 (H-04) — the administrator's `SectionConfig.heroImage`, offered to
+   * the hero block as a FALLBACK only. The Visual Builder remains the owner of
+   * the section hero: when `landing-hero.heroImageUrl` is set it wins, and this
+   * value is never applied over it.
+   */
+  sectionHeroImage?: string | null;
 }
 
 export interface ResolvedLandingSlot {
@@ -26,6 +33,11 @@ export async function resolveSectionLandingSlots(
   options?: { draft?: boolean },
 ): Promise<ResolvedLandingSlot[]> {
   const sectionMeta = (await getSectionMeta(sectionKey))!;
+  // Stage 02 (H-04): read alongside the meta, from the same row `getSectionMeta`
+  // already consults, so this adds one query per section-landing render and no
+  // per-slot work.
+  const { getSectionConfig } = await import('./sectionConfigService');
+  const sectionHeroImage = (await getSectionConfig(sectionKey))?.heroImage ?? null;
   const fetchSections = options?.draft ? getDraftSections : getPublishedSections;
   const layoutSections = await fetchSections(`section:${sectionKey}`);
   const visible = selectRenderableSlots(layoutSections);
@@ -75,7 +87,7 @@ export async function resolveSectionLandingSlots(
     const base: LandingSlotData = { sectionMeta: metaObj, sectionKey, totalArticleCount: sectionArticles.length };
 
     if (t === 'landing-hero') {
-      out.push({ slot, data: { ...base, pillsVisible } });
+      out.push({ slot, data: { ...base, pillsVisible, sectionHeroImage } });
     } else if (t === 'landing-competition-disciplines') {
       // An operator-placed block gets the same data the injected one gets, so
       // the two paths cannot diverge (Stage 07 Task E).

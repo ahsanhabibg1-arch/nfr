@@ -90,7 +90,11 @@ async function fixtureEditPath(): Promise<string> {
 
 /** Visible label text of every editor control fixed in Batch B (label ↔ control association). */
 const EDITOR_LABELLED_CONTROLS = [
-  'Change Workflow State', 'Assigned Reviewer', 'Article Type (18 Typologies)', 'Primary Section', 'Subcategory',
+  // The Article Type label no longer carries a hardcoded "(18 Typologies)":
+  // Batch 04-E made the vocabulary administrator-managed, so a fixed count in a
+  // visible label would have been exactly the hardcoding that batch removed.
+  // The control is still asserted to be reachable by its visible label.
+  'Change Workflow State', 'Assigned Reviewer', 'Article Type', 'Primary Section', 'Subcategory',
   'Author Byline', 'Monetization Disclosure', 'Usage Rights Status', 'Photographer / Agency Credit', 'Caption',
 ];
 

@@ -26,6 +26,8 @@
     "db:setup": "prisma migrate deploy && prisma generate && prisma db seed",
     "db:studio": "prisma studio",
     "bootstrap:admin": "tsx prisma/bootstrap-admin.ts",
+    "bootstrap:article-types": "tsx scripts/bootstrap-article-types.ts",
+    "bootstrap:classifications": "tsx scripts/bootstrap-discipline-classifications.ts",
     "test:e2e": "playwright test"
   },
   "dependencies": {

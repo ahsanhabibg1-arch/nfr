@@ -2,6 +2,7 @@ import React from 'react';
 import { Discipline } from '../../types';
 import { Breadcrumbs } from './Breadcrumbs';
 import { ImageWithCredit } from '../ImageWithCredit';
+import { IMAGE_SIZES } from '../../lib/media/imageMeta';
 
 interface DisciplineGuideHeaderProps {
   discipline: Discipline;
@@ -46,12 +47,31 @@ export const DisciplineGuideHeader: React.FC<DisciplineGuideHeaderProps> = ({
 
       {/* Hero Action Image */}
       <div className="mt-6">
+        {/*
+          Issue 03 — the same correction MED-01B made to the article hero.
+
+          This passed `alt={discipline.name}` and a caption assembled from the
+          name ("<name> in action at the National Finals Rodeo.") on all seven
+          discipline pages: the ALT text an editor wrote on the Media Library
+          asset was discarded, and the caption was never written by anyone.
+
+          `imageAlt` and `imageCaption` are resolved on the server by
+          `lib/mappers.ts` through the shared chain in `lib/media/imageMeta.ts`,
+          so this page and the article page cannot drift apart. `?? name` covers
+          a `Discipline` assembled outside `toDiscipline`; it cannot override a
+          deliberate empty string, because `''` is not nullish.
+        */}
         <ImageWithCredit
           src={discipline.image}
-          alt={discipline.name}
+          alt={discipline.imageAlt ?? discipline.name}
           credit={discipline.imageCredit}
+          caption={discipline.imageCaption}
+          srcSet={discipline.imageSrcSet}
+          sizes={IMAGE_SIZES.hero}
+          width={discipline.imageWidth}
+          height={discipline.imageHeight}
+          priority
           aspectRatioClass="aspect-[16/9]"
-          caption={`${discipline.name} in action at the National Finals Rodeo.`}
         />
       </div>
     </header>

@@ -1,7 +1,7 @@
 'use client';
 
 import React, { useState, useMemo } from 'react';
-import { Article, PrimarySection } from '../../types';
+import { Article } from '../../types';
 import { SectionHeading } from '../SectionHeading';
 import { ImageWithCredit } from '../ImageWithCredit';
 import { type SectionCopy, copyOr } from './sectionCopy';
@@ -15,14 +15,31 @@ interface LatestCoverageProps {
   anchorId?: string;
 }
 
-const CATEGORIES: ('All' | PrimarySection)[] = [
-  'All',
-  'NFR Competition',
-  'NFR Entertainment',
-  'NFR Events & Shopping',
-  'NFR Plan & Watch',
-  'More Rodeo',
-];
+/**
+ * Stage 03 (R-4) — the filter tabs are DERIVED from the articles this block was
+ * given, not from a compiled-in list.
+ *
+ * The list used to be the five foundational section names, so an
+ * administrator-created category could never appear on the homepage filter
+ * however much it published — the same hardcoding H-01 removed from the editor.
+ *
+ * Deriving from the data makes both failure directions impossible: a tab can
+ * never be empty, and a category present in the feed can never be missing. It
+ * also satisfies "do not automatically display every new Category" — a category
+ * appears only once the Builder's own article selection actually contains one
+ * of its articles, so the Builder keeps deciding what the homepage shows.
+ *
+ * Order follows the feed (most recent first), which keeps the tab strip stable
+ * for the editorial mix currently published rather than reordering on a whim.
+ */
+function deriveCategories(articles: Article[]): string[] {
+  const seen: string[] = [];
+  for (const a of articles) {
+    const name = a.category?.trim();
+    if (name && !seen.includes(name)) seen.push(name);
+  }
+  return ['All', ...seen];
+}
 
 export const LatestCoverage: React.FC<LatestCoverageProps> = ({
   articles,
@@ -30,7 +47,8 @@ export const LatestCoverage: React.FC<LatestCoverageProps> = ({
   copy = {},
   anchorId = 'latest-coverage',
 }) => {
-  const [selectedCategory, setSelectedCategory] = useState<'All' | PrimarySection>('All');
+  const [selectedCategory, setSelectedCategory] = useState<string>('All');
+  const categories = useMemo(() => deriveCategories(articles), [articles]);
 
   const filteredArticles = useMemo(() => {
     if (selectedCategory === 'All') return articles;
@@ -54,7 +72,7 @@ export const LatestCoverage: React.FC<LatestCoverageProps> = ({
 
         {/* Category Filter Tabs (Interactive Filter Control - Compliant with Design Rules) */}
         <div className="flex items-center gap-1.5 overflow-x-auto pb-4 mb-8 scrollbar-none border-b border-stone-200">
-          {CATEGORIES.map((cat) => (
+          {categories.map((cat) => (
             <button
               key={cat}
               onClick={() => setSelectedCategory(cat)}

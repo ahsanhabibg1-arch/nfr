@@ -92,8 +92,16 @@ describe.runIf(available)('Rodeo Coverage archive lifecycle', () => {
         SELECT table_name, is_nullable, column_default FROM information_schema.columns
         WHERE table_schema = 'public' AND column_name = 'archivedAt'
         ORDER BY table_name`;
+      /**
+       * The five rodeo families, plus the two taxonomy tables that adopted the
+       * same convention: `Subcategory` (Batch 04-B) and `ArticleType`
+       * (Batch 04-E). The list stays EXPLICIT rather than becoming a "contains"
+       * check, so an unintended `archivedAt` appearing on some other table is
+       * still caught; and the loop below also proves each newer column is
+       * nullable with no default, i.e. that its migration rewrote no row either.
+       */
       expect(cols.map((c) => c.table_name)).toEqual([
-        'Discipline', 'RodeoEvent', 'RodeoEventEdition', 'RodeoHub', 'Venue',
+        'ArticleType', 'Discipline', 'RodeoEvent', 'RodeoEventEdition', 'RodeoHub', 'Subcategory', 'Venue',
       ]);
       for (const c of cols) {
         // Nullable with no default ⇒ the migration rewrote no row, and every
