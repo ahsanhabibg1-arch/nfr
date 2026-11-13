@@ -145,18 +145,32 @@ describe('S3 — route-level policies that must not change', () => {
     expect(layout.metadata.robots).toEqual({ index: false, follow: false });
   });
 
+  /**
+   * IDX-02 changed this contract deliberately. The middleware no longer keys only
+   * off STAGING_NOINDEX: the production domain and the Render hostname resolve to
+   * the same service, so the noindex decision is made per request from the `Host`
+   * header, and STAGING_NOINDEX remains only as a site-wide kill switch.
+   *
+   * These two cases keep asserting the kill switch's own contract, now with a
+   * request that carries a host (as every real request does). The hostname
+   * behaviour itself — staging, www, unknown hosts, ports, forged forwarded
+   * headers, caching — is covered in `tests/idx02-hostname-seo.test.ts`.
+   */
   describe('staging middleware (X-Robots-Tag)', () => {
     afterEach(() => { vi.unstubAllEnvs(); vi.resetModules(); });
-    const req = () => ({ nextUrl: new URL('http://localhost/') }) as unknown as import('next/server').NextRequest;
+    const req = (host = 'nfrguide.com') => ({
+      nextUrl: new URL(`https://${host}/`),
+      headers: new Headers({ host }),
+    }) as unknown as import('next/server').NextRequest;
 
-    it('STAGING_NOINDEX=true → X-Robots-Tag: noindex, nofollow', async () => {
+    it('STAGING_NOINDEX=true → X-Robots-Tag: noindex, nofollow, even on the production host', async () => {
       vi.stubEnv('STAGING_NOINDEX', 'true');
       vi.resetModules();
       const { middleware } = await import('../middleware');
       expect(middleware(req()).headers.get('X-Robots-Tag')).toBe('noindex, nofollow');
     });
 
-    it('STAGING_NOINDEX unset → no X-Robots-Tag header', async () => {
+    it('STAGING_NOINDEX unset → no X-Robots-Tag header on the production host', async () => {
       vi.stubEnv('STAGING_NOINDEX', '');
       vi.resetModules();
       const { middleware } = await import('../middleware');

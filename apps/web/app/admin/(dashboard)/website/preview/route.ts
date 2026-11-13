@@ -6,6 +6,74 @@ import { prisma } from '@/lib/db';
 import { ADMIN_VISIBLE_PAGE_KEYS } from '@/lib/cms/sectionRegistry';
 import { publicArticleWhere } from '@/lib/fixturePolicy';
 
+/**
+ * BLD-01 — redirect to a RELATIVE Location, never an absolute one.
+ *
+ * THE DEFECT. Both redirects in this route used
+ * `NextResponse.redirect(new URL(path, req.url))`. `NextResponse.redirect`
+ * requires an absolute URL, and resolving against `req.url` takes the origin
+ * from the incoming request as the server sees it. Behind the deployment
+ * platform's proxy the application is bound to the container's internal
+ * address (the deploy log shows `Local: http://localhost:10000`), so the
+ * browser received `Location: http://localhost:10000/...`, tried to reach its
+ * OWN localhost and reported "localhost refused to connect". The Builder canvas
+ * takes the `embed=1` branch, which is why the canvas was the visible symptom.
+ *
+ * THE FIX. RFC 7231 §7.1.2 allows a relative-reference in `Location`, and every
+ * browser resolves it against the request URL — which is the public origin the
+ * user actually typed. That keeps the redirect same-origin by construction:
+ * nothing has to know the deployment's hostname, no forwarded header has to be
+ * trusted (`X-Forwarded-Host` is attacker-controlled unless the proxy is known
+ * to overwrite it), and there is no localhost fallback to get wrong.
+ *
+ * `NextResponse.redirect()` cannot express this because it validates its
+ * argument as an absolute URL, so the response is constructed directly. It is
+ * the same `NextResponse` type and the same 307 status the helper produces, so
+ * cookie handling — including the draft-mode cookie set moments earlier — is
+ * unchanged: the framework applies the outgoing cookie store to whatever
+ * response the handler returns.
+ */
+function sameOriginRedirect(path: string, extraHeaders: Record<string, string> = {}): NextResponse {
+  return new NextResponse(null, {
+    status: 307,
+    headers: { Location: assertSameOriginPath(path), ...extraHeaders },
+  });
+}
+
+/**
+ * Reject anything that is not a plain, single-rooted path on this origin.
+ *
+ * A relative `Location` is only same-origin if it cannot be read as something
+ * else. The cases that matter:
+ *   - `//evil.example/` is a PROTOCOL-RELATIVE url — the browser leaves the site.
+ *   - `https://evil.example/` is absolute for the same reason.
+ *   - `/\evil.example` is treated as `//` by some browsers.
+ *   - CR/LF would split the header.
+ *
+ * `//` is rejected ANYWHERE, not just at the start. A slug of `/evil.example`
+ * yields `/articles//evil.example/`, which stays on this origin and is
+ * therefore not an open redirect — but no legitimate path here contains an
+ * empty segment, so refusing it keeps one hostile slug from silently steering
+ * the preview at a route nobody intended. The first draft of this guard only
+ * checked the prefix; the regression test below caught the difference.
+ *
+ * The allow-list is deliberately narrower than "a valid URL path": these paths
+ * are built from `pageKeyToUrl()` out of CMS slugs, and `normalizeSlug()` only
+ * arrived with the Rodeo Coverage work, so rows created earlier were never held
+ * to it. Validating the finished path covers every caller at once, and the same
+ * guarantee is what makes `targetUrl` safe to interpolate into the standalone
+ * preview's HTML below.
+ */
+function assertSameOriginPath(path: string): string {
+  const ok =
+    path.startsWith('/') &&
+    !path.includes('//') &&
+    !path.includes('\\') &&
+    /^[A-Za-z0-9._~\-/%?&=]*$/.test(path);
+  if (!ok) throw new Error('Unsafe preview redirect target.');
+  return path;
+}
+
 export async function GET(req: NextRequest) {
   const user = await requireUser();
   if (!roleHasPermission(user.roles, 'system.config')) {
@@ -15,7 +83,7 @@ export async function GET(req: NextRequest) {
   // ?exit=1 turns draft preview off and returns to the editor.
   if (req.nextUrl.searchParams.get('exit') === '1') {
     (await draftMode()).disable();
-    return NextResponse.redirect(new URL('/admin/website/', req.url));
+    return sameOriginRedirect('/admin/website/');
   }
 
   const pageKey = req.nextUrl.searchParams.get('pageKey');
@@ -57,16 +125,18 @@ export async function GET(req: NextRequest) {
 
   if (embed) {
     (await draftMode()).enable();
-    const dest = new URL(targetUrl, req.url);
-    dest.searchParams.set('_preview', 'draft');
-    dest.searchParams.set('_pk', pageKey);
-    // `_canvas=1` is what turns the click-to-select bridge on. Only this path
-    // sets it, so the standalone preview keeps ordinary navigation.
-    dest.searchParams.set('_canvas', '1');
-    const res = NextResponse.redirect(dest);
-    res.headers.set('Cache-Control', 'no-store, no-cache, must-revalidate');
-    res.headers.set('X-Robots-Tag', 'noindex');
-    return res;
+    const query = new URLSearchParams({
+      _preview: 'draft',
+      _pk: pageKey,
+      // `_canvas=1` is what turns the click-to-select bridge on. Only this path
+      // sets it, so the standalone preview keeps ordinary navigation.
+      _canvas: '1',
+    });
+    const dest = `${assertSameOriginPath(targetUrl)}${targetUrl.includes('?') ? '&' : '?'}${query}`;
+    return sameOriginRedirect(dest, {
+      'Cache-Control': 'no-store, no-cache, must-revalidate',
+      'X-Robots-Tag': 'noindex',
+    });
   }
 
   // Next.js draft mode: public pages render the saved *draft* layout for this staff session
@@ -97,7 +167,7 @@ export async function GET(req: NextRequest) {
     <a href="/admin/website/">← Back to editor</a>
     <a href="/admin/website/preview?exit=1">Exit draft preview</a>
   </div>
-  <iframe src="${targetUrl}?_preview=draft&_pk=${encodeURIComponent(pageKey)}" sandbox="allow-same-origin allow-scripts"></iframe>
+  <iframe src="${assertSameOriginPath(targetUrl)}?_preview=draft&amp;_pk=${encodeURIComponent(pageKey)}" sandbox="allow-same-origin allow-scripts"></iframe>
 </body>
 </html>`;
 

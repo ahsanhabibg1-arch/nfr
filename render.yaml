@@ -38,7 +38,14 @@ services:
       - key: LOG_LEVEL
         value: info
       # --- secrets / per-environment (set in the Render dashboard; never committed) ---
-      - key: NEXT_PUBLIC_SITE_URL      # https URL of the staging service (env guard requires https in prod)
+      # The ONE origin this deployment claims as its own. It is INLINED INTO THE
+      # BUILD (every NEXT_PUBLIC_* value is), so it is baked into prerendered
+      # canonicals, Open Graph URLs, robots.txt and every sitemap <loc>. Changing
+      # it in the dashboard therefore requires a REBUILD — a restart alone leaves
+      # the old origin in the already-generated HTML. See IDX-02 release prep.
+      # Now that the official domain and the Render hostname share this service,
+      # it must be https://nfrguide.com, not the onrender.com hostname.
+      - key: NEXT_PUBLIC_SITE_URL
         sync: false
       - key: DATABASE_URL              # dedicated Aiven STAGING DB via a least-privilege role (NOT prod, NOT localhost)
         sync: false
@@ -63,9 +70,28 @@ services:
       # fires while the instance is awake (owner decision D-12 — scheduler host).
       - key: INTERNAL_REVALIDATE_SECRET
         sync: false
-      # --- staging SEO protection (Batch 29) ---
+      # --- site-wide SEO kill switch (Batch 29; made safe in IDX-02) ---
+      #
+      # MUST NOT be "true" on this service. nfrguide.com and the Render hostname
+      # resolve to the SAME service, so this variable no longer means "noindex the
+      # staging site" — it means "noindex EVERY hostname, production included".
+      # Setting it true here would remove nfrguide.com from search results.
+      #
+      # Staging protection no longer depends on it. middleware.ts decides per
+      # request from the Host header (lib/seo/productionHosts.ts): the Render
+      # hostname and any unknown host get X-Robots-Tag: noindex, nofollow, while
+      # the official domain does not — with no configuration at all.
+      #
+      # Declared explicitly as "false" rather than deleted, so that a Blueprint
+      # sync actively asserts the safe value instead of leaving behind whatever a
+      # dashboard edit set. tests/deploy-config.test.ts pins this, and pins it
+      # against the middleware's own rule rather than against a copy of it.
+      #
+      # EMERGENCY USE ONLY: to noindex the whole site deliberately, change it both
+      # here and in the dashboard in the same change — otherwise the next
+      # Blueprint sync resets it to "false".
       - key: STAGING_NOINDEX
-        value: "true"              # X-Robots-Tag: noindex on all HTML responses; prevents indexing
+        value: "false"
       # --- optional ---
       - key: APP_VERSION
         sync: false
