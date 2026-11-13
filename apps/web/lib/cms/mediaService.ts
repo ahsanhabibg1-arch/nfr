@@ -217,7 +217,12 @@ export async function getMedia(actor: Actor, id: string) {
 const MetadataInput = z.object({
   title: z.string().max(300).optional(),
   seoTitle: z.string().max(300).optional(),
-  altText: z.string().max(500).optional(),
+  /**
+   * MED-01B — three distinct states, so this one is nullable:
+   *   text → descriptive ALT · `''` → decorative · `null` → clear back to unset
+   * (absent, as ever, means "leave unchanged").
+   */
+  altText: z.string().max(500).nullable().optional(),
   caption: z.string().max(1000).optional(),
   credit: z.string().max(200).optional(),
   copyrightHolder: z.string().max(200).optional(),
@@ -242,12 +247,33 @@ export async function updateMediaMetadata(actor: Actor, id: string, raw: MediaMe
   if (v.licenseSourceUrl && v.licenseSourceUrl.trim() && !/^https?:\/\//i.test(v.licenseSourceUrl.trim())) {
     throw new ServiceError('validation', 'License source URL must start with http(s)://');
   }
-  // Partial merge: only touch fields present in the input (empty string clears a
-  // field; an absent key is left unchanged). Editing one field never wipes others.
+  /**
+   * Partial merge: only touch fields present in the input (an absent key is left
+   * unchanged). Editing one field never wipes others.
+   *
+   * MED-01B — `altText` is the ONE exception to "empty string clears the field".
+   *
+   * For every other field, `null` and `''` mean the same thing: nothing to show.
+   * For ALT text they are different and the difference is load-bearing:
+   *
+   *   null → nobody has written ALT text yet        → an SEO finding (IMG_NO_ALT)
+   *   ''   → an editor says this image is DECORATIVE → correct, and must survive
+   *
+   * Collapsing `''` to `null` destroyed that decision on save, which is why
+   * decorative images were impossible to express. Keeping the empty string is
+   * all it takes — no extra column, because the two states were already
+   * representable. `lib/media/imageMeta.ts` reads the distinction.
+   */
   const data: Prisma.MediaAssetUpdateInput = {};
   for (const k of ['title', 'seoTitle', 'altText', 'caption', 'credit', 'copyrightHolder', 'licenseSourceUrl', 'usageRestrictions', 'sourceAttribution'] as const) {
     const val = v[k];
-    if (val !== undefined) (data as Record<string, unknown>)[k] = val === '' ? null : val;
+    if (val === undefined) continue;
+    if (k === 'altText') {
+      // null clears to unset; '' is kept as the decorative marker.
+      (data as Record<string, unknown>)[k] = val;
+      continue;
+    }
+    (data as Record<string, unknown>)[k] = val === '' ? null : val;
   }
   await prisma.mediaAsset.update({ where: { id }, data });
   await audit(actor.id, 'media.metadata.update', 'media', id);

@@ -2,6 +2,7 @@ import React from 'react';
 import Link from 'next/link';
 import { Article } from '../../types';
 import { ROUTES } from '../../config/routes';
+import { IMAGE_SIZES } from '../../lib/media/imageMeta';
 
 /**
  * STAGE 08 TASK H - accessibility and crawlability correction.
@@ -63,8 +64,18 @@ export const EditorialHero: React.FC<EditorialHeroProps> = ({
   kicker,
   ctaText,
 }) => {
-  const imageSrc = heroImageUrl?.trim() || leadArticle.heroImage;
-  const imageAlt = heroImageUrl?.trim() ? (heroImageAlt?.trim() || leadArticle.title) : (leadArticle.imageAltText || leadArticle.title);
+  /**
+   * MED-01B — when the Builder supplies its own hero URL it also supplies its
+   * own ALT; otherwise the lead article's resolved editorial ALT applies.
+   * `heroImageAlt` from `toArticle` is used in preference to the raw
+   * `imageAltText` because it also honours the media-level default and an
+   * explicitly empty (decorative) value, which `||` cannot express.
+   */
+  const usingOverride = !!heroImageUrl?.trim();
+  const imageSrc = usingOverride ? heroImageUrl!.trim() : leadArticle.heroImage;
+  const imageAlt = usingOverride
+    ? (heroImageAlt?.trim() || leadArticle.title)
+    : (leadArticle.heroImageAlt ?? leadArticle.imageAltText ?? leadArticle.title);
   return (
     <section className="relative w-full bg-[#0F1115] text-white pt-4 pb-14 border-b border-white/10 overflow-hidden">
       <div className="max-w-[1280px] mx-auto px-4 sm:px-6 lg:px-8">
@@ -87,9 +98,18 @@ export const EditorialHero: React.FC<EditorialHeroProps> = ({
                 article with no hero still gets the intended look instead of a
                 broken-image icon. */}
             {imageSrc?.trim() ? (
+              /* MED-01C — the homepage LCP image: eager + high fetch priority,
+                 and the stored derivatives advertised when this is the lead
+                 article's own hero. A Builder-supplied `heroImageUrl` override
+                 is an arbitrary URL with no DAM record, so it gets no srcSet. */
               <img
                 src={imageSrc}
+                srcSet={usingOverride ? undefined : leadArticle.heroImageSrcSet}
+                sizes={!usingOverride && leadArticle.heroImageSrcSet ? IMAGE_SIZES.lead : undefined}
                 alt={imageAlt}
+                loading="eager"
+                fetchPriority="high"
+                decoding="sync"
                 referrerPolicy="no-referrer"
                 className="w-full h-full object-cover object-right md:object-center brightness-90 transform scale-100 hover:scale-[1.01] transition-transform duration-700 ease-out"
               />
@@ -178,9 +198,16 @@ export const EditorialHero: React.FC<EditorialHeroProps> = ({
                 {/* D-A3: see the hero stage above — the wrapper's `bg-black/40`
                     is the placeholder when a story has no hero image. */}
                 {story.heroImage?.trim() ? (
+                  /* MED-01B/C — a 144×112 thumbnail: editorial ALT, the smallest
+                     stored derivative, lazy. It used to download the full-size
+                     original for a card this size. */
                   <img
                     src={story.heroImage}
-                    alt={story.title}
+                    srcSet={story.heroImageSrcSet}
+                    sizes={story.heroImageSrcSet ? '144px' : undefined}
+                    alt={story.heroImageAlt ?? story.imageAltText ?? story.title}
+                    loading="lazy"
+                    decoding="async"
                     referrerPolicy="no-referrer"
                     className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-500 ease-out"
                   />

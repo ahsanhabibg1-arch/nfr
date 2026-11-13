@@ -8,6 +8,15 @@ import {
   ArticleWorkflowStatus,
   Discipline,
 } from '../types';
+import { effectiveAlt, effectiveCaption, buildResponsiveSources } from './media/imageMeta';
+
+/**
+ * Delivery URL for a stored object — the SAME gated proxy path the storage
+ * adapters return (`publicUrl()`), repeated here rather than imported so this
+ * module stays free of the storage adapter's `server-only` client machinery.
+ * `tests/med01bc-image-seo.test.ts` pins the two against each other.
+ */
+const mediaUrl = (key: string): string => `/api/media/${key}`;
 
 /**
  * Prisma include shapes + row → domain mappers (Batch 02).
@@ -26,6 +35,33 @@ export const articleInclude = {
   hubs: true,
   events: true,
   editions: true,
+  /**
+   * MED-01B/C — the DAM record behind the hero image.
+   *
+   * `heroImageUrl` is a mirrored string, which is all the public site had: no
+   * ALT default, no caption default, and no way to know that WebP derivatives
+   * had been generated for this asset. Joining the hero `ArticleMedia` row here
+   * — ONE place — is what lets `toArticle` resolve effective ALT/caption and a
+   * responsive `srcset`, and every consumer of `toArticle` (the article page,
+   * the homepage feed, the grids, related articles) gets it without its own
+   * query. The join is narrow: one row by `usageKey`, a handful of columns.
+   */
+  media: {
+    where: { usageKey: 'hero' },
+    include: {
+      media: {
+        select: {
+          altText: true,
+          caption: true,
+          derivatives: true,
+          width: true,
+          height: true,
+          storageKey: true,
+          url: true,
+        },
+      },
+    },
+  },
 } satisfies Prisma.ArticleInclude;
 
 export type ArticleWithRelations = Prisma.ArticleGetPayload<{ include: typeof articleInclude }>;
@@ -46,6 +82,71 @@ const RIGHTS_TO_TS: Record<ImageRightsStatus, NonNullable<Article['imageRightsSt
   LICENSED_CREATIVE: 'Licensed Creative',
   UNRESOLVED: 'Unresolved',
 };
+
+/**
+ * MED-01B/C — resolve the hero image's effective ALT, caption and responsive
+ * sources once, on the server, where the DAM record is in hand.
+ *
+ * Doing it here rather than in each component means the precedence rule exists
+ * in exactly one place (`lib/media/imageMeta.ts`), the SEO engine evaluates the
+ * same values the HTML will carry, and a component cannot quietly substitute
+ * the headline for missing ALT text again.
+ *
+ * `heroImageAlt` is always a string — `''` when an editor marked the asset
+ * decorative, the headline when nothing is set anywhere (reported as
+ * `IMG_NO_ALT`, never silently accepted). `heroImageCaption` is undefined when
+ * nobody wrote one; no caption is invented.
+ */
+function heroImageMeta(row: ArticleWithRelations): Pick<
+  Article,
+  'heroImageAlt' | 'heroImageAltSource' | 'heroImageDecorative' | 'heroImageCaption' | 'heroImageSrcSet' | 'heroImageWidth' | 'heroImageHeight'
+> {
+  const usage = row.media?.find((m) => m.usageKey === 'hero');
+  const asset = usage?.media ?? null;
+
+  /**
+   * `|| null` on the ARTICLE-level values, deliberately.
+   *
+   * An empty string means "decorative" only where the save path preserves it —
+   * the media asset (`updateMediaMetadata` keeps an empty `altText`) and the
+   * per-usage override. `saveArticle` stores `v.imageAltText || null`, so an
+   * empty article field is not an editorial decision, just emptiness, and must
+   * let the chain continue to the media default. `tests/seo-intel.test.ts`
+   * pins exactly this case: an article published with `imageAltText: ''` and no
+   * media ALT must still raise `IMG_NO_ALT`, which it would not if the empty
+   * string were read as a deliberate decorative marker.
+   */
+  const alt = effectiveAlt({
+    usage: usage?.altText,
+    article: row.imageAltText || null,
+    media: asset?.altText,
+    fallback: row.title,
+  });
+
+  const caption = effectiveCaption({
+    usage: usage?.caption,
+    article: row.imageCaption || null,
+    media: asset?.caption,
+  });
+
+  const responsive = asset
+    ? buildResponsiveSources(
+        asset.derivatives,
+        { key: asset.storageKey, url: asset.url, width: asset.width },
+        mediaUrl,
+      )
+    : { widths: [] as number[] };
+
+  return {
+    heroImageAlt: alt.alt,
+    heroImageAltSource: alt.source,
+    heroImageDecorative: alt.decorative,
+    heroImageCaption: caption,
+    heroImageSrcSet: responsive.srcSet,
+    heroImageWidth: asset?.width ?? undefined,
+    heroImageHeight: asset?.height ?? undefined,
+  };
+}
 
 function formatDate(d: Date | null | undefined): string {
   if (!d) return '';
@@ -112,6 +213,7 @@ export function toArticle(row: ArticleWithRelations): Article {
     imageCaption: row.imageCaption ?? undefined,
     imageAltText: row.imageAltText ?? undefined,
     imageSeoTitle: row.imageSeoTitle ?? undefined,
+    ...heroImageMeta(row),
     imageRightsStatus: RIGHTS_TO_TS[row.imageRightsStatus],
     isLeadHero: row.isLeadHero,
     isFeatured: row.isFeatured,

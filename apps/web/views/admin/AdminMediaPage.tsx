@@ -68,6 +68,7 @@ export const AdminMediaPage: React.FC<Props> = ({ result, filters, viewerId, can
   // ---- Detail panel form ----
   const [form, setForm] = useState<Record<string, string>>({});
   const [license, setLicense] = useState<string>('UNCONFIRMED');
+  const [decorative, setDecorative] = useState(false);
   const syncedFor = useRef<string | null>(null);
   if (selected && syncedFor.current !== selected.id) {
     syncedFor.current = selected.id;
@@ -77,6 +78,8 @@ export const AdminMediaPage: React.FC<Props> = ({ result, filters, viewerId, can
       licenseSourceUrl: selected.licenseSourceUrl ?? '', usageRestrictions: selected.usageRestrictions ?? '', sourceAttribution: selected.sourceAttribution ?? '',
     });
     setLicense(selected.licenseType);
+    // MED-01B — an EMPTY STRING (not null) is how an asset records "decorative".
+    setDecorative(selected.altText === '');
   }
   const canEditSel = canEditAny || selected?.uploadedById === viewerId;
   const run = (p: Promise<{ ok: boolean; error?: string }>, ok: string) =>
@@ -213,11 +216,43 @@ export const AdminMediaPage: React.FC<Props> = ({ result, filters, viewerId, can
 
               {/* Metadata */}
               {([['title', 'Title'], ['seoTitle', 'Image SEO title'], ['altText', 'ALT text'], ['caption', 'Caption'], ['credit', 'Credit / photographer'], ['copyrightHolder', 'Copyright holder'], ['licenseSourceUrl', 'License source URL'], ['usageRestrictions', 'Usage restrictions'], ['sourceAttribution', 'Source attribution']] as const).map(([k, label]) => (
-                <div key={k}><label htmlFor={`media-${k}`} className={lbl}>{label}</label><input id={`media-${k}`} value={form[k] ?? ''} onChange={(e) => setForm({ ...form, [k]: e.target.value })} disabled={!canEditSel} className={inp} /></div>
+                <div key={k}><label htmlFor={`media-${k}`} className={lbl}>{label}</label><input id={`media-${k}`} value={k === 'altText' && decorative ? '' : (form[k] ?? '')} onChange={(e) => setForm({ ...form, [k]: e.target.value })} disabled={!canEditSel || (k === 'altText' && decorative)} className={inp} /></div>
               ))}
 
+              {/*
+                MED-01B — decorative images.
+                An empty ALT attribute is the CORRECT markup for an image that
+                carries no information (assistive technology skips it), and it
+                was previously impossible to express: the save path rewrote an
+                empty string to null, which reads as "nobody has filled this in
+                yet" and raises an SEO finding. This checkbox is the difference
+                between the two, and the only way to set it deliberately.
+              */}
+              <label className="flex items-start gap-2 text-[11px] text-ink-muted">
+                <input
+                  type="checkbox"
+                  aria-label="Decorative image — intentionally empty ALT text"
+                  checked={decorative}
+                  disabled={!canEditSel}
+                  onChange={(e) => setDecorative(e.target.checked)}
+                  className="mt-0.5"
+                />
+                <span>
+                  <strong className="text-stone-700">Decorative image</strong> — intentionally empty ALT.
+                  Use only when the image carries no information a reader would miss. Informative
+                  photographs must have descriptive ALT text instead.
+                </span>
+              </label>
+
               <div className="flex flex-wrap gap-2 pt-1">
-                {canEditSel && <button onClick={() => run(updateMediaMetadataAction(selected.id, form), 'Metadata saved.')} disabled={pending} className="px-3 py-1.5 bg-[#0F1115] text-[#D4A757] text-xs font-semibold rounded-xs disabled:opacity-50">Save metadata</button>}
+                {/*
+                  MED-01B — ALT text carries three states, so it is built
+                  explicitly rather than passed through with the rest of the
+                  form: '' when decorative, null to clear it back to unset, and
+                  the typed text otherwise. Every other field keeps its existing
+                  "empty string clears it" behaviour.
+                */}
+                {canEditSel && <button onClick={() => run(updateMediaMetadataAction(selected.id, { ...form, altText: decorative ? '' : (form.altText?.trim() ? form.altText : null) }), 'Metadata saved.')} disabled={pending} className="px-3 py-1.5 bg-[#0F1115] text-[#D4A757] text-xs font-semibold rounded-xs disabled:opacity-50">Save metadata</button>}
                 {canEditSel && (
                   <select aria-label="Asset visibility" value={selected.visibility} onChange={(e) => run(setVisibilityAction(selected.id, e.target.value as never), 'Visibility updated.')} className="text-xs p-1.5 border border-stone-300 rounded-xs">
                     <option value="DRAFT">Draft</option><option value="PUBLIC">Public</option><option value="ARCHIVED">Archived</option>

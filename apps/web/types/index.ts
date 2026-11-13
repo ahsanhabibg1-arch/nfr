@@ -129,6 +129,24 @@ export interface Article {
   imageSeoTitle?: string;
   imageAltText?: string;
   imageCaption?: string;
+  /**
+   * MED-01B/C — hero image metadata RESOLVED on the server (`lib/mappers.ts`
+   * via `lib/media/imageMeta.ts`). Components render these instead of
+   * re-deriving ALT text, so the precedence rule lives in one place and the SEO
+   * engine evaluates exactly what the HTML will carry.
+   */
+  /** Effective ALT. `''` means an editor marked the image decorative. */
+  heroImageAlt?: string;
+  /** Which level supplied it: 'usage' | 'article' | 'media' | 'fallback'. */
+  heroImageAltSource?: 'usage' | 'article' | 'media' | 'fallback';
+  /** True only when ALT was deliberately left empty. */
+  heroImageDecorative?: boolean;
+  /** Effective caption; undefined when nobody wrote one (none is invented). */
+  heroImageCaption?: string;
+  /** `srcset` built from the stored WebP derivatives; undefined for legacy assets. */
+  heroImageSrcSet?: string;
+  heroImageWidth?: number;
+  heroImageHeight?: number;
   isLeadHero?: boolean;
   isFeatured?: boolean;
   takeaways?: string[];

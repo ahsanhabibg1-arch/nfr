@@ -2,6 +2,7 @@ import React from 'react';
 import Link from 'next/link';
 import { Article } from '../../types';
 import { ImageWithCredit } from '../ImageWithCredit';
+import { IMAGE_SIZES } from '../../lib/media/imageMeta';
 import { ROUTES } from '../../config/routes';
 
 interface RelatedArticlesProps {
@@ -38,10 +39,16 @@ export const RelatedArticles: React.FC<RelatedArticlesProps> = ({
           >
             <div>
               <Link href={ROUTES.ARTICLE(art.slug)} tabIndex={-1}>
+                {/* MED-01B/C — below the fold by definition: editorial ALT,
+                    card-sized derivative, lazy. */}
                 <ImageWithCredit
                   src={art.heroImage}
-                  alt={art.title}
+                  alt={art.heroImageAlt ?? art.imageAltText ?? art.title}
                   credit={art.imageCredit}
+                  srcSet={art.heroImageSrcSet}
+                  sizes={IMAGE_SIZES.card}
+                  width={art.heroImageWidth}
+                  height={art.heroImageHeight}
                   aspectRatioClass="aspect-[16/10]"
                 />
               </Link>

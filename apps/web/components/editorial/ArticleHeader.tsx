@@ -3,6 +3,7 @@ import { Article } from '../../types';
 import { Breadcrumbs } from './Breadcrumbs';
 import { AuthorByline } from './AuthorByline';
 import { ImageWithCredit } from '../ImageWithCredit';
+import { IMAGE_SIZES } from '../../lib/media/imageMeta';
 import { PRIMARY_SECTIONS } from '../../config/routes';
 
 interface ArticleHeaderProps {
@@ -79,14 +80,41 @@ export const ArticleHeader: React.FC<ArticleHeaderProps> = ({ article }) => {
         readTime={article.readTime}
       />
 
-      {/* Featured Media */}
+      {/*
+        Featured Media — MED-01B.
+
+        THE DEFECT. This passed `alt={article.title}` and a synthesised
+        `caption={`Editorial Dispatch: ${article.title}`}`. So the ALT text an
+        editor wrote in the Media Library or the article form never reached the
+        page that matters most, and every hero carried a caption nobody wrote.
+        The homepage had it right all along (`EditorialHero`, `HomeArticleFeed`
+        both read `imageAltText`), which is what made the inconsistency easy to
+        miss — and the SEO engine reported the ALT text as present because the
+        DATA was there, while the HTML shipped the headline.
+
+        THE FIX. `heroImageAlt` and `heroImageCaption` are resolved on the
+        server by `lib/media/imageMeta.ts` (usage override → article → media
+        default → headline, with an empty string meaning "decorative"). The
+        component renders them and derives nothing itself. `?? article.title`
+        remains only for an `Article` assembled outside `toArticle`; it cannot
+        override a deliberate empty string, because `''` is not nullish.
+
+        `priority` marks this as the page's LCP image, and the stored WebP
+        derivatives are advertised through `srcSet`. Layout, aspect ratio and
+        the credit line are unchanged.
+      */}
       <div className="pt-2">
         <ImageWithCredit
           src={article.heroImage}
-          alt={article.title}
+          alt={article.heroImageAlt ?? article.imageAltText ?? article.title}
           credit={article.imageCredit}
+          caption={article.heroImageCaption ?? article.imageCaption}
+          srcSet={article.heroImageSrcSet}
+          sizes={IMAGE_SIZES.hero}
+          width={article.heroImageWidth}
+          height={article.heroImageHeight}
+          priority
           aspectRatioClass="aspect-[16/9]"
-          caption={`Editorial Dispatch: ${article.title}`}
         />
       </div>
     </header>

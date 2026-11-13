@@ -5,6 +5,7 @@ import { sitemapExclusionReason, effectiveRobots, type SeoSubject } from '../seo
 import { robotsToString } from '../seo/robots';
 import { type RouteIndex, type RouteInfo, resolveRoute, classifyLink, safeNormalizePath, RENDERS_PUBLICLY } from '../seo/routeIndex';
 import { Thresholds } from './rules';
+import { effectiveAlt } from '../media/imageMeta';
 
 /**
  * SEO analyzers (Batch 06 §6-§12). Pure functions over an Inventory built from
@@ -270,8 +271,39 @@ export function analyzeImages(inv: Inventory): RawFinding[] {
     const url = `/articles/${a.slug}/`;
     const F = (ruleCode: string, evidence: string): RawFinding => ({ ruleCode, entityType: 'article', entityId: a.id, articleId: a.id, affectedUrl: url, evidence });
     const media = inv.mediaByUrl.get(a.heroImageUrl);
-    const assetAlt = media?.altText || '';
-    if (!wordish(a.imageAltText) && !wordish(assetAlt)) out.push(F('IMG_NO_ALT', 'Featured image has no ALT text (article-level or asset-level).'));
+
+    /**
+     * MED-01B — judge the ALT text the PAGE WILL ACTUALLY RENDER, not whether a
+     * column happens to be populated.
+     *
+     * This check used to pass whenever `Article.imageAltText` or
+     * `MediaAsset.altText` held words — while `ArticleHeader` rendered
+     * `alt={article.title}` and used neither. The engine called the page healthy
+     * at the same moment its HTML shipped the headline as ALT text. It now calls
+     * `effectiveAlt`, the same resolver `toArticle` feeds the renderer, so the
+     * two cannot disagree again.
+     *
+     * Two consequences worth stating:
+     *  - `source === 'fallback'` means nothing was set anywhere and the headline
+     *    is standing in. That is the finding — a fallback is a real gap, even
+     *    though an `alt` attribute will be present in the HTML.
+     *  - a DECORATIVE image (an editor deliberately saved an empty ALT) is
+     *    correct markup, not a defect, and raises nothing. Reporting it would
+     *    train editors to ignore this panel.
+     */
+    const alt = effectiveAlt({
+      // `|| null`: an empty article-level field is emptiness, not a decorative
+      // decision — `saveArticle` collapses '' to null, so '' only ever reaches
+      // here from a direct write. Decorative is expressible on the ASSET (and
+      // per-usage), where the save path preserves an empty string. Same
+      // reasoning as `heroImageMeta` in lib/mappers.ts.
+      article: a.imageAltText || null,
+      media: media?.altText,
+      fallback: a.title,
+    });
+    if (alt.source === 'fallback') {
+      out.push(F('IMG_NO_ALT', 'Featured image has no ALT text (article-level or asset-level); the headline is standing in.'));
+    }
     if (!wordish(a.imageSeoTitle) && !wordish(media?.seoTitle)) out.push(F('IMG_GENERIC_SEO_TITLE', 'Featured image has no image SEO title.'));
     // Managed media checks (DAM-served URLs only).
     if (a.heroImageUrl.startsWith('/api/media/')) {

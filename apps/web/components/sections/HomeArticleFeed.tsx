@@ -2,6 +2,7 @@ import React from 'react';
 import Link from 'next/link';
 import { Article } from '../../types';
 import { ImageWithCredit } from '../ImageWithCredit';
+import { IMAGE_SIZES } from '../../lib/media/imageMeta';
 import { ROUTES } from '../../config/routes';
 
 /**
@@ -60,10 +61,17 @@ export const HomeArticleFeed: React.FC<HomeArticleFeedProps> = ({
           >
             <div>
               <Link href={ROUTES.ARTICLE(article.slug)} tabIndex={-1} aria-hidden="true">
+                {/* MED-01B/C — `heroImageAlt` now also honours the media-level
+                    default and a deliberate empty ALT, which `||` could not
+                    express (it treats '' as missing). Card-sized derivative. */}
                 <ImageWithCredit
                   src={article.heroImage}
-                  alt={article.imageAltText || article.title}
+                  alt={article.heroImageAlt ?? article.imageAltText ?? article.title}
                   credit={article.imageCredit}
+                  srcSet={article.heroImageSrcSet}
+                  sizes={IMAGE_SIZES.card}
+                  width={article.heroImageWidth}
+                  height={article.heroImageHeight}
                   tone={dark ? 'dark' : 'light'}
                   aspectRatioClass="aspect-[16/10]"
                 />

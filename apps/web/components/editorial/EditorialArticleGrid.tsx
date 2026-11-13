@@ -2,6 +2,7 @@ import React from 'react';
 import Link from 'next/link';
 import { Article } from '../../types';
 import { ImageWithCredit } from '../ImageWithCredit';
+import { IMAGE_SIZES } from '../../lib/media/imageMeta';
 import { ROUTES } from '../../config/routes';
 
 interface EditorialArticleGridProps {
@@ -30,10 +31,16 @@ export const EditorialArticleGrid: React.FC<EditorialArticleGridProps> = ({
         >
           <div>
             <Link href={ROUTES.ARTICLE(art.slug)} tabIndex={-1}>
+              {/* MED-01B/C — editorial ALT (resolved server-side), card-sized
+                  derivative, lazy by default. Cards are never the LCP image. */}
               <ImageWithCredit
                 src={art.heroImage}
-                alt={art.title}
+                alt={art.heroImageAlt ?? art.imageAltText ?? art.title}
                 credit={art.imageCredit}
+                srcSet={art.heroImageSrcSet}
+                sizes={IMAGE_SIZES.card}
+                width={art.heroImageWidth}
+                height={art.heroImageHeight}
                 aspectRatioClass="aspect-[16/10]"
               />
             </Link>
