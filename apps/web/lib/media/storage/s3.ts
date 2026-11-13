@@ -3,17 +3,43 @@ import { StorageAdapter, StoragePutResult, assertSafeKey } from './adapter';
 
 /**
  * S3-compatible adapter (Batch 05 §3) — targets Cloudflare R2 (owner-approved),
- * AWS S3, or MinIO by configuration. The AWS SDK is imported lazily through a
- * variable specifier so the package is NOT a hard dependency: the local
- * foundation runs without it, and typecheck does not require it. To ACTIVATE:
- *   npm i @aws-sdk/client-s3
- *   set MEDIA_STORAGE_PROVIDER=r2 (or s3) + the MEDIA_S3_* env vars below.
- * This adapter is never exercised until a cloud provider is configured; it does
- * not claim production storage is operational on its own (see STORAGE_PROVIDER_DECISION.md).
+ * AWS S3, or MinIO by configuration. Activated with
+ * `MEDIA_STORAGE_PROVIDER=r2` (or `s3`) plus the `MEDIA_S3_*` variables below.
+ *
+ * MED-01A — the SDK specifier must be a LITERAL.
+ *
+ * THE DEFECT. This file used to assemble the module name at runtime
+ * (`['@aws-sdk', 'client-s3'].join('/')`) and pass that variable to
+ * `await import(spec)`. The intent was to keep the AWS SDK an optional
+ * dependency the bundler would not try to resolve. What actually happened is
+ * that the bundler could not resolve it *at all*: a dynamic specifier it cannot
+ * analyse is compiled into a stub that throws at call time. In production every
+ * upload failed inside `ensure()` with
+ *
+ *     [storage] Error: Cannot find module as expression is too dynamic
+ *     provider: r2  objectsWritten: 0
+ *
+ * — i.e. the upload never reached R2. The operator saw only "Upload failed
+ * while saving the file.", which reads exactly like a permission problem, and
+ * the two are indistinguishable from outside. (`derivativesPlanned: 2` in the
+ * same log line also proves `sharp` was working: the image was decoded and its
+ * derivatives generated before this point.)
+ *
+ * THE FIX. `await import('@aws-sdk/client-s3')` — a literal the bundler can
+ * resolve. The import stays INSIDE `ensure()`, so loading is still lazy and the
+ * `local` provider still never pulls the SDK in; what changes is only that the
+ * specifier is statically analysable. `@aws-sdk/client-s3` is a production
+ * dependency and is listed in `serverExternalPackages`, so the built server
+ * requires it from `node_modules` at call time rather than bundling it.
+ *
+ * The literal also makes the SDK mockable, which is what lets
+ * `tests/media-storage-adapter.test.ts` cover `put`/`get`/`delete`/`exists` —
+ * none of which had any test before, in either direction.
+ *
+ * Do NOT reintroduce a computed specifier here. "The bundler must not see this"
+ * and "the bundler must resolve this" are the same requirement for a module
+ * that has to load at runtime, and only the literal satisfies it.
  */
-// Assembled at runtime so the bundler cannot statically resolve it — the AWS SDK
-// is an optional dependency, installed only when a cloud provider is activated.
-const SDK_SPECIFIER = ['@aws-sdk', 'client-s3'].join('/');
 
 interface S3Config {
   bucket: string;
@@ -64,9 +90,10 @@ export class S3StorageAdapter implements StorageAdapter {
   private async ensure(): Promise<void> {
     if (this.client) return;
     this.cfg = readConfig();
-    // Variable specifier → not resolved by tsc; requires the SDK at runtime only.
-    const spec = SDK_SPECIFIER;
-    const sdk = (await import(spec)) as unknown as {
+    // Literal specifier: resolvable by the bundler, still loaded lazily (see the
+    // note at the top of this file). The cast keeps the adapter's existing loose
+    // typing — the client and commands are held as `unknown` by design.
+    const sdk = (await import('@aws-sdk/client-s3')) as unknown as {
       S3Client: new (o: unknown) => unknown;
       PutObjectCommand: new (i: unknown) => unknown;
       GetObjectCommand: new (i: unknown) => unknown;
