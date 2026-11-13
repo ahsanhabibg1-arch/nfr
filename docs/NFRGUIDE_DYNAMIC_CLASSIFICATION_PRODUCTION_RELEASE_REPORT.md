@@ -1,8 +1,9 @@
 # NFRGuide.com — Dynamic Discipline Classification & Production Release
 
-## FINAL STATUS: `DATABASE MIGRATED — GIT PUSH / DEPLOY NOT DONE`
+## FINAL STATUS: `PUSHED — RENDER VERIFICATION PENDING`
 
-**Date:** 2026-11-13 · **Branch:** `main` · **HEAD:** `aafdad296363e4b69d3b01594540116f9b58f39d` (unchanged, 0 ahead / 0 behind `origin/main`)
+**Date:** 2026-11-13 · **Branch:** `main` · **HEAD:** `93975cc395dabeff39d9b738df47283140f4e30b`
+**Pushed to** `origin/main` (`aafdad2..93975cc`), confirmed received · 0 ahead / 0 behind
 
 | | |
 |---|---|
@@ -14,8 +15,8 @@
 | **Aiven backup-system restore verified** | **NO — the owner waived this gate** |
 | Own pre-migration backup, proven restorable | **YES (§10)** |
 | **Production site after migration** | **HEALTHY — 39/39 sitemap URLs HTTP 200** |
-| Git commit / push | **NONE** |
-| Render deployment | **NONE** |
+| Git commit / push | **DONE — `93975cc`, 95 files, +19,319 / −198 (§14)** |
+| Render deployment | **UNVERIFIED — no Render API access here (§15)** |
 | Paid resources provisioned | **NONE** |
 
 ### What changed from the earlier version of this report
@@ -599,11 +600,41 @@ until an editor picks a value. **Reported, not altered.**
 
 ## 14. Git commit and push status
 
-**No commit. No push.** `main` is still at `aafdad2`, 0 ahead / 0 behind
-`origin/main`. §12 of the brief authorises a push only after production database
-compatibility is verified; it is not.
+### Pushed — `aafdad2..93975cc`
 
-Preflight that *was* completed:
+| | |
+|---|---|
+| Commit | **`93975cc395dabeff39d9b738df47283140f4e30b`** |
+| Message | `feat: dynamic discipline classifications and production CMS stabilization` |
+| Contents | **95 files · +19,319 / −198** |
+| Pushed to | `origin/main` at `github.com/ahsanhabibg1-arch/nfr.git` |
+| Push type | **normal** — never `--force`, no rebase, no reset, no stash |
+| Remote confirmed | re-fetched: `origin/main` == local `93975cc`, **0 ahead / 0 behind** |
+| Working tree after | **clean — 0 uncommitted entries** |
+
+The push was authorised by the owner after §12-§13 verified that production's
+schema now matches the code.
+
+### Safety checks performed before staging
+
+| Check | Result |
+|---|---|
+| `.env` tracked by git | **no** — ignored by `apps/web/.gitignore:7`, and **0 commits in all of history** touch it |
+| Live credential in the staged diff | **none** — scanned the staged content, not just the file list |
+| Keys / tokens / private keys added | **none** |
+| Forbidden file kinds (`.env`, dumps, logs, traces, `test-results/`, `playwright-report/`, `node_modules`, `.next/`) | **none staged** |
+| Staging method | an **explicit list** of the 46 modified + 49 untracked paths; never `git add .` or `-A` |
+| Nothing missed | after staging: 95 staged, **0 unstaged, 0 untracked** |
+| `git diff --cached --check` | **clean** (two trailing-whitespace hits in docs were fixed first) |
+
+> **One exposure worth knowing about, pre-existing.** Several committed docs name
+> the production database (`defaultdb`) and its user (`avnadmin`) — identifiers,
+> not credentials, and no host or password appears in any committed file. Files
+> already in the repository carried these before this commit; this commit adds
+> more of the same. If the repository is public, that is a small information leak
+> worth cleaning up deliberately rather than urgently.
+
+### Preflight that was completed earlier
 
 | Check | Result |
 |---|---|
@@ -626,16 +657,52 @@ Preflight that *was* completed:
 > authoritative — a push was handled as a production release action — but the two
 > should be reconciled before the first intentional deploy.
 
-## 15. Render deployment status
+## 15. Render deployment status — **UNVERIFIED**
 
-**Nothing was deployed, so there is no deployment to verify.** No Render API
-token or CLI is available in this session; if a deployment is made later, the
-owner will need to supply the build and service logs.
+**A successful push is not a successful deployment, and this report does not
+treat it as one.** No Render API token or CLI exists in this session, so whether
+Render picked up `93975cc` cannot be confirmed from here.
 
-**The currently running production application is the OLD code** (`aafdad2`),
-and that is the safe direction: its Prisma client selects explicit column lists
-and knows nothing of the three new tables, so extra columns and tables are inert
-to it. Verified empirically in §16.
+Two things make that genuinely uncertain rather than merely unobserved:
+
+1. **`render.yaml` declares `autoDeploy: false`.** If the dashboard matches the
+   Blueprint, **nothing will deploy** until the owner triggers it manually. The
+   owner's brief says `main` auto-deploys, so the dashboard probably differs —
+   but a Blueprint file does not override a dashboard setting and the dashboard
+   is not visible here.
+2. The service is on Render's **free** plan and spins down when idle, so a
+   deployment can take a minute to become observable.
+
+### Baseline for detecting the deployment
+
+Captured immediately after the push, before any deploy could land:
+
+| Signal | Value at push time |
+|---|---|
+| Homepage `ETag` | `W/"lcjqbkqyhm3t0b"` |
+| `x-nextjs-cache` / `x-nextjs-prerender` | `HIT` / `1` |
+| `/api/health/` | `{"status":"ok","time":"2026-11-13T17:46:30Z"}` — carries no commit id |
+
+A changed homepage `ETag` is the cheapest evidence that a new build is serving.
+
+> **The public Competition filter is NOT a usable deploy signal.** It currently
+> reads `All 7 Events`, `Roughstock (3)`, `Timed Events (4)` — which the new
+> dynamic code would also produce, because production genuinely has 7
+> disciplines split 3/4. Identical output either way.
+
+**Until a deployment lands, the running application is the old code** (`aafdad2`),
+which is the safe direction: its Prisma client selects explicit column lists and
+knows nothing of the three new tables, so the added columns and tables are inert
+to it — verified empirically in §16, where all 39 sitemap URLs returned 200 after
+the migration.
+
+### What the owner needs to supply to close this
+
+The Render build log and service log for the deploy of `93975cc`, checked for: a
+successful build, service startup, no Prisma schema errors, no `P2022`, and no
+unexpected database writes. Then the §16 smoke list again, plus an authenticated
+pass over Rodeo Coverage → **Classifications**, Add/Edit Discipline, Landing SEO,
+Editorial Organization and the Article Editor.
 
 ## 16. Production smoke test results — after the migration
 
@@ -722,29 +789,30 @@ subcategory mapping and every earlier stage's work are untouched.
 | 4c | The new managed tables are now live but **no code using them is deployed**. Harmless, but the feature is not available to editors until the push happens | Medium |
 | 5 | `render.yaml` says `autoDeploy: false`, `nfrguide-staging`, free plan; the brief says `main` auto-deploys to production | **Medium — reconcile before the first deploy** |
 | 6 | The e2e suite was not re-runnable — slug drift, leaked fixtures **and** a durable rate limiter nothing reset. All three fixed, but it means earlier "149/149" claims held only on a fresh database | Medium — recommend adding `test:e2e` to the routine gate |
-| 7 | 43 modified + 47 untracked files remain uncommitted | Medium |
+| 7 | ~~Files remain uncommitted~~ | **Resolved** — all 95 committed as `93975cc` and pushed; working tree clean |
+| 7b | **Render has not been confirmed to have deployed `93975cc`** (§15). `render.yaml` says `autoDeploy: false`, so it may need a manual trigger | **High — the release is not live until this is settled** |
+| 7c | Committed docs name the production database and user (`defaultdb`, `avnadmin`) — identifiers only, no host or password. Pre-existing; this commit adds more | Low |
 | 8 | Legacy Subcategory mapping/backfill still unapproved | Low — explicitly out of scope here, and not executed |
 
 ---
 
 ## 19. The exact owner decisions needed
 
-The database half of the release is done and verified. What is left:
+The database is migrated and the code is pushed. What is left:
 
-1. **Authorize the Git push**, which is the deploy. Until it happens the new
-   tables sit unused and the Classifications tab does not exist for editors.
-   Everything needed for the push has already passed: 141 Vitest files / 3,281
-   tests, 159 Playwright tests, clean TypeScript, a successful build, a clean
-   secret scan, no remote divergence, and a Render pipeline confirmed not to run
-   migrations or seeds.
-2. **Reconcile the Render deployment setting** (§14) before that push —
-   `render.yaml` says `autoDeploy: false`, service `nfrguide-staging`, free plan,
-   while the brief says `main` auto-deploys to production. Worth settling what
-   the push will actually do.
+1. **Confirm Render deployed `93975cc`, or trigger it.** `render.yaml` says
+   `autoDeploy: false`, so the push may have deployed nothing. Until a build
+   lands, the new tables sit unused and the Classifications tab does not exist
+   for editors. §15 lists the baseline signals and the logs needed to verify.
+2. **Reconcile the Render service definition** — `render.yaml` names
+   `nfrguide-staging` on the **free** plan while serving the production domain.
+   Whatever the dashboard actually says, the file and reality should agree.
 3. **Decide what happens to the pre-migration dump** (§10a) — it holds real
    production data and currently lives in a temporary directory.
-4. **Still open from before:** Aiven console access and cost approval for a fork,
-   if you want BKP-01 genuinely closed rather than waived; and the legacy
-   Subcategory mapping, which remains unapproved and unexecuted.
+4. **Still open:** Aiven console access and cost approval for a fork, if you want
+   BKP-01 genuinely closed rather than waived; the legacy Subcategory mapping,
+   still unapproved and unexecuted; and the one draft article whose
+   `articleType` is an empty string (§13).
 
-**Stopping here and awaiting owner review.** No push, no deployment.
+**Stopping here.** The push is done and verified; the deployment is not, and is
+not claimed to be.
