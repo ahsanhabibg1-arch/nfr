@@ -29,6 +29,7 @@ import { saveArticleAction, transitionArticleAction, restoreRevisionAction } fro
 import { useUnsavedChangesWarning } from '../../lib/hooks/useUnsavedChangesWarning';
 import type { ArticleInput } from '../../lib/cms/articleService';
 import { RichBlockEditor } from '../../components/admin/editor/RichBlockEditor';
+import { RichTextBodyEditor } from '../../components/admin/editor/RichTextBodyEditor';
 import { SearchAppearancePreview } from '../../components/admin/editor/SearchAppearancePreview';
 import { productionCanonicalUrl } from '../../lib/seo/canonical';
 import { SeoAssistantPanel } from '../../components/admin/editor/SeoAssistantPanel';
@@ -71,6 +72,48 @@ export interface CategoryOption { id: string; name: string; slug: string }
  * validated by database lookup — `resolveCategoryId` — so this list has never
  * been a security or integrity boundary, only a UI restriction.
  */
+/**
+ * The four jobs an author does in this editor, in the order they do them.
+ *
+ * Each one groups fields that were previously interleaved down a single long
+ * two-column form, where writing a paragraph and clearing the publication gate
+ * sat side by side.
+ */
+export type EditorArea = 'writing' | 'setup' | 'seo' | 'review';
+
+export const EDITOR_AREAS: { key: EditorArea; label: string }[] = [
+  { key: 'writing', label: 'Writing' },
+  { key: 'setup', label: 'Article Setup' },
+  { key: 'seo', label: 'SEO & Media' },
+  { key: 'review', label: 'Review & Publish' },
+];
+
+/**
+ * Which area owns each field a validation finding can point at.
+ *
+ * The anchors are the validator's own (`FIELD_META` in `utils/seoValidator.ts`),
+ * so this is a map between two existing vocabularies rather than a new one.
+ * An anchor that is not listed — including the empty anchor the validator uses
+ * for a finding with no single field — counts against Review & Publish, which
+ * is where the complete report is shown. That default is deliberate: an
+ * uncounted finding would be a finding an author is never told about.
+ */
+const ANCHOR_AREA: Record<string, EditorArea> = {
+  'field-01-headline': 'writing',
+  'field-03-excerpt': 'writing',
+  'field-04-body': 'writing',
+  'field-05-seotitle': 'seo',
+  'field-06-metadesc': 'seo',
+  'field-07-imageseotitle': 'seo',
+  'field-08-imagealt': 'seo',
+  'editor-rights-status': 'seo',
+  'editor-sources': 'seo',
+  'editor-relationships': 'setup',
+  'editor-disclosure': 'setup',
+  'editor-slug': 'review',
+  'editor-workflow-state': 'review',
+};
+
 const FALLBACK_SECTIONS: PrimarySection[] = [
   'NFR Competition',
   'NFR Entertainment',
@@ -161,6 +204,13 @@ export const AdminArticleEditorShell: React.FC<AdminArticleEditorShellProps> = (
   // New articles start with a genuinely empty body (no Phase 0 demo blocks). Existing
   // articles preserve their saved structured body.
   const [blocks, setBlocks] = useState<ContentBlock[]>(existingArticle?.structuredBody || []);
+  /**
+   * Which body view is showing. `rich` is the default because ordinary writing
+   * is the common case; `blocks` is one click away for structured editorial
+   * elements. Both operate on `blocks` above, so this is a view preference and
+   * never a content decision.
+   */
+  const [bodyMode, setBodyMode] = useState<'rich' | 'blocks'>('rich');
   const [seoTitle, setSeoTitle] = useState(existingArticle?.seo?.title || '');
   const [isSeoTitleCustom, setIsSeoTitleCustom] = useState(Boolean(existingArticle?.seo?.title));
   const [metaDescription, setMetaDescription] = useState(existingArticle?.seo?.description || '');
@@ -240,6 +290,26 @@ export const AdminArticleEditorShell: React.FC<AdminArticleEditorShellProps> = (
   const [mediaPickerOpen, setMediaPickerOpen] = useState(false);
   const [validationGateOpen, setValidationGateOpen] = useState(false);
   const [seoLastCheckedAt, setSeoLastCheckedAt] = useState<number | null>(null);
+
+  /**
+   * Which of the four editor areas is on screen.
+   *
+   * WHY AREAS, AND WHY THEY ARE HIDDEN RATHER THAN UNMOUNTED.
+   *
+   * The editor carries every field an article has — headline through rights
+   * status — and presenting them as one long two-column form meant an author
+   * writing a paragraph was looking at the publication gate, and an editor
+   * checking the gate was scrolling past the body. The four areas group the
+   * same fields by the job being done.
+   *
+   * Each area is a `hidden` wrapper around the EXISTING panels: nothing is
+   * conditionally rendered. That matters for correctness, not tidiness — React
+   * would discard the state of an unmounted field, so switching area would
+   * silently reset whatever had been typed in another one. With `hidden`, every
+   * field stays mounted, every value stays in state, and the save path sends
+   * exactly what it sent before this change.
+   */
+  const [area, setArea] = useState<EditorArea>('writing');
 
   // Warn on browser refresh / tab close while there are unsaved edits (Batch 20 §2).
   // Cleared automatically once a successful save sets isDirty=false; preserved on
@@ -360,16 +430,61 @@ export const AdminArticleEditorShell: React.FC<AdminArticleEditorShellProps> = (
     return validateArticle(currentArticleSnapshot);
   }, [currentArticleSnapshot]);
 
+  /**
+   * How many things in each area still want attention.
+   *
+   * Only BLOCKERS and COMPLIANCE findings are counted, not warnings: the badge
+   * has to mean "this will stop publication", or it becomes background noise an
+   * author learns to ignore. The counts come from the same `validateArticle`
+   * report the Review area shows, so a badge can never disagree with the report
+   * it is summarising.
+   */
+  const areaAttention = useMemo<Record<EditorArea, number>>(() => {
+    const counts: Record<EditorArea, number> = { writing: 0, setup: 0, seo: 0, review: 0 };
+    for (const f of [...validationReport.blockers, ...validationReport.compliance]) {
+      counts[ANCHOR_AREA[f.fieldAnchor] ?? 'review'] += 1;
+    }
+    return counts;
+  }, [validationReport]);
+
   // Scroll to and focus the editor field a finding refers to ("Go to Field").
   const goToField = (anchor: string) => {
     if (!anchor || typeof document === 'undefined') return;
     const el = document.getElementById(anchor);
     if (!el) return;
-    el.scrollIntoView({ behavior: 'smooth', block: 'center' });
-    if (el instanceof HTMLInputElement || el instanceof HTMLTextAreaElement || el instanceof HTMLSelectElement) {
-      // Focus after the smooth scroll settles so the caret lands in view.
-      window.setTimeout(() => el.focus({ preventScroll: true }), 350);
+
+    const reveal = () => {
+      const target = document.getElementById(anchor);
+      if (!target) return;
+      target.scrollIntoView({ behavior: 'smooth', block: 'center' });
+      if (target instanceof HTMLInputElement || target instanceof HTMLTextAreaElement || target instanceof HTMLSelectElement) {
+        // Focus after the smooth scroll settles so the caret lands in view.
+        window.setTimeout(() => target.focus({ preventScroll: true }), 350);
+      }
+    };
+
+    /**
+     * THE AREA HAS TO BE OPENED BEFORE THE FIELD CAN BE REACHED.
+     *
+     * A finding about the image ALT text is actionable from the Review area,
+     * but the field itself lives in SEO & Media — and `scrollIntoView` on a
+     * `hidden` element does nothing at all, so without this the button would
+     * look broken while reporting success.
+     *
+     * The area is read from the field's own wrapper rather than from a
+     * finding-to-area table, so it cannot go stale: moving a panel between
+     * areas moves its findings with it, automatically.
+     */
+    const host = el.closest('[data-editor-area]') as HTMLElement | null;
+    const owner = host?.dataset.editorArea as EditorArea | undefined;
+    if (owner && owner !== area) {
+      setArea(owner);
+      // Two frames: one for React to commit the new area, one for the browser
+      // to lay the revealed panel out before it is scrolled to.
+      window.requestAnimationFrame(() => window.requestAnimationFrame(reveal));
+      return;
     }
+    reveal();
   };
 
   // "Check SEO": re-stamp the review time and jump to the first blocking finding. Validation
@@ -546,7 +661,15 @@ export const AdminArticleEditorShell: React.FC<AdminArticleEditorShellProps> = (
             {isNew ? 'New Article Composer' : `Document ID: ${id}`}
           </span>
           {isDirty && (
-            <span className="text-[10px] font-mono px-2 py-0.5 bg-amber-100 text-amber-800 rounded-xs font-bold animate-pulse">
+            <span
+              // Named so the save state can be observed unambiguously. The
+              // success toast hides itself after 3.5 s, which makes it useless
+              // as a signal; this badge reflects `isDirty` and therefore the
+              // actual outcome of a save.
+              data-testid="editor-dirty-badge"
+              role="status"
+              className="text-[10px] font-mono px-2 py-0.5 bg-amber-100 text-amber-800 rounded-xs font-bold animate-pulse"
+            >
               Unsaved Changes
             </span>
           )}
@@ -736,12 +859,85 @@ export const AdminArticleEditorShell: React.FC<AdminArticleEditorShellProps> = (
         </div>
       )}
 
+      {/*
+        FOUR EDITOR AREAS.
+
+        A real tab set: `role="tablist"` with one `role="tabpanel"` below, so a
+        screen-reader user is told how many areas there are, which one is
+        current, and can move between them with the arrow keys — which a row of
+        styled buttons would not do.
+
+        The badge on an area counts the things still wanting attention in it, so
+        an author does not have to open each one to find out whether it needs
+        them.
+      */}
+      <div
+        role="tablist"
+        aria-label="Editor areas"
+        data-testid="editor-areas"
+        className="flex flex-wrap gap-1 bg-white border border-stone-200 rounded-sm p-1.5 shadow-2xs"
+        onKeyDown={(e) => {
+          const order = EDITOR_AREAS.map((a) => a.key);
+          const at = order.indexOf(area);
+          if (e.key === 'ArrowRight' || e.key === 'ArrowLeft') {
+            e.preventDefault();
+            const next = e.key === 'ArrowRight' ? at + 1 : at - 1;
+            const key = order[(next + order.length) % order.length];
+            setArea(key);
+            document.getElementById(`editor-area-tab-${key}`)?.focus();
+          }
+        }}
+      >
+        {EDITOR_AREAS.map((a) => {
+          const attention = areaAttention[a.key];
+          return (
+            <button
+              key={a.key}
+              type="button"
+              role="tab"
+              id={`editor-area-tab-${a.key}`}
+              aria-selected={area === a.key}
+              aria-controls="editor-workspace"
+              // Only the current tab is in the tab order; the arrow keys move
+              // between them, which is the expected behaviour for a tab set.
+              tabIndex={area === a.key ? 0 : -1}
+              data-testid={`editor-area-tab-${a.key}`}
+              onClick={() => setArea(a.key)}
+              className={`px-3 py-2 text-xs font-sans font-semibold rounded-xs transition-colors inline-flex items-center gap-2 ${
+                area === a.key
+                  ? 'bg-[#0F1115] text-[#D4A757]'
+                  : 'bg-white text-stone-600 hover:bg-stone-50'
+              }`}
+            >
+              <span>{a.label}</span>
+              {attention > 0 && (
+                <span
+                  className={`font-mono text-[10px] px-1.5 py-0.5 rounded-full ${
+                    area === a.key ? 'bg-[#D4A757] text-[#0F1115]' : 'bg-rose-100 text-rose-700'
+                  }`}
+                >
+                  {attention}
+                  <span className="sr-only"> item{attention === 1 ? '' : 's'} needing attention</span>
+                </span>
+              )}
+            </button>
+          );
+        })}
+      </div>
+
       {/* MAIN TWO-COLUMN WORKSPACE: 8-COL FORM + 4-COL INSPECTOR */}
-      <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 items-start">
+      <div
+        id="editor-workspace"
+        role="tabpanel"
+        aria-labelledby={`editor-area-tab-${area}`}
+        className="grid grid-cols-1 lg:grid-cols-12 gap-6 items-start"
+      >
         {/* ======================================================== */}
         {/* LEFT COLUMN: EXACT 8 PRIMARY FIELDS IN REQUIRED ORDER */}
         {/* ======================================================== */}
-        <div className="lg:col-span-8 space-y-6">
+        <div
+          className={area === 'writing' ? 'lg:col-span-12 space-y-6' : area === 'seo' ? 'lg:col-span-8 space-y-6' : 'hidden'}
+        >
           <div className="bg-white border border-stone-200 rounded-sm p-6 shadow-2xs space-y-6">
             <div className="flex items-center justify-between pb-3 border-b border-stone-100">
               <span className="text-xs font-mono uppercase tracking-wider text-ink-muted font-bold">
@@ -752,6 +948,7 @@ export const AdminArticleEditorShell: React.FC<AdminArticleEditorShellProps> = (
               </span>
             </div>
 
+            <div data-editor-area="writing" hidden={area !== 'writing'} className="space-y-6">
             {/* FIELD 01 — MAIN HEADLINE (H1) */}
             <div className="space-y-1">
               <div className="flex items-center justify-between text-xs font-sans text-stone-600 mb-1">
@@ -835,27 +1032,85 @@ export const AdminArticleEditorShell: React.FC<AdminArticleEditorShellProps> = (
               )}
             </div>
 
-            {/* FIELD 04 — ARTICLE BODY (RICH BLOCK EDITOR) */}
+            {/* FIELD 04 — ARTICLE BODY */}
             <div id="field-04-body" className="space-y-2 pt-2 border-t border-stone-100" tabIndex={-1}>
-              <div className="flex items-center justify-between">
+              <div className="flex flex-wrap items-center justify-between gap-2">
                 <label className="font-bold text-stone-900 uppercase tracking-wider text-[11px] flex items-center gap-1.5 font-sans">
                   <span>Field 04 &mdash; Article Body</span>
                   <span className="text-required font-mono">*Required</span>
                 </label>
-                <span className="text-[10px] font-mono text-[#8B5E3C] bg-[#F7F3EA] border border-[#8B5E3C]/30 px-2 py-0.5 rounded-xs">
-                  Structured JSON Model
-                </span>
+
+                {/*
+                  TWO VIEWS OVER ONE MODEL, not two models.
+
+                  Write is a continuous rich-text surface for prose. Blocks is
+                  the existing structured composer, kept because tables,
+                  callouts, images, citations and disclosures carry required
+                  editorial metadata (alt text, credit, publisher, variant) that
+                  the SEO and rights gates check, and those forms are where it
+                  is captured.
+
+                  Both edit the same `blocks` state. Switching performs no
+                  conversion beyond the adapter round trip, which
+                  `tests/article-richtext-adapter.test.ts` proves lossless for
+                  every stored article — including block types the rich-text
+                  document cannot represent, which travel through it untouched.
+                */}
+                <div
+                  role="group"
+                  aria-label="Body editing mode"
+                  className="flex items-center rounded-xs border border-stone-200 overflow-hidden"
+                >
+                  {([
+                    ['rich', 'Write', 'Continuous rich-text writing with formatting'],
+                    ['blocks', 'Blocks', 'Structured block composer for tables, callouts, images and citations'],
+                  ] as const).map(([mode, label, hint]) => (
+                    <button
+                      key={mode}
+                      type="button"
+                      title={hint}
+                      aria-pressed={bodyMode === mode}
+                      onClick={() => setBodyMode(mode)}
+                      className={`px-3 py-1 text-[11px] font-sans font-semibold ${
+                        bodyMode === mode ? 'bg-[#0F1115] text-[#D4A757]' : 'bg-white text-stone-600 hover:bg-stone-50'
+                      }`}
+                    >
+                      {label}
+                    </button>
+                  ))}
+                </div>
               </div>
 
-              <RichBlockEditor
-                blocks={blocks}
-                onChange={(nextBlocks) => {
-                  setBlocks(nextBlocks);
-                  markDirty();
-                }}
-              />
+              {bodyMode === 'rich' ? (
+                <>
+                  <RichTextBodyEditor
+                    blocks={blocks}
+                    onChange={(nextBlocks) => {
+                      setBlocks(nextBlocks);
+                      markDirty();
+                    }}
+                  />
+                  <p className="text-[11px] text-stone-500 font-sans">
+                    Tables, callouts, images, citations and disclosures appear here as locked cards that keep their
+                    content exactly as saved. Switch to <strong>Blocks</strong> to add or edit one.
+                  </p>
+                </>
+              ) : (
+                <RichBlockEditor
+                  blocks={blocks}
+                  onChange={(nextBlocks) => {
+                    setBlocks(nextBlocks);
+                    markDirty();
+                  }}
+                  // A formatted block is read-only here; this is how an author
+                  // gets to the surface that can edit it without losing marks.
+                  onEditInWrite={() => setBodyMode('rich')}
+                />
+              )}
             </div>
 
+            </div>
+            <div data-editor-area="seo" hidden={area !== 'seo'} className="space-y-6">
             {/* FIELD 05 — SEO TITLE */}
             <div className="space-y-1 pt-4 border-t border-stone-100">
               <div className="flex items-center justify-between text-xs font-sans text-stone-600 mb-1">
@@ -970,6 +1225,7 @@ export const AdminArticleEditorShell: React.FC<AdminArticleEditorShellProps> = (
                 </p>
               )}
             </div>
+            </div>
           </div>
         </div>
 
@@ -981,8 +1237,23 @@ export const AdminArticleEditorShell: React.FC<AdminArticleEditorShellProps> = (
         {/* ======================================================== */}
         {/* Outer grid item stretches to the (tall) row height so the inner sticky wrapper has
             room to stick; inner wrapper pins below the 64px topbar and scrolls independently. */}
-        <div className="lg:col-span-4 lg:self-stretch">
+        <div
+          className={
+            /*
+              The inspector column holds three of the four areas, so it takes the
+              full width when the writing column is not beside it — otherwise
+              Article Setup and Review would be squeezed into a third of the page
+              with two thirds blank.
+            */
+            area === 'writing'
+              ? 'hidden'
+              : area === 'seo'
+                ? 'lg:col-span-4 lg:self-stretch'
+                : 'lg:col-span-12'
+          }
+        >
         <div data-testid="editor-inspector" className="space-y-6 font-sans text-xs lg:sticky lg:top-20 lg:max-h-[calc(100vh-6rem)] lg:overflow-y-auto lg:pr-1 editor-inspector-scroll">
+          <div data-editor-area="review" hidden={area !== 'review'} className="space-y-6">
           {/* PANEL 1: WORKFLOW & PUBLISHING CONTROLS */}
           <div className="bg-white border border-stone-200 rounded-sm p-5 shadow-2xs space-y-4">
             <div className="flex items-center justify-between pb-2 border-b border-stone-100">
@@ -1167,6 +1438,8 @@ export const AdminArticleEditorShell: React.FC<AdminArticleEditorShellProps> = (
             )}
           </div>
 
+          </div>
+          <div data-editor-area="seo" hidden={area !== 'seo'} className="space-y-6">
           {/* PANEL 2b: DETAILED SEO ASSISTANT (Batch 25) — renders the full validateArticle output */}
           <SeoAssistantPanel
             report={validationReport}
@@ -1176,6 +1449,8 @@ export const AdminArticleEditorShell: React.FC<AdminArticleEditorShellProps> = (
             onGoToField={goToField}
           />
 
+          </div>
+          <div data-editor-area="setup" hidden={area !== 'setup'} className="space-y-6">
           {/* PANEL 3: ARTICLE CLASSIFICATION & BYLINE */}
           <div className="bg-white border border-stone-200 rounded-sm p-5 shadow-2xs space-y-4">
             <h4 className="font-serif font-bold text-stone-900 text-sm pb-2 border-b border-stone-100">
@@ -1458,6 +1733,8 @@ export const AdminArticleEditorShell: React.FC<AdminArticleEditorShellProps> = (
             </div>
           </div>
 
+          </div>
+          <div data-editor-area="seo" hidden={area !== 'seo'} className="space-y-6">
           {/* PANEL 4: FEATURED MEDIA & RIGHTS INSPECTOR */}
           <div className="bg-white border border-stone-200 rounded-sm p-5 shadow-2xs space-y-4">
             <div className="flex items-center justify-between pb-2 border-b border-stone-100">
@@ -1550,6 +1827,8 @@ export const AdminArticleEditorShell: React.FC<AdminArticleEditorShellProps> = (
             </div>
           </div>
 
+          </div>
+          <div data-editor-area="setup" hidden={area !== 'setup'} className="space-y-6">
           {/* PANEL 5: RODEO ENTITY RELATIONSHIPS */}
           <div id="editor-relationships" tabIndex={-1} className="scroll-mt-20">
             <RodeoRelationshipsPanel
@@ -1562,6 +1841,8 @@ export const AdminArticleEditorShell: React.FC<AdminArticleEditorShellProps> = (
             />
           </div>
 
+          </div>
+          <div data-editor-area="seo" hidden={area !== 'seo'} className="space-y-6">
           {/* PANEL 6: SOURCES & EVIDENCE CITATIONS */}
           <div id="editor-sources" tabIndex={-1} className="scroll-mt-20">
             <ArticleSourcesPanel
@@ -1581,6 +1862,7 @@ export const AdminArticleEditorShell: React.FC<AdminArticleEditorShellProps> = (
             storedRobots={existingArticle?.seo?.robots}
             workflowStatus={workflowStatus}
           />
+          </div>
         </div>
         </div>
       </div>

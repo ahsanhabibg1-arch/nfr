@@ -3,6 +3,9 @@ import Link from 'next/link';
 import { ContentBlock, Article } from '../../types';
 import { ImageWithCredit } from '../ImageWithCredit';
 import { safeHref } from '../../lib/url';
+import { InlineText } from './InlineText';
+import { alignmentClass } from '../../lib/content/articleBlockStyle';
+import { videoEmbedUrl, videoWatchUrl, VIDEO_PROVIDER_LABEL } from '../../lib/content/articleEmbeds';
 
 interface ArticleBodyProps {
   article: Article;
@@ -30,19 +33,27 @@ export const ArticleBody: React.FC<ArticleBodyProps> = ({ article, className = '
       {blocks.map((block, index) => {
         switch (block.type) {
           case 'heading': {
-            const HeadingTag = block.level === 2 ? 'h2' : 'h3';
+            /*
+              h2-h4. The level is the stored one, so the published outline is
+              the one the author built: promoting an h4 to an h3 to "tidy" the
+              hierarchy would silently change the document outline a screen
+              reader and a search engine both navigate by.
+            */
+            const HeadingTag = block.level === 4 ? 'h4' : block.level === 3 ? 'h3' : 'h2';
             const sizeClass =
               block.level === 2
                 ? 'text-2xl sm:text-3xl font-bold mt-10 mb-4 pt-4 border-t border-stone-200'
-                : 'text-xl sm:text-2xl font-semibold mt-8 mb-3';
+                : block.level === 3
+                  ? 'text-xl sm:text-2xl font-semibold mt-8 mb-3'
+                  : 'text-lg sm:text-xl font-semibold mt-6 mb-2 text-[#8B5E3C]';
 
             return (
               <HeadingTag
                 key={index}
                 id={block.id}
-                className={`font-serif text-[#0F1115] scroll-mt-24 ${sizeClass}`}
+                className={`font-serif text-[#0F1115] scroll-mt-24 ${sizeClass} ${alignmentClass(block.align)}`}
               >
-                {block.text}
+                <InlineText text={block.text} runs={block.runs} />
               </HeadingTag>
             );
           }
@@ -51,9 +62,14 @@ export const ArticleBody: React.FC<ArticleBodyProps> = ({ article, className = '
             return (
               <p
                 key={index}
-                className={block.isDropCap ? 'drop-cap text-stone-950' : 'text-stone-800'}
+                /*
+                  `alignmentClass` returns '' for the default, so an unaligned
+                  paragraph's markup is exactly what it was before alignment
+                  existed — no class to override the stylesheet by accident.
+                */
+                className={`${block.isDropCap ? 'drop-cap text-stone-950' : 'text-stone-800'} ${alignmentClass(block.align)}`}
               >
-                {block.text}
+                <InlineText text={block.text} runs={block.runs} />
               </p>
             );
           }
@@ -65,7 +81,7 @@ export const ArticleBody: React.FC<ArticleBodyProps> = ({ article, className = '
                 className="my-8 py-6 px-6 sm:px-10 border-y border-stone-300 bg-white/70 text-center"
               >
                 <p className="font-serif italic text-xl sm:text-2xl text-[#0F1115] leading-relaxed">
-                  &ldquo;{block.quote}&rdquo;
+                  &ldquo;<InlineText text={block.quote} runs={block.quoteRuns} />&rdquo;
                 </p>
                 <cite className="block mt-3 text-xs uppercase tracking-widest font-sans font-semibold text-[#8B5E3C]">
                   &mdash; {block.attribution} {block.role ? `(${block.role})` : ''}
@@ -75,6 +91,45 @@ export const ArticleBody: React.FC<ArticleBodyProps> = ({ article, className = '
           }
 
           case 'list': {
+            /*
+              A CHECKLIST IS NOT A FORM.
+
+              The published article is a static document, so the boxes are
+              presentational: a disabled checkbox input would be announced as an
+              interactive control a reader cannot use, and an enabled one would
+              invite a click that saves nothing. Instead each item carries a
+              glyph that is hidden from assistive technology and a visually
+              hidden word that states the state in prose — so a screen reader
+              hears "Done: book the venue" rather than "checkbox, checked".
+            */
+            if (block.checklist) {
+              return (
+                <ul key={index} className="my-4 space-y-2 list-none pl-0 text-base">
+                  {block.items.map((item, i) => {
+                    const done = block.checked?.[i] === true;
+                    return (
+                      <li key={i} className="flex items-start gap-2.5">
+                        <span
+                          aria-hidden="true"
+                          className={`mt-[0.35rem] shrink-0 w-4 h-4 flex items-center justify-center text-[11px] font-bold border rounded-xs ${
+                            done
+                              ? 'bg-[#0F1115] text-[#D4A757] border-[#0F1115]'
+                              : 'bg-white text-transparent border-stone-400'
+                          }`}
+                        >
+                          ✓
+                        </span>
+                        <span className={done ? 'text-stone-500' : 'text-stone-800'}>
+                          <span className="sr-only">{done ? 'Done: ' : 'Not done: '}</span>
+                          <InlineText text={item} runs={block.itemRuns?.[i] ?? null} />
+                        </span>
+                      </li>
+                    );
+                  })}
+                </ul>
+              );
+            }
+
             const ListTag = block.ordered ? 'ol' : 'ul';
             return (
               <ListTag
@@ -85,7 +140,11 @@ export const ArticleBody: React.FC<ArticleBodyProps> = ({ article, className = '
               >
                 {block.items.map((item, i) => (
                   <li key={i} className="pl-1">
-                    {item}
+                    {/* `itemRuns` is positional and sparse: index i may be
+                        absent or null, which means "this item has no inline
+                        formatting". That keeps a list where only one item is
+                        formatted from having to store runs for all of them. */}
+                    <InlineText text={item} runs={block.itemRuns?.[i] ?? null} />
                   </li>
                 ))}
               </ListTag>
@@ -149,7 +208,7 @@ export const ArticleBody: React.FC<ArticleBodyProps> = ({ article, className = '
                     {block.title}
                   </h3>
                 )}
-                <p>{block.text}</p>
+                <p><InlineText text={block.text} runs={block.runs} /></p>
               </aside>
             );
           }
@@ -199,6 +258,162 @@ export const ArticleBody: React.FC<ArticleBodyProps> = ({ article, className = '
 
           case 'divider': {
             return <hr key={index} className="my-8 border-t border-stone-300" />;
+          }
+
+          case 'faq': {
+            /*
+              A DESCRIPTION LIST, NOT A STACK OF DIVS.
+
+              `dl`/`dt`/`dd` is what a question-and-answer set is: assistive
+              technology announces the pairing and lets a reader move between
+              questions, which a styled div cannot. Each question is `dt`, so
+              it is also not a heading — headings would appear in the article's
+              outline and in the contents list beside real sections.
+            */
+            return (
+              <section key={index} className="my-8" aria-label={block.title || 'Questions and answers'}>
+                {block.title && (
+                  <h3 className="font-serif text-xl sm:text-2xl font-semibold text-[#0F1115] mb-3">
+                    {block.title}
+                  </h3>
+                )}
+                <dl className="divide-y divide-stone-200 border-y border-stone-200">
+                  {block.items.map((item, i) => (
+                    <div key={i} className="py-3.5">
+                      <dt className="font-sans font-semibold text-base text-[#0F1115]">{item.question}</dt>
+                      <dd className="mt-1.5 text-stone-800">
+                        <InlineText text={item.answer} runs={item.answerRuns} />
+                      </dd>
+                    </div>
+                  ))}
+                </dl>
+              </section>
+            );
+          }
+
+          case 'footnotes': {
+            /*
+              Numbered by position with an `ol`, so the browser owns the
+              numbering. The author places the matching marker in the prose
+              with the superscript mark; there is no automatic link between the
+              two, and pretending otherwise with a guessed anchor would send a
+              reader to the wrong note.
+            */
+            return (
+              <section key={index} className="my-8 pt-4 border-t border-stone-300" aria-label={block.title || 'Notes'}>
+                <h3 className="font-mono text-[11px] uppercase tracking-widest text-stone-500 mb-2">
+                  {block.title || 'Notes'}
+                </h3>
+                <ol className="list-decimal pl-5 space-y-1.5 text-sm text-stone-700">
+                  {block.items.map((item, i) => (
+                    <li key={i}>
+                      <InlineText text={item.text} runs={item.runs} />
+                    </li>
+                  ))}
+                </ol>
+              </section>
+            );
+          }
+
+          case 'gallery': {
+            // Same reasoning as an unfilled video: an empty gallery is a block
+            // the author has not finished, not a gallery of nothing.
+            if (block.images.length === 0) return null;
+            const isRow = block.layout === 'row';
+            return (
+              <figure key={index} className="my-8">
+                <div
+                  className={
+                    isRow
+                      // A row scrolls rather than squeezing: six photographs
+                      // crushed to thumbnail width show a reader nothing.
+                      ? 'flex gap-3 overflow-x-auto pb-2 snap-x'
+                      : 'grid grid-cols-1 sm:grid-cols-2 gap-3'
+                  }
+                >
+                  {block.images.map((img, i) => (
+                    <div key={i} className={isRow ? 'min-w-[16rem] snap-start' : ''}>
+                      {/*
+                        Each image keeps its own alt text, caption and credit:
+                        a reader using a screen reader meets them one at a
+                        time, and a single caption for the set tells them
+                        nothing about any individual photograph.
+                      */}
+                      <ImageWithCredit
+                        src={img.src}
+                        alt={img.alt}
+                        caption={img.caption}
+                        credit={img.credit}
+                      />
+                    </div>
+                  ))}
+                </div>
+                {block.caption && (
+                  <figcaption className="mt-2 text-xs font-sans text-stone-500">{block.caption}</figcaption>
+                )}
+              </figure>
+            );
+          }
+
+          case 'video': {
+            /*
+              THE EMBED URL IS BUILT HERE, FROM A CLOSED PROVIDER LIST.
+
+              `videoEmbedUrl` returns null for anything it does not recognise,
+              and this is checked at RENDER time as well as on save — storage
+              is validated, but a renderer that trusts its input is one bad
+              import or one direct database edit away from putting an arbitrary
+              origin in an iframe. An unrecognised reference costs the reader
+              one video, not the page.
+            */
+            // An empty id means the block was inserted and not yet filled in;
+            // drawing a "could not be displayed" note for the author's own
+            // unfinished work would be wrong, so it renders nothing.
+            if (!block.videoId) return null;
+            const embed = videoEmbedUrl(block.provider, block.videoId);
+            if (!embed) {
+              return (
+                <div key={index} className="my-6 p-3 border border-dashed border-stone-300 rounded-sm text-xs font-sans text-stone-500">
+                  This video could not be displayed.
+                </div>
+              );
+            }
+            const watch = videoWatchUrl(block.provider, block.videoId);
+            return (
+              <figure key={index} className="my-8">
+                <div className="relative w-full aspect-video bg-stone-900 rounded-sm overflow-hidden">
+                  <iframe
+                    src={embed}
+                    // A frame with no accessible name is announced as "frame",
+                    // which is why the schema requires a title.
+                    title={block.title}
+                    loading="lazy"
+                    allow="accelerometer; clipboard-write; encrypted-media; gyroscope; picture-in-picture; fullscreen"
+                    // The embed is third-party content: it gets no access to
+                    // this page's origin beyond what playback needs.
+                    sandbox="allow-scripts allow-same-origin allow-presentation allow-popups"
+                    referrerPolicy="strict-origin-when-cross-origin"
+                    className="absolute inset-0 w-full h-full border-0"
+                  />
+                </div>
+                <figcaption className="mt-2 text-xs font-sans text-stone-500">
+                  {block.caption || block.title}
+                  {watch && (
+                    <>
+                      {' '}
+                      <a
+                        href={watch}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="text-[#8B5E3C] hover:underline"
+                      >
+                        Watch on {VIDEO_PROVIDER_LABEL[block.provider]}
+                      </a>
+                    </>
+                  )}
+                </figcaption>
+              </figure>
+            );
           }
 
           default:

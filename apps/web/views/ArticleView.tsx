@@ -1,6 +1,6 @@
 import React from 'react';
 import Link from 'next/link';
-import { Article } from '../types';
+import { Article, ContentBlock } from '../types';
 import { ArticleHeader } from '../components/editorial/ArticleHeader';
 import { ArticleBody } from '../components/editorial/ArticleBody';
 import { TableOfContents, TOCItem } from '../components/editorial/TableOfContents';
@@ -19,15 +19,26 @@ export async function ArticleView({ article, draft }: { article: Article; draft?
     getActiveBlocksForPlacement('article-end'),
   ]);
 
+  /*
+    THE CONTENTS LIST IS h2 AND h3 ONLY.
+
+    Body headings can now go to h4. An h4 is a sub-point inside an h3 section,
+    and listing every one of them turns a navigation aid into a second copy of
+    the article — so h4 headings are rendered (and remain anchor targets) but
+    are not listed. The narrowing is checked rather than asserted: an earlier
+    version claimed `level: 2 | 3` in the predicate, which stopped being true
+    the moment h4 existed.
+  */
   const tocItems: TOCItem[] = (article.structuredBody || [])
     .filter(
-      (block): block is { type: 'heading'; level: 2 | 3; text: string; id?: string } =>
+      (block): block is Extract<ContentBlock, { type: 'heading' }> =>
         block.type === 'heading',
     )
+    .filter((block) => block.level === 2 || block.level === 3)
     .map((block) => ({
       id: block.id || block.text.toLowerCase().replace(/[^a-z0-9]+/g, '-'),
       text: block.text,
-      level: block.level,
+      level: block.level === 3 ? 3 : 2,
     }));
 
   return (

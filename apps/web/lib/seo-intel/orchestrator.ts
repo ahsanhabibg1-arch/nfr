@@ -5,7 +5,8 @@ import { RULES, RULE_BY_CODE, SEO_ENGINE_VERSION, DEFAULT_THRESHOLDS, Thresholds
 import { SITE_URL } from '../seo';
 import { isHiddenFixtureSlug } from '../fixturePolicy';
 import { loadSitemapCandidates, evaluateSitemap } from '../seo/sitemapEntries';
-import { buildRouteIndex, extractLinkCandidates, routeFirstSegments, RENDERS_PUBLICLY } from '../seo/routeIndex';
+import { buildRouteIndex, extractLinkCandidates, routeFirstSegments, RENDERS_PUBLICLY, classifyLink } from '../seo/routeIndex';
+import { collectArticleLinks, countArticleLinks, type ArticleLink } from '../seo/articleLinkInventory';
 import { acquireAuditLock, AuditLockError, FULL_SCOPE, type AcquireResult, type AuditLockHandle } from './auditLock';
 import { log } from '../logger';
 import { AuditScope, RawFinding } from './types';
@@ -79,11 +80,25 @@ export async function buildInventory(db: PrismaClient): Promise<Inventory> {
 
   const blockTextsById = new Map<string, string[]>();
   const hrefsById = new Map<string, string[]>();
+  const bodyLinksById = new Map<string, ArticleLink[]>();
   const artInv: ArticleInv[] = articles.map((a) => {
     const headings: string[] = [];
     let bodyWords = 0;
     const strings: string[] = [];
     const hrefs: string[] = [];
+    /**
+     * Batch 06 — the DELIBERATE link inventory, read from the fields that
+     * actually carry links (`runs`, `quoteRuns`, `itemRuns`, `sourceLink.url`)
+     * so the analysis sees exactly what `InlineText` renders.
+     *
+     * The legacy string scan below is kept as well, because it still finds
+     * links written into non-inline block fields this inventory does not
+     * model. The two are merged for reachability checking; the COUNTS and the
+     * anchor findings come only from the deliberate inventory, since the scan
+     * cannot tell a real link from a path mentioned in prose and carries no
+     * anchor text at all.
+     */
+    bodyLinksById.set(a.id, collectArticleLinks(a.blocks.map((b) => b.data)));
     for (const b of a.blocks) {
       const data = b.data as Record<string, unknown>;
       const text = typeof data?.text === 'string' ? data.text : '';
@@ -102,6 +117,8 @@ export async function buildInventory(db: PrismaClient): Promise<Inventory> {
       seoTitle: a.seo?.seoTitle ?? null, metaDescription: a.seo?.metaDescription ?? null, canonicalUrl: a.seo?.canonicalUrl ?? null, ogImage: a.seo?.ogImage ?? null,
       imageAltText: a.imageAltText, imageSeoTitle: a.imageSeoTitle,
       headings, bodyWords, internalLinks: [], // filled below once the route index exists
+      bodyLinks: bodyLinksById.get(a.id) ?? [],
+      linkCounts: { internalEditorial: 0, externalEditorial: 0, citations: 0, unrenderable: 0, distinctInternalTargets: 0 },
       hiddenFixture: isHiddenFixtureSlug(a.slug),
       disciplineSlugs: a.disciplines.map((d) => d.discipline.slug), hubIds: a.hubs.map((h) => h.hubId), eventIds: a.events.map((e) => e.eventId),
       editions: a.editions.map((e) => ({ id: e.edition.id, eventId: e.edition.eventId })),
@@ -133,7 +150,12 @@ export async function buildInventory(db: PrismaClient): Promise<Inventory> {
   for (const a of artInv) {
     const links = new Set<string>(hrefsById.get(a.id) ?? []);
     for (const s of blockTextsById.get(a.id) ?? []) for (const l of extractLinkCandidates(s, segments)) links.add(l);
+    // Inline hrefs are added explicitly rather than relying on the scan to
+    // have noticed them: a `mailto:` target, for one, is a real rendered link
+    // that the scan's path and URL patterns do not match.
+    for (const l of a.bodyLinks ?? []) if (l.renderable) links.add(l.href);
     a.internalLinks = [...links];
+    a.linkCounts = countArticleLinks(a.bodyLinks ?? [], (href) => classifyLink(href, SITE_URL));
   }
   const sitemap = {
     urls: new Set(sitemapEval.included.map((c) => c.subject.path)),

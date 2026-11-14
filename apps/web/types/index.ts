@@ -4,6 +4,9 @@
  */
 
 import type { DisciplineClassification } from '../lib/content/disciplineClassifications';
+import type { InlineRun } from '../lib/content/articleInline';
+import type { BlockAlignment, BodyHeadingLevel } from '../lib/content/articleBlockStyle';
+import type { VideoProvider } from '../lib/content/articleEmbeds';
 
 /**
  * The five FOUNDATIONAL primary sections.
@@ -75,17 +78,53 @@ export interface Author {
   editorialBeat?: string;
 }
 
-export type ContentBlock = 
-  | { type: 'heading'; level: 2 | 3; text: string; id?: string }
-  | { type: 'paragraph'; text: string; isDropCap?: boolean }
-  | { type: 'quote'; quote: string; attribution: string; role?: string }
-  | { type: 'list'; items: string[]; ordered?: boolean }
+/**
+ * Article body blocks.
+ *
+ * INLINE FORMATTING (`runs`). Text-bearing blocks may carry an optional
+ * `runs` array describing bold / italic / underline / strikethrough / links
+ * inside the text. `text` remains the authoritative PLAIN-TEXT PROJECTION and
+ * must always equal the concatenation of the runs, so every consumer that only
+ * wants words — SEO word count, read time, previews — keeps reading `text` and
+ * is unaffected. A block with no `runs` renders exactly as it always did.
+ * See `lib/content/articleInline.ts` for the model and its guarantees.
+ */
+export type ContentBlock =
+  | { type: 'heading'; level: BodyHeadingLevel; text: string; id?: string; align?: BlockAlignment; runs?: InlineRun[] }
+  | { type: 'paragraph'; text: string; isDropCap?: boolean; align?: BlockAlignment; runs?: InlineRun[] }
+  | { type: 'quote'; quote: string; attribution: string; role?: string; quoteRuns?: InlineRun[] }
+  /**
+   * `checklist` makes the list a task list; `checked` is positional and
+   * parallel to `items`. Both are optional, so every list stored before
+   * checklists existed is unchanged and renders as it always did.
+   */
+  | { type: 'list'; items: string[]; ordered?: boolean; checklist?: boolean; checked?: boolean[]; itemRuns?: (InlineRun[] | null)[] }
   | { type: 'table'; headers: string[]; rows: string[][]; caption?: string }
-  | { type: 'callout'; variant?: 'info' | 'takeaway' | 'warning' | 'curator'; title?: string; text: string }
+  | { type: 'callout'; variant?: 'info' | 'takeaway' | 'warning' | 'curator'; title?: string; text: string; runs?: InlineRun[] }
   | { type: 'image'; src: string; alt: string; caption?: string; credit?: string }
   | { type: 'sourceLink'; title: string; url: string; publisher?: string; note?: string }
   | { type: 'disclosure'; text: string; variant?: 'affiliate' | 'editorial' | 'partner' }
-  | { type: 'divider' };
+  | { type: 'divider' }
+  | { type: 'faq'; title?: string; items: { question: string; answer: string; answerRuns?: InlineRun[] }[] }
+  /**
+   * End-of-section notes, numbered by position. The in-text marker is the
+   * author's to place with the superscript mark — there is no identifier inside
+   * the inline run model to link the two automatically, and inventing one would
+   * change the `runs` contract every stored article already satisfies.
+   */
+  | { type: 'footnotes'; title?: string; items: { text: string; runs?: InlineRun[] }[] }
+  | {
+      type: 'gallery';
+      layout?: 'grid' | 'row';
+      caption?: string;
+      images: { src: string; alt: string; caption?: string; credit?: string }[];
+    }
+  /**
+   * An approved embed. The provider is a closed list and `videoId` is an opaque
+   * token; the renderer builds the iframe source from the two, so content never
+   * chooses the origin of a frame on the page.
+   */
+  | { type: 'video'; provider: VideoProvider; videoId: string; title: string; caption?: string };
 
 export interface SourceReference {
   id: string;

@@ -5,6 +5,7 @@ import { prisma } from '../db';
 import { RoleKey, Permission, roleHasPermission } from '../auth/rbac';
 import { validateArticle } from '../../utils/seoValidator';
 import type { Article, ContentBlock } from '../../types';
+import { resolveBlocks } from '../content/articleBlockGrandfather';
 import { safeHref } from '../url';
 import { productionCanonicalUrl } from '../seo/canonical';
 
@@ -67,7 +68,34 @@ const RIGHTS: Record<RightsLabel, ImageRightsStatus> = {
 };
 const RIGHTS_LABEL = Object.fromEntries(Object.entries(RIGHTS).map(([label, db]) => [db, label])) as Record<ImageRightsStatus, RightsLabel>;
 
-const blockSchema: z.ZodType = z.object({ type: z.string() }).passthrough();
+/**
+ * Article body blocks, validated per type.
+ *
+ * This replaced `z.object({ type: z.string() }).passthrough()`, which accepted
+ * any object carrying a string `type` and stored it verbatim. The contract and
+ * the reasoning live in `lib/content/articleBlockSchema.ts`; the short version
+ * is that inline formatting introduced structured data the renderer interprets
+ * (including link targets), so the boundary has to validate it, and unknown
+ * KEYS on known block types are deliberately still preserved.
+ *
+ * `reconcileBlockInline` then enforces the `text` = concatenation-of-`runs`
+ * projection, so a block can never be stored with a plain-text projection that
+ * disagrees with its formatting.
+ */
+/**
+ * SHAPE here; the real decision happens at save time.
+ *
+ * Strict per-type validation cannot live in this schema any more, because it
+ * must be able to grandfather a legacy block — and whether a block is
+ * untouched stored content is only knowable once the article's current blocks
+ * have been read. See `resolveBlocks`.
+ *
+ * So this layer only rejects what is not a block at all, and caps the payload
+ * so an oversized body cannot reach the transaction. Every block is then
+ * strictly parsed in `writeChildCollections`, where an unknown type is refused
+ * unless it is byte-identical to something already stored.
+ */
+const blockSchema: z.ZodType = z.object({ type: z.string().min(1).max(80) }).passthrough();
 
 export const ArticleInputSchema = z.object({
   id: z.string().optional(),
@@ -172,14 +200,44 @@ async function resolveCategoryId(tx: Prisma.TransactionClient, name: string): Pr
   return cat.id;
 }
 
+/**
+ * Resolves a byline name to an `Author` row, creating one only when genuinely
+ * absent.
+ *
+ * THE DEFECT THIS FIXES, found by browser UAT of the article editor. This used
+ * to be a single upsert keyed on a DERIVED id:
+ *
+ *   const id = `author-${slugify(name)}`;
+ *   tx.author.upsert({ where: { id }, update: {...}, create: { id, slug: slugify(name), ... } });
+ *
+ * `Author.slug` is unique, but the lookup was by `id`. So whenever an author
+ * row existed with that slug under a DIFFERENT id — which is true of every
+ * author not created by this exact code path, including seeded ones — the
+ * `where` matched nothing, the `create` ran, and the slug constraint threw.
+ * The action reported "Unexpected server error." and the save was lost. Every
+ * attempt to save an article bylined to such an author failed, with no
+ * indication of why.
+ *
+ * The slug IS the natural key, so it is what the lookup now uses. The id is
+ * only ever minted for a genuinely new author.
+ */
 async function resolveAuthorId(tx: Prisma.TransactionClient, name: string, role: string): Promise<string> {
-  const id = `author-${slugify(name)}`;
-  await tx.author.upsert({
-    where: { id },
-    update: { name, role },
-    create: { id, slug: slugify(name), name, role },
+  const slug = slugify(name);
+  if (!slug) throw new ServiceError('validation', 'An author byline is required.');
+
+  const existing = await tx.author.findUnique({ where: { slug }, select: { id: true } });
+  if (existing) {
+    // Kept in step with the byline, exactly as the previous update did when the
+    // derived id happened to match.
+    await tx.author.update({ where: { id: existing.id }, data: { name, role } });
+    return existing.id;
+  }
+
+  const created = await tx.author.create({
+    data: { id: `author-${slug}`, slug, name, role },
+    select: { id: true },
   });
-  return id;
+  return created.id;
 }
 
 // --- Publication gate -----------------------------------------------------
@@ -322,6 +380,15 @@ async function writeChildren(
   v: ParsedInput,
   rel: ResolvedRelations,
 ): Promise<void> {
+  /**
+   * Read the current body BEFORE deleting it: the grandfathering rule below
+   * needs to know what is already stored, and this function rebuilds the
+   * child collections from scratch.
+   */
+  const storedBlocks = (
+    await tx.articleBlock.findMany({ where: { articleId }, select: { data: true } })
+  ).map((b) => b.data as unknown);
+
   // Reset-and-rebuild child collections.
   await tx.articleBlock.deleteMany({ where: { articleId } });
   await tx.articleTag.deleteMany({ where: { articleId } });
@@ -331,14 +398,52 @@ async function writeChildren(
   await tx.articleEvent.deleteMany({ where: { articleId } });
   await tx.articleEdition.deleteMany({ where: { articleId } });
 
-  for (let i = 0; i < v.blocks.length; i++) {
+  /**
+   * STRICT VALIDATION, with untouched legacy content grandfathered.
+   *
+   * The blocks already stored for this article are read BEFORE the delete above
+   * takes effect within the transaction, so an unknown block type is accepted
+   * only when its payload is exactly what is already persisted. A new unknown
+   * type, or a modified legacy one, is refused. See `articleBlockGrandfather`.
+   */
+  const decision = resolveBlocks(v.blocks as unknown[], storedBlocks);
+  if (!decision.ok) {
+    const first = decision.errors[0];
+    throw new ServiceError(
+      'validation',
+      `Article body block ${first.index + 1} ("${first.type}") cannot be saved: ${first.reason}`,
+      { blocks: decision.errors },
+    );
+  }
+
+  for (let i = 0; i < decision.value.blocks.length; i++) {
+    const block = decision.value.blocks[i];
     await tx.articleBlock.create({
-      data: { articleId, sortOrder: i, blockType: String((v.blocks[i] as { type: string }).type), data: cleanJson(v.blocks[i]) },
+      data: {
+        articleId,
+        sortOrder: i,
+        blockType: String((block as { type: string }).type),
+        data: cleanJson(block),
+      },
     });
   }
+  /**
+   * Tags carry the SAME defect `resolveAuthorId` had, for the same reason:
+   * `Tag.slug` is unique, but the upsert looked the row up by a derived id. A
+   * tag that already existed under a different id — any tag not created by this
+   * exact code path — made the `create` run and the slug constraint throw,
+   * failing the whole save with "Unexpected server error."
+   *
+   * Fixed the same way: resolve on the natural key, mint an id only for a
+   * genuinely new tag.
+   */
   for (const name of v.tags) {
-    const tagId = `tag-${slugify(name)}`;
-    await tx.tag.upsert({ where: { id: tagId }, update: { name }, create: { id: tagId, slug: slugify(name), name } });
+    const tagSlug = slugify(name);
+    if (!tagSlug) continue;                    // a tag of only punctuation has no identity
+    const existing = await tx.tag.findUnique({ where: { slug: tagSlug }, select: { id: true } });
+    const tagId = existing
+      ? (await tx.tag.update({ where: { id: existing.id }, data: { name }, select: { id: true } })).id
+      : (await tx.tag.create({ data: { id: `tag-${tagSlug}`, slug: tagSlug, name }, select: { id: true } })).id;
     await tx.articleTag.create({ data: { articleId, tagId } });
   }
   // Sources (Batch A, D6). The Source table is a shared directory: article editing links to

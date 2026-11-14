@@ -4,6 +4,7 @@ import { classifyStoredCanonical, normalizeSameSiteCanonical } from '../seo/cano
 import { sitemapExclusionReason, effectiveRobots, type SeoSubject } from '../seo/policy';
 import { robotsToString } from '../seo/robots';
 import { type RouteIndex, type RouteInfo, resolveRoute, classifyLink, safeNormalizePath, RENDERS_PUBLICLY } from '../seo/routeIndex';
+import { isEmptyAnchor, isNonDescriptiveAnchor, type ArticleLink, type ArticleLinkCounts } from '../seo/articleLinkInventory';
 import { Thresholds } from './rules';
 import { effectiveAlt } from '../media/imageMeta';
 
@@ -24,6 +25,16 @@ export interface ArticleInv {
   metaDescription: string | null; canonicalUrl: string | null; ogImage: string | null;
   imageAltText: string | null; imageSeoTitle: string | null;
   headings: string[]; bodyWords: number; internalLinks: string[];
+  /**
+   * Batch 06 — every link in the body, with its anchor text and the block it
+   * came from. Read from the fields that carry links rather than scraped from
+   * block strings, so anchors and provenance exist and a path merely mentioned
+   * in prose is not mistaken for a link.
+   *
+   * OPTIONAL so existing constructors of this type (and tests) keep compiling;
+   * the analyzer treats an absent inventory as "no links found".
+   */
+  bodyLinks?: ArticleLink[]; linkCounts?: ArticleLinkCounts;
   disciplineSlugs: string[]; hubIds: string[]; eventIds: string[]; editions: { id: string; eventId: string }[];
   sourceCount: number; relatedIds: string[];
   /** Fixture slug hidden from public reads in production (Batch S6). */
@@ -223,6 +234,66 @@ export function analyzeInternalLinks(inv: Inventory, siteUrl: string = SITE_URL)
         out.push(F('LINK_TO_UNPUBLISHED', `Internal link to a non-public page: ${p} (${r.detail}).`, p));
       } else if (r.status !== 'protected') {
         out.push(F('LINK_BROKEN', `Internal link to ${p} does not resolve (${r.detail ?? r.status}).`, p));
+      }
+    }
+    /**
+     * Batch 06 — findings from the DELIBERATE link inventory.
+     *
+     * NO THRESHOLDS ARE INTRODUCED. The counts are reported as evidence on an
+     * informational finding so an editor can see them; no number is required
+     * for publication, and the publication gate does not read these findings
+     * at all (`assertPublishable` uses `validateArticle`).
+     */
+    const c = a.linkCounts ?? { internalEditorial: 0, externalEditorial: 0, citations: 0, unrenderable: 0, distinctInternalTargets: 0 };
+    if (c.internalEditorial + c.externalEditorial + c.citations > 0) {
+      out.push(F(
+        'LINK_INVENTORY',
+        `Body links: ${c.internalEditorial} internal, ${c.externalEditorial} external, ` +
+        `${c.citations} citation(s); ${c.distinctInternalTargets} distinct internal target(s).`,
+      ));
+    }
+
+    for (const l of a.bodyLinks ?? []) {
+      const where = l.field === 'itemRuns' && l.itemIndex !== undefined
+        ? `block ${l.blockIndex + 1} (${l.blockType}), item ${l.itemIndex + 1}`
+        : `block ${l.blockIndex + 1} (${l.blockType})`;
+
+      /**
+       * A stored href the renderer will refuse is SKIPPED here, not reported.
+       *
+       * It is already covered: such an href can only reach storage on a
+       * `sourceLink`, whose `url` flows through `internalLinks` above and is
+       * reported there as LINK_BROKEN. (An inline run cannot carry one —
+       * `normalizeRuns` strips an unsafe href while keeping the text.)
+       *
+       * Emitting it again produced TWO LINK_BROKEN findings for one unsafe
+       * link, which `tests/seo-audit-routes.test.ts` caught. The count still
+       * records it as `unrenderable`.
+       */
+      if (!l.renderable) continue;
+
+      const cls = classifyLink(l.href, siteUrl);
+
+      /**
+       * EXTERNAL DESTINATIONS ARE NOT VERIFIED, and that is said explicitly.
+       *
+       * The audit makes no network requests, so it cannot know whether an
+       * off-site URL resolves. Previously such links were skipped silently,
+       * which reads in the UI as "nothing wrong" — a false pass. This states
+       * the limitation instead of implying a result.
+       */
+      if (cls.kind === 'external' || cls.kind === 'non-web') {
+        if (l.role === 'editorial') {
+          out.push(F('LINK_EXTERNAL_NOT_VERIFIED', `External link "${l.href}" in ${where} was not checked (the audit makes no network requests).`, l.href));
+        }
+        continue;
+      }
+
+      // Anchor quality. Empty is a defect; a context-free phrase is advice.
+      if (isEmptyAnchor(l.anchor)) {
+        out.push(F('LINK_ANCHOR_EMPTY', `A link in ${where} has no readable anchor text (target "${l.href}").`, l.href));
+      } else if (isNonDescriptiveAnchor(l.anchor)) {
+        out.push(F('LINK_ANCHOR_NONDESCRIPTIVE', `Anchor text "${l.anchor}" in ${where} does not describe its destination.`, `${l.href}|${l.anchor}`));
       }
     }
   }
