@@ -36,6 +36,28 @@ async function faqNodes(page: Page): Promise<Record<string, unknown>[]> {
     .filter((v): v is Record<string, unknown> => Boolean(v) && v['@type'] === 'FAQPage');
 }
 
+/**
+ * The published article's HTML, once the page has caught up.
+ *
+ * The question set is seeded straight into the database, which does not
+ * invalidate anything — the public article is rendered with ISR, so the
+ * prerendered page keeps being served until its window elapses. Reading once
+ * therefore measures the page as it was BEFORE the seed, which is exactly the
+ * intermittent failure this spec showed.
+ *
+ * One response is discarded (it is answered from the previous render while the
+ * new one is built) and the wait is set above the route's own revalidate
+ * window, so a question still missing here is a real failure rather than a
+ * race.
+ */
+const PUBLIC_REFRESH = 90_000;
+
+async function publishedHtml(page: Page, slug: string): Promise<string> {
+  await page.request.get(`/articles/${slug}/`).catch(() => null);
+  const res = await page.request.get(`/articles/${slug}/`);
+  return res.text();
+}
+
 let draftId = '';
 let draftSlug = '';
 
@@ -114,13 +136,25 @@ test.describe('the FAQ panel below the body', () => {
     await panel.getByRole('textbox', { name: 'Answer 1' }).fill(answer);
     await expect(panel.getByTestId('article-faq-count')).toContainText('1 published');
 
+    /*
+      THE DURABLE SIGNAL IS THE DIRTY BADGE, NOT THE TOAST.
+
+      The success toast hides itself after 3.5 seconds, so asserting it races
+      the timer and fails with "element not found" for a save that actually
+      succeeded — verified in a browser: the badge cleared while the toast was
+      already gone. The badge reflects `isDirty` and therefore the real outcome.
+
+      The toast is still read, but only to EXPLAIN a failure, so a refusal
+      reports its reason instead of a bare timeout.
+    */
     const dirty = page.getByTestId('editor-dirty-badge');
     await expect(dirty).toBeVisible();
     await page.getByRole('button', { name: /^(Save Draft|Create Draft)$/ }).click();
-    const toast = page.locator('div.fixed.bottom-6.right-6');
-    await expect(toast).toBeVisible({ timeout: 20_000 });
-    const said = (await toast.innerText()).trim();
-    expect(said, `the save was refused: ${said}`).toContain('Saved to the database.');
+    await expect(dirty, 'a successful save clears the dirty state').toHaveCount(0, { timeout: 25_000 })
+      .catch(async () => {
+        const said = await page.locator('div.fixed.bottom-6.right-6').innerText().catch(() => '(no toast)');
+        throw new Error(`the save was refused: ${said}`);
+      });
 
     // It is stored as part of the BODY, which is what keeps the page, the
     // revisions and the structured data reading the same rows.
@@ -146,7 +180,16 @@ test.describe('the FAQ panel below the body', () => {
     await page.goto(`/admin/articles/${draftId}/edit/`);
     const panel = page.getByTestId('article-faq-panel');
 
-    // The previous test left one question behind.
+    /*
+      This test creates its own question rather than inheriting one from the
+      previous test. Chained tests fail for the wrong reason when an earlier
+      one breaks, and cannot be run alone at all.
+    */
+    if (await panel.getByRole('textbox', { name: 'Question 1' }).count() === 0) {
+      await panel.getByTestId('article-faq-add').click();
+      await panel.getByRole('textbox', { name: 'Question 1' }).fill('A question to remove?');
+      await panel.getByRole('textbox', { name: 'Answer 1' }).fill('An answer.');
+    }
     await expect(panel.getByRole('textbox', { name: 'Question 1' })).toBeVisible();
     await panel.getByRole('button', { name: 'Remove question 1' }).click();
 
@@ -203,8 +246,12 @@ test.describe('the published article and its structured data', () => {
   });
 
   test('shows the questions and emits a matching FAQPage', async ({ page }) => {
-    await page.goto(`/articles/${publishedSlug}/`);
+    // Wait for the public page to carry the seeded question before looking at
+    // what it says — see `publishedHtml`.
+    await expect.poll(() => publishedHtml(page, publishedSlug).then((h) => h.includes(question)),
+      { timeout: PUBLIC_REFRESH }).toBe(true);
 
+    await page.goto(`/articles/${publishedSlug}/`);
     await expect(page.locator('dt', { hasText: question })).toBeVisible();
     await expect(page.locator('dd', { hasText: answer })).toBeVisible();
 
@@ -216,6 +263,8 @@ test.describe('the published article and its structured data', () => {
   });
 
   test('never describes a question the page does not show', async ({ page }) => {
+    await expect.poll(() => publishedHtml(page, publishedSlug).then((h) => h.includes(question)),
+      { timeout: PUBLIC_REFRESH }).toBe(true);
     await page.goto(`/articles/${publishedSlug}/`);
     const pageText = await page.locator('body').innerText();
     const [faqLd] = await faqNodes(page);

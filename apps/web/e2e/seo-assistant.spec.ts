@@ -62,24 +62,49 @@ test.describe('article editor SEO Assistant', () => {
     await expect(page.locator('#field-05-seotitle')).toBeFocused();
   });
 
-  test('the inspector column scrolls independently (stays in view while the page scrolls)', async ({ page }) => {
+  test('the inspector column is not clipped — no panel is trapped behind an inner scrollbar', async ({ page }) => {
+    /*
+      WHAT THIS USED TO ASSERT, AND WHY IT CHANGED.
+
+      It asserted that the inspector PINNED below the topbar while the page
+      scrolled. That was a property of the old single-page editor, where the
+      left column carried all eight fields and the body, making the grid row
+      far taller than the inspector — the room `position: sticky` needs.
+
+      The four editor areas removed that situation: in SEO & Media the left
+      column holds four fields and the right holds the panels, so the row is
+      only as tall as the inspector and there is nothing to stick within.
+      Sticky was therefore removed rather than left inert, because with it
+      inert the accompanying `max-h` + `overflow-y-auto` clipped the panels to
+      viewport height inside a column that also scrolled with the page — two
+      scrollbars, in the wrong order, hiding content.
+
+      The property that MATTERS is the one that survived the change and is
+      asserted here instead: nothing in the inspector is unreachable. Every
+      panel is laid out in full, so scrolling the page reaches all of it.
+    */
     await page.setViewportSize({ width: 1440, height: 900 });
     await loginAsFixtureAdmin(page);
     await page.goto(await fixtureEditPath());
-    // The SEO Assistant lives on the SEO tab since the editor became a tab set.
     await openEditorArea(page, 'seo');
+
     const panel = page.getByTestId('seo-assistant');
     await expect(panel).toBeVisible();
+
     const inspector = page.getByTestId('editor-inspector');
-    // Scroll DOWN through the editorial content (as when writing). The sticky inspector must
-    // PIN near the top of the viewport (top ≈ 80px) instead of scrolling away with the page.
-    // (Without the fix — <body> overflow-x:hidden made body a scroll container — the column
-    // scrolled off to a negative top.)
-    await page.evaluate(() => window.scrollTo(0, 450));
-    await page.waitForTimeout(300);
-    await expect(inspector).toBeInViewport();
-    const topAfter = await inspector.evaluate((el) => el.getBoundingClientRect().top);
-    expect(topAfter).toBeGreaterThanOrEqual(60);
-    expect(topAfter).toBeLessThanOrEqual(110); // pinned at the sticky offset, not scrolled away
+    const clipped = await inspector.evaluate((el) => ({
+      scrollHeight: el.scrollHeight,
+      clientHeight: el.clientHeight,
+      overflowY: getComputedStyle(el).overflowY,
+    }));
+    // Laid out in full: no inner scroll area holding content out of reach.
+    expect(clipped.scrollHeight, 'the inspector must not clip its own content')
+      .toBeLessThanOrEqual(clipped.clientHeight + 1);
+    expect(['visible', 'clip']).toContain(clipped.overflowY);
+
+    // And the last panel in the column is reachable by scrolling the page.
+    const last = page.getByTestId('editor-inspector').locator('> div').last();
+    await last.scrollIntoViewIfNeeded();
+    await expect(last).toBeInViewport();
   });
 });

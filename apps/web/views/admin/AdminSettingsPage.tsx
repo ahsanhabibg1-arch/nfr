@@ -8,6 +8,8 @@ import { AdminTabs } from '../../components/admin/AdminTabs';
 import type { SystemSettings, OperationalStatus, AuditResult } from '../../lib/cms/settingsService';
 import { updateSiteIdentityAction, updateEditorialDefaultsAction, updateRodeoDefaultsAction } from '../../app/admin/settings-actions';
 import { updateSectionConfigAction } from '../../app/admin/section-config-actions';
+import { AdminSearchEnginePanel } from './AdminSearchEnginePanel';
+import type { SearchEngineConfig } from '../../lib/cms/searchEngineService';
 
 export interface SectionRow {
   sectionKey: string;
@@ -27,13 +29,15 @@ export interface AdminSettingsPageProps {
   audit: AuditResult;
   auditFilters: { action?: string; actorId?: string; page: number };
   sections: SectionRow[];
+  /** Supplied by the settings route; drives the Search Engines tab. */
+  searchEngine: SearchEngineConfig;
 }
 
-type Tab = 'identity' | 'editorial' | 'rodeo' | 'sections' | 'operational' | 'audit';
+type Tab = 'identity' | 'editorial' | 'rodeo' | 'sections' | 'searchengine' | 'operational' | 'audit';
 const inputCls = 'w-full px-3 py-2 text-xs border border-stone-300 rounded-xs bg-white text-stone-900 focus:outline-none focus:border-[#D4A757]';
 const labelCls = 'block text-xs font-mono uppercase text-ink-muted font-medium mb-1';
 
-export const AdminSettingsPage: React.FC<AdminSettingsPageProps> = ({ settings, operational, audit, auditFilters, sections }) => {
+export const AdminSettingsPage: React.FC<AdminSettingsPageProps> = ({ settings, operational, audit, auditFilters, sections, searchEngine }) => {
   const router = useRouter();
   const [tab, setTab] = useState<Tab>('identity');
   const [toast, setToast] = useState<string | null>(null);
@@ -52,7 +56,7 @@ export const AdminSettingsPage: React.FC<AdminSettingsPageProps> = ({ settings, 
       <AdminPageHeader title="System Settings" description="Typed, validated site configuration. Domain settings (SEO, Analytics, Monetization) stay owned by their modules; security-critical values are not editable here." breadcrumbs={[{ label: 'Admin', path: '/admin/' }, { label: 'System Settings' }]} />
 
       <AdminTabs
-        tabs={[{ id: 'identity', label: 'Site Identity' }, { id: 'editorial', label: 'Editorial Defaults' }, { id: 'rodeo', label: 'Rodeo Defaults' }, { id: 'sections', label: 'Sections' }, { id: 'operational', label: 'Operational' }, { id: 'audit', label: 'Audit Log', count: audit.total }]}
+        tabs={[{ id: 'identity', label: 'Site Identity' }, { id: 'editorial', label: 'Editorial Defaults' }, { id: 'rodeo', label: 'Rodeo Defaults' }, { id: 'sections', label: 'Sections' }, { id: 'searchengine', label: 'Search Engines & Verification' }, { id: 'operational', label: 'Operational' }, { id: 'audit', label: 'Audit Log', count: audit.total }]}
         activeTab={tab}
         onChange={(id) => setTab(id as Tab)}
       />
@@ -111,6 +115,14 @@ export const AdminSettingsPage: React.FC<AdminSettingsPageProps> = ({ settings, 
           ))}
         </div>
       )}
+
+      {/*
+        The Search Engines tab owns verification, tracking ids and indexing
+        diagnostics. It is a tab here rather than a page of its own because
+        these are site-wide settings, and because an administrator looking for
+        "how do I get on Google" looks in Settings first.
+      */}
+      {tab === 'searchengine' && <AdminSearchEnginePanel config={searchEngine} />}
 
       {tab === 'operational' && (
         <div className="grid grid-cols-1 md:grid-cols-2 gap-4">

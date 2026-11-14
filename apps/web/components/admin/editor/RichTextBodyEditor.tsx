@@ -1309,7 +1309,7 @@ export const RichTextBodyEditor: React.FC<RichTextBodyEditorProps> = ({
                       <span className="text-[9px] font-mono uppercase tracking-wider text-[#8B5E3C] mr-1.5">{r.kind}</span>
                       <span className="text-xs font-sans text-stone-900">{r.label}</span>
                       {r.detail && <span className="text-[11px] text-stone-500"> · {r.detail}</span>}
-                      <span className="block font-mono text-[10px] text-stone-400">{r.url}</span>
+                      <span className="block font-mono text-[10px] text-stone-600">{r.url}</span>
                       {r.warning && <span className="block text-[10px] text-amber-700">{r.warning}</span>}
                     </button>
                   </li>
@@ -1564,7 +1564,7 @@ export const RichTextBodyEditor: React.FC<RichTextBodyEditorProps> = ({
                 }`}
               >
                 <span className="block text-xs font-sans text-stone-900">{def.label}</span>
-                <span className="block text-[10px] font-mono text-stone-400">/{def.slash[0]}</span>
+                <span className="block text-[10px] font-mono text-stone-600">/{def.slash[0]}</span>
               </button>
             ))}
           </div>

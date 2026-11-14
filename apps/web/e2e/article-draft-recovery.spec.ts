@@ -123,16 +123,25 @@ test.describe('unsaved composer work is recoverable', () => {
 
     await expect(page.getByTestId('editor-recovery-state')).toBeVisible({ timeout: 20_000 });
 
-    const toast = page.locator('div.fixed.bottom-6.right-6');
-    await page.getByRole('button', { name: /^(Save Draft|Create Draft)$/ }).click();
-    // Read the outcome while the toast is still on screen: it hides itself
-    // after 3.5 s, so a later read reports nothing and hides the real reason.
-    await expect(toast).toBeVisible({ timeout: 20_000 });
-    const said = (await toast.innerText()).trim();
-    expect(said, `the save was refused: ${said}`).toContain('Saved to the database.');
+    /*
+      THE SUCCESS SIGNAL FOR A NEW ARTICLE IS THE NAVIGATION, NOT THE TOAST.
 
-    const dirty = page.getByTestId('editor-dirty-badge');
-    await expect(dirty, 'a successful save clears the dirty state').toHaveCount(0, { timeout: 20_000 });
+      On a successful first save the editor replaces the URL with the new
+      article's edit route, which remounts the component and clears the toast
+      immediately — so asserting the toast raced the navigation and failed
+      intermittently with no toast on screen at all. The URL change is durable
+      and unambiguous.
+
+      A refusal does NOT navigate, so if the save were rejected this wait fails
+      and the toast below reports the reason rather than leaving a bare timeout.
+    */
+    await page.getByRole('button', { name: /^(Save Draft|Create Draft)$/ }).click();
+    await page.waitForURL(/\/admin\/articles\/[0-9a-f-]{8,}\/edit\//, { timeout: 25_000 })
+      .catch(async () => {
+        const toast = await page.locator('div.fixed.bottom-6.right-6').innerText().catch(() => '(no toast)');
+        throw new Error(`the save did not create the article. Editor said: ${toast}`);
+      });
+    await expect(page.getByTestId('editor-dirty-badge')).toHaveCount(0);
 
     await page.goto('/admin/articles/?status=unsaved');
     await expect(

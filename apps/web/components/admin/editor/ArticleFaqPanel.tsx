@@ -138,7 +138,7 @@ export const ArticleFaqPanel: React.FC<ArticleFaqPanelProps> = ({ blocks, onChan
 
       <div className="space-y-3">
         {items.length === 0 && (
-          <p className="text-[11px] font-mono text-stone-400">
+          <p className="text-[11px] font-mono text-stone-600">
             No questions yet. An article does not need one — add them only where a reader would ask.
           </p>
         )}
@@ -205,7 +205,7 @@ export const ArticleFaqPanel: React.FC<ArticleFaqPanelProps> = ({ blocks, onChan
               told where the formatted version is edited instead.
             */}
             {item.answerRuns && item.answerRuns.length > 0 && (
-              <p className="text-[10px] font-mono text-stone-400">
+              <p className="text-[10px] font-mono text-stone-600">
                 This answer has inline formatting. Editing it here keeps the words; the formatting is
                 edited on the question card in the writing surface.
               </p>

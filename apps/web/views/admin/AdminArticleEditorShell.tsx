@@ -1514,7 +1514,30 @@ export const AdminArticleEditorShell: React.FC<AdminArticleEditorShellProps> = (
                 : 'lg:col-span-12'
           }
         >
-        <div data-testid="editor-inspector" className="space-y-6 font-sans text-xs lg:sticky lg:top-20 lg:max-h-[calc(100vh-6rem)] lg:overflow-y-auto lg:pr-1 editor-inspector-scroll">
+        {/*
+          THE INSPECTOR NO LONGER STICKS, AND SHOULD NOT.
+
+          It used to pin below the topbar and scroll inside its own area, so
+          the gates stayed in view while an author scrolled a very long form on
+          the left. That worked because the left column held all eight fields
+          AND the body editor, making the grid row far taller than the
+          inspector — which is exactly the room `position: sticky` needs.
+
+          The four areas removed that situation: in SEO & Media the left column
+          holds four fields and the right holds the panels, so the row is only
+          as tall as the inspector itself and there is nothing to stick within.
+          Browser-verified: after scrolling 450px the column's top was -156px,
+          i.e. it simply scrolled away.
+
+          Keeping the classes would have been worse than removing them. With
+          sticky inert, `max-h` + `overflow-y-auto` stopped being a convenience
+          and became a trap: the panels were clipped to viewport height with an
+          inner scrollbar, inside a column that scrolls with the page — so
+          content could be reached only by scrolling two things in the right
+          order. The column now flows with the page, which is what the layout
+          actually is.
+        */}
+        <div data-testid="editor-inspector" className="space-y-6 font-sans text-xs">
           <div data-editor-area="review" hidden={area !== 'review'} className="space-y-6">
           {/* PANEL 1: WORKFLOW & PUBLISHING CONTROLS */}
           <div className="bg-white border border-stone-200 rounded-sm p-5 shadow-2xs space-y-4">

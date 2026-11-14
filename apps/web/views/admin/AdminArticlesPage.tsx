@@ -188,7 +188,7 @@ export const AdminArticlesPage: React.FC<Props> = ({
               <tbody className="divide-y divide-stone-100">
                 {recoveryDrafts.length === 0 ? (
                   <tr>
-                    <td colSpan={5} className="py-8 text-center text-stone-400 font-mono text-xs">
+                    <td colSpan={5} className="py-8 text-center text-stone-600 font-mono text-xs">
                       Nothing to recover — every composer session you opened was saved.
                     </td>
                   </tr>
