@@ -167,75 +167,64 @@ describe.runIf(available)('Stage 09 Task E — the four-state workflow behaves a
   });
 });
 
-/* ── 2. The defect, reproduced ─────────────────────────────────────── */
+/* ── 2. D-09 / S-1, RESOLVED ───────────────────────────────────────── */
 
-describe.runIf(available)('Stage 09 Task E — DEFECT D-09: a published page cannot be edited', () => {
-  it('DEFECT: editing a PUBLISHED page is refused, so the live page is never silently rewritten', async () => {
-    /**
-     * The reassuring half, and worth pinning: there is no path by which an
-     * editor's save reaches live content. The refusal is real.
-     */
+describe.runIf(available)('Page Manager Stage 1 — a published page CAN be edited', () => {
+  /**
+   * This block used to reproduce D-09: a published page could not be edited,
+   * and the only way forward removed it from the public site. The Page Manager
+   * work separated the live version (`publishedSnapshot`) from the working
+   * draft, so each assertion below is the former defect inverted. The
+   * SCENARIOS are unchanged — the same probe, the same legacy slug, the same
+   * publish/unpublish paths — so nothing that was covered has stopped being
+   * covered; only the expected outcome moved.
+   */
+
+  it('editing a PUBLISHED page is ACCEPTED, and the live page is untouched', async () => {
     await publishProbe('<p>LIVE CONTENT.</p>');
-    await expect(
-      svc.saveInfoPageDraft(ADMIN, input({ body: '<p>ATTEMPTED EDIT.</p>' })),
-    ).rejects.toMatchObject({ code: 'validation' });
+    await svc.saveInfoPageDraft(ADMIN, input({ body: '<p>ATTEMPTED EDIT.</p>' }));
 
     const live = await svc.getPublishedInfoPage(PROBE_SLUG);
-    expect(live!.body, 'the live body must be untouched').toContain('LIVE CONTENT');
+    expect(live!.body, 'the live body must still be untouched').toContain('LIVE CONTENT');
     expect(live!.body).not.toContain('ATTEMPTED EDIT');
+    // ...and the draft really did take the edit.
+    expect((await svc.getInfoPage(PROBE_SLUG))!.body).toContain('ATTEMPTED EDIT');
   });
 
-  it('DEFECT: the refusal names a mechanism that does not exist', async () => {
+  it('the draft-revision mechanism the old message promised now exists', async () => {
     /**
-     * THE CORE OF D-09. The error says "Create a new draft revision." There is
-     * no such function, action, route or button anywhere in the codebase — so
-     * the message sends the operator to look for something that was never
-     * built. Asserted against the service's exported surface, not its text, so
-     * this cannot pass by a wording change alone.
+     * The core of D-09 was that the refusal named a capability nobody had
+     * built. Asserted against the exported surface rather than any wording, so
+     * this cannot pass by renaming an error string.
      */
-    await publishProbe();
-    let message = '';
-    try {
-      await svc.saveInfoPageDraft(ADMIN, input({ body: '<p>x</p>' }));
-    } catch (e) { message = (e as Error).message; }
-
-    expect(message, 'Stage 09 rewrote this message; see §3').not.toContain('Create a new draft revision');
-
-    // And the mechanism still does not exist.
     const exported = Object.keys(svc);
-    const revisionLike = exported.filter((k) => /revision|newDraft|createDraft|forkDraft/i.test(k));
-    expect(revisionLike, 'no draft-revision mechanism exists for InfoPage').toEqual([]);
+    expect(exported).toContain('listInfoPageRevisions');
+    expect(exported).toContain('restoreInfoPageRevision');
   });
 
-  it('DEFECT: the only forward path removes the page from public view', async () => {
-    /**
-     * `unpublishInfoPage` is the sole way to make a published page editable, and
-     * it sets status to DRAFT — which `getPublishedInfoPage` then filters out.
-     * For a NON-legacy slug the public page has nothing behind it.
-     */
+  it('a published page no longer has to be taken down to be changed', async () => {
     await publishProbe('<p>LIVE CONTENT.</p>');
     expect(await svc.getPublishedInfoPage(PROBE_SLUG)).not.toBeNull();
 
-    await svc.unpublishInfoPage(ADMIN, PROBE_SLUG);
+    await svc.saveInfoPageDraft(ADMIN, input({ body: '<p>NEXT VERSION.</p>' }));
 
     expect(
       await svc.getPublishedInfoPage(PROBE_SLUG),
-      'the page is gone from the public read — this is the D-09 risk',
-    ).toBeNull();
-    // The content still exists in the row; it is simply no longer public.
-    expect((await svc.getInfoPage(PROBE_SLUG))!.body).toContain('LIVE CONTENT');
+      'the page stays public throughout the edit — this was the D-09 risk',
+    ).not.toBeNull();
   });
 
-  it('DEFECT: for a LEGACY slug, unpublishing silently swaps in different built-in text', async () => {
+  it('for a LEGACY slug, unpublishing 404s instead of swapping in built-in text', async () => {
     /**
-     * Worse than a 404 in one way: the URL keeps working, so nothing looks
-     * broken, but the wording a reader sees changes to the hardcoded config —
-     * which for every legal page is still marked pending review and renders a
-     * draft banner.
+     * Previously the URL kept working and quietly served the compiled-in copy,
+     * which for every policy page is still marked pending review. A row now
+     * resolves as `withdrawn`, which the renderer turns into a 404 — taking a
+     * page down means it is down.
      */
     const { getLegalPage } = await import('../config/legalPages');
     const fallback = getLegalPage(LEGACY_SLUG);
     expect(fallback, 'the probe assumes a legacy slug with built-in content').toBeDefined();
+    expect(fallback!.review, 'and that built-in copy is still unapproved').not.toBe('approved');
 
     await svc.saveInfoPageDraft(ADMIN, { ...input(), slug: LEGACY_SLUG, title: 'DB About', body: '<p>DB BODY.</p>' });
     await svc.submitForReview(ADMIN, LEGACY_SLUG);
@@ -244,9 +233,7 @@ describe.runIf(available)('Stage 09 Task E — DEFECT D-09: a published page can
     expect((await svc.getPublishedInfoPage(LEGACY_SLUG))!.body).toContain('DB BODY');
 
     await svc.unpublishInfoPage(ADMIN, LEGACY_SLUG);
-    expect(await svc.getPublishedInfoPage(LEGACY_SLUG)).toBeNull();
-    // ...and the route will now render `fallback`, whose review status is not approved.
-    expect(fallback!.review).not.toBe('approved');
+    expect((await svc.resolvePublicInfoPage(LEGACY_SLUG)).kind).toBe('withdrawn');
   });
 
   it('saving over an APPROVED page drops the approval — now visibly, not silently', async () => {
@@ -277,45 +264,52 @@ describe.runIf(available)('Stage 09 Task E — DEFECT D-09: a published page can
     expect(after!.approvedById).toBeNull();
   });
 
-  it('DEFECT: reverting a published page is also refused', async () => {
-    await publishProbe();
-    await expect(svc.revertToDraft(ADMIN, PROBE_SLUG)).rejects.toMatchObject({ code: 'validation' });
+  it('reverting a published page is allowed, and leaves the live page alone', async () => {
+    await publishProbe('<p>LIVE CONTENT.</p>');
+    await svc.revertToDraft(ADMIN, PROBE_SLUG);
+    expect((await svc.getInfoPage(PROBE_SLUG))!.status).toBe('DRAFT');
+    expect((await svc.getPublishedInfoPage(PROBE_SLUG))!.body).toContain('LIVE CONTENT');
   });
 
-  it('there is NO draft-alongside-published capability — the schema cannot express one', async () => {
+  it('the schema CAN now express draft alongside published', async () => {
     /**
-     * The structural reason the above cannot be fixed without S-1. `InfoPage`
-     * holds ONE `body` and ONE `status`. There is no column that could hold a
-     * draft while a different version stays published.
+     * The structural claim this file used to make — "`InfoPage` holds ONE
+     * `body` and ONE `status`, so there is no column that could hold a draft
+     * while a different version stays published" — no longer holds. S-1 added
+     * exactly that column.
      */
     await publishProbe();
     const row = await prisma.infoPage.findUniqueOrThrow({ where: { slug: PROBE_SLUG } });
     const keys = Object.keys(row);
     expect(keys).toContain('body');
-    expect(keys.filter((k) => /^(draft|published)(Body|Sections|Content)$/i.test(k))).toEqual([]);
+    expect(keys).toContain('publishedSnapshot');
+    expect(row.publishedSnapshot, 'and it holds the live version').not.toBeNull();
   });
 });
 
 /* ── 3. Stage 09's policy-independent safeguards ──────────────────── */
 
 describe.runIf(available)('Stage 09 Task E — the safeguards Stage 09 could add without a schema change', () => {
-  it('the refusal now explains what will actually happen, and what is missing', async () => {
+  it('there is no refusal left to explain — the save simply succeeds', async () => {
     /**
-     * The honest replacement for an impossible instruction. It must name the
-     * real consequence — unpublishing takes the page off the public site — so
-     * the operator can decide, rather than hunting for a button that was never
-     * built.
+     * This assertion has inverted twice, and the history is the point.
+     *
+     * Originally the refusal told operators to "create a new draft revision",
+     * a mechanism nobody had built. Stage 09 could not fix the cause — that
+     * needed schema change S-1 — so it replaced the message with an honest one
+     * naming the real cost: unpublish, and the page leaves the public site.
+     * S-1 has now landed, so there is no cost to name and no refusal to word.
+     * An operator editing a published page is not sent anywhere; the draft is
+     * saved and the live page carries on.
      */
-    await publishProbe();
+    await publishProbe('<p>LIVE CONTENT.</p>');
     let message = '';
     try {
       await svc.saveInfoPageDraft(ADMIN, input({ body: '<p>x</p>' }));
     } catch (e) { message = (e as Error).message; }
 
-    expect(message).toMatch(/published/i);
-    expect(message, 'it must name the only real path').toMatch(/unpublish/i);
-    expect(message, 'and warn what that path costs').toMatch(/public|visitor|live/i);
-    expect(message, 'and not invent a mechanism').not.toMatch(/draft revision/i);
+    expect(message, 'editing a published page must no longer be refused').toBe('');
+    expect((await svc.getPublishedInfoPage(PROBE_SLUG))!.body).toContain('LIVE CONTENT');
   });
 
   it('unpublishing is still permitted, but its audit record states the public effect', async () => {

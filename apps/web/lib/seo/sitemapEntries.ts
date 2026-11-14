@@ -1,5 +1,6 @@
 import 'server-only';
 import type { MetadataRoute } from 'next';
+import { Prisma } from '@prisma/client';
 import { prisma } from '../db';
 import { SITE_URL } from '../seo';
 import { PRIMARY_SECTIONS } from '../../config/routes';
@@ -106,7 +107,19 @@ export async function loadSitemapCandidates(): Promise<SitemapCandidate[]> {
     getContentEligibleVenues(),
     getContentEligibleCompetitors(),
     listPublicCoverageEditions(),
-    prisma.infoPage.findMany({ where: { status: 'PUBLISHED' }, select: { slug: true, updatedAt: true } }),
+    /*
+      A page is in the sitemap when it has a LIVE SNAPSHOT and is not archived
+      — not when its draft happens to be marked PUBLISHED. Those two parted
+      company when draft and live content were separated: a page can be live
+      while its draft sits back at DRAFT because someone is editing it, and an
+      archived page can still carry a stale PUBLISHED status. The snapshot is
+      the only thing a reader can actually reach, so it is what the sitemap
+      follows.
+    */
+    prisma.infoPage.findMany({
+      where: { archivedAt: null, publishedSnapshot: { not: Prisma.DbNull } },
+      select: { slug: true, updatedAt: true, publishedSnapshot: true },
+    }),
   ]);
 
   const seoBy = new Map(entitySeo.map((s) => [`${s.entityType}:${s.entityId}`, s]));
@@ -285,11 +298,52 @@ export async function loadSitemapCandidates(): Promise<SitemapCandidate[]> {
   // Legal/info pages — same rule as LegalPageView: indexable when a published DB version
   // exists OR the config copy is owner-approved; otherwise rendered noindex.
   const infoAt = new Map(infoPages.map((p) => [p.slug, p.updatedAt]));
+  /**
+   * An operator can mark a LIVE page noindex through Landing SEO, and that
+   * setting is captured in the published snapshot. A sitemap entry for a page
+   * that renders `noindex` is a contradiction search engines report back, so
+   * the two are read from the same place.
+   */
+  const infoNoindex = new Set(
+    infoPages
+      .filter((p) => {
+        const snap = p.publishedSnapshot as { seo?: { noindex?: boolean } } | null;
+        return snap?.seo?.noindex === true;
+      })
+      .map((p) => p.slug),
+  );
+
   for (const p of LEGAL_PAGES) {
     out.push({
       family: 'legal',
-      subject: { path: p.path, published: true, contentEligible: infoAt.has(p.slug) || p.review === 'approved' },
+      subject: {
+        path: p.path,
+        published: true,
+        contentEligible: infoAt.has(p.slug) || p.review === 'approved',
+        ...(infoNoindex.has(p.slug) ? { storedRobots: 'noindex' } : {}),
+      },
       lastModified: infoAt.get(p.slug),
+      changeFrequency: 'yearly', priority: 0.3,
+    });
+  }
+
+  /**
+   * CUSTOM information pages, which had no sitemap entry at all before PM-04.
+   * Only the slugs that are NOT one of the seven legacy policy routes, since
+   * those are emitted above at their own top-level path.
+   */
+  const legalSlugs = new Set(LEGAL_PAGES.map((p) => p.slug));
+  for (const ip of infoPages) {
+    if (legalSlugs.has(ip.slug)) continue;
+    out.push({
+      family: 'legal',
+      subject: {
+        path: `/info/${ip.slug}/`,
+        published: true,
+        contentEligible: true,
+        ...(infoNoindex.has(ip.slug) ? { storedRobots: 'noindex' } : {}),
+      },
+      lastModified: ip.updatedAt,
       changeFrequency: 'yearly', priority: 0.3,
     });
   }

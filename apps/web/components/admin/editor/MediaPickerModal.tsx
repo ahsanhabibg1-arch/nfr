@@ -6,6 +6,15 @@ import { listMediaForPickerAction } from '../../../app/admin/media-actions';
 import type { MediaRow } from '../../../lib/cms/mediaService';
 
 export interface SelectedMediaData {
+  /**
+   * The Media Library asset id, when the selection came from the library.
+   *
+   * Optional because the picker also accepts a custom URL, which has no record
+   * behind it. Callers that need a durable REFERENCE — rather than a copied
+   * URL — require this and should refuse a selection without it. Added for
+   * PM-03; existing callers that only read `url` are unaffected.
+   */
+  id?: string;
   url: string;
   seoTitle: string;
   altText: string;
@@ -73,6 +82,7 @@ export const MediaPickerModal: React.FC<MediaPickerModalProps> = ({ isOpen, onCl
       onSelect({ url: customUrl.trim(), seoTitle: 'Editorial Image', altText: '', caption: '', credit: '', rightsStatus: 'Unresolved' });
     } else if (current) {
       onSelect({
+        id: current.id,
         url: current.url, seoTitle: current.seoTitle || current.title || '', altText: current.altText || '',
         caption: current.caption || '', credit: current.credit || '', rightsStatus: toRights(current),
       });

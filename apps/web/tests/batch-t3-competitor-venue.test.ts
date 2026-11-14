@@ -39,7 +39,8 @@ describe('Task 3 — Competitor & Venue key registration', () => {
   });
 
   it('KNOWN_PAGE_KEYS now has 15 entries', () => {
-    expect(KNOWN_PAGE_KEYS.length).toBe(15);
+    // 16 since PM-05 added `template:info-page`.
+    expect(KNOWN_PAGE_KEYS.length).toBe(16);
   });
 
   it('existing template keys are preserved', () => {

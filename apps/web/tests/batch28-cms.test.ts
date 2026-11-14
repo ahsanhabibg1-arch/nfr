@@ -163,29 +163,40 @@ suite('Batch 28 — CMS gap remediation integration', () => {
     await expect(infoSvc.submitForReview(actors.admin, 'about')).rejects.toThrow(/draft/i);
   });
 
-  it('revertToDraft refuses PUBLISHED pages — must unpublish first', async () => {
-    await expect(infoSvc.revertToDraft(actors.admin, 'about')).rejects.toThrow(/unpublish/i);
+  it('revertToDraft on a PUBLISHED page returns the draft without disturbing the live page', async () => {
+    // Inverted by the Page Manager work (S-1). Reverting now moves the DRAFT
+    // back to editable; the live snapshot is a separate value and is untouched.
+    await infoSvc.revertToDraft(actors.admin, 'about');
+    expect((await infoSvc.getInfoPage('about'))!.status).toBe('DRAFT');
+    expect(await infoSvc.getPublishedInfoPage('about'), 'still live').not.toBeNull();
   });
 
-  it('unpublish removes PUBLISHED page from public view; hardcoded fallback takes over', async () => {
+  it('unpublish removes the page from public view WITHOUT the hardcoded fallback taking over', async () => {
+    /*
+      The second half of this title is the correction. A row that exists but is
+      not live now resolves as `withdrawn`, so the compiled-in pending-review
+      copy no longer stands in for a page an operator deliberately took down.
+    */
     await infoSvc.unpublishInfoPage(actors.admin, 'about');
-    const pub = await infoSvc.getPublishedInfoPage('about');
-    expect(pub).toBeNull(); // public now sees hardcoded
+    expect(await infoSvc.getPublishedInfoPage('about')).toBeNull();
+    expect((await infoSvc.resolvePublicInfoPage('about')).kind).toBe('withdrawn');
 
     const row = await infoSvc.getInfoPage('about');
     expect(row!.status).toBe('DRAFT');
     expect(row!.body).toBe('<p>Test body</p>'); // content preserved in DB
   });
 
-  it('cannot edit a published page directly — must unpublish first', async () => {
+  it('CAN edit a published page directly — the live version stays up meanwhile', async () => {
     // Re-publish
     await infoSvc.saveInfoPageDraft(actors.admin, { slug: 'about', title: 'B28 v2', body: '<p>v2</p>' });
     await infoSvc.submitForReview(actors.admin, 'about');
     await infoSvc.approveInfoPage(actors.admin, 'about');
     await infoSvc.publishInfoPage(actors.admin, 'about');
 
-    await expect(infoSvc.saveInfoPageDraft(actors.admin, { slug: 'about', title: 'sneaky edit', body: '<p>nope</p>' }))
-      .rejects.toThrow(/published/i);
+    await infoSvc.saveInfoPageDraft(actors.admin, { slug: 'about', title: 'next version', body: '<p>next</p>' });
+    // The draft took the edit; readers still have the published version.
+    expect((await infoSvc.getInfoPage('about'))!.body).toContain('next');
+    expect((await infoSvc.getPublishedInfoPage('about'))!.body).toContain('v2');
 
     // Clean up
     await infoSvc.unpublishInfoPage(actors.admin, 'about');

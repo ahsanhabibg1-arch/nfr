@@ -191,6 +191,22 @@ const MODULE_GROUPS: NavGroup[] = [
         ),
       },
       {
+        /*
+          Registered in the permission registry since it was built, but absent
+          from this list — so the Page Manager was reachable only by typing its
+          URL. Placed beside Website & Navigation because both manage the public
+          site's own pages, and both answer to `system.config`.
+        */
+        id: 'info-pages',
+        name: 'Info & Legal Pages',
+        path: ROUTES.ADMIN_INFO_PAGES,
+        icon: (p) => (
+          <svg {...p} fill="none" viewBox="0 0 24 24" stroke="currentColor">
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.8} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+          </svg>
+        ),
+      },
+      {
         id: 'monetization',
         name: 'Monetization & Ads',
         path: ROUTES.ADMIN_MONETIZATION,

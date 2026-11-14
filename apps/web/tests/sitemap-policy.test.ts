@@ -1,4 +1,5 @@
 import { describe, it, expect, beforeAll, afterAll } from 'vitest';
+import { Prisma } from '@prisma/client';
 import type { PrismaClient, EntitySeo, InfoPage } from '@prisma/client';
 
 /**
@@ -96,10 +97,21 @@ suite('S4 — sitemap eligibility per content type (isolated test DB)', () => {
       { entityType: 'SECTION', entityId: 'plan-watch', seoTitle: 'Title only — still indexable' },
     ] });
 
+    /*
+      "Published" means a LIVE SNAPSHOT, not a draft status, since draft and
+      live content were separated. A row whose draft says PUBLISHED but which
+      has no snapshot is not serving anything, so the sitemap is right to leave
+      it out — this fixture therefore sets the snapshot the public read uses.
+    */
+    const correctionsSnapshot = {
+      title: 'Corrections', body: '<p>x</p>',
+      seoTitle: null, metaDescription: null,
+      publishedAt: new Date().toISOString(),
+    };
     await prisma.infoPage.upsert({
       where: { slug: 'corrections' },
-      create: { slug: 'corrections', title: 'Corrections', body: '<p>x</p>', status: 'PUBLISHED' },
-      update: { status: 'PUBLISHED' },
+      create: { slug: 'corrections', title: 'Corrections', body: '<p>x</p>', status: 'PUBLISHED', publishedSnapshot: correctionsSnapshot },
+      update: { status: 'PUBLISHED', publishedSnapshot: correctionsSnapshot, archivedAt: null },
     });
 
     result = await run();
@@ -125,7 +137,29 @@ suite('S4 — sitemap eligibility per content type (isolated test DB)', () => {
     await prisma.author.deleteMany({ where: { slug: { startsWith: P } } });
     await prisma.category.deleteMany({ where: { slug: { startsWith: P } } });
     if (createdPlanCategory) await prisma.category.delete({ where: { id: ids.planCat } });
-    if (infoBackup) { const { id: _i, ...row } = infoBackup; await prisma.infoPage.update({ where: { slug: 'corrections' }, data: row }); }
+    if (infoBackup) {
+      /*
+        Restored field by field rather than by spreading the whole row.
+        `publishedSnapshot` is a nullable Json column, and Prisma distinguishes
+        "SQL NULL" from "JSON null" on the way in, so a plain `null` read back
+        from a row is not a value it will accept on an update. Naming the fields
+        keeps the restore honest about which ones this test actually changed.
+      */
+      await prisma.infoPage.update({
+        where: { slug: 'corrections' },
+        data: {
+          title: infoBackup.title,
+          body: infoBackup.body,
+          seoTitle: infoBackup.seoTitle,
+          metaDescription: infoBackup.metaDescription,
+          status: infoBackup.status,
+          publishedAt: infoBackup.publishedAt,
+          publishedSnapshot: infoBackup.publishedSnapshot === null
+            ? Prisma.DbNull
+            : (infoBackup.publishedSnapshot as Prisma.InputJsonValue),
+        },
+      });
+    }
     else await prisma.infoPage.deleteMany({ where: { slug: 'corrections' } });
   });
 
@@ -179,7 +213,7 @@ suite('S4 — sitemap eligibility per content type (isolated test DB)', () => {
     const entry = result.included.get('/corrections/');
     expect(entry).toBeDefined();
     expect(entry!.lastModified).toEqual(info!.updatedAt);
-    const hasTerms = await prisma.infoPage.findFirst({ where: { slug: 'terms', status: 'PUBLISHED' } });
+    const hasTerms = await prisma.infoPage.findFirst({ where: { slug: 'terms', archivedAt: null, publishedSnapshot: { not: Prisma.DbNull } } });
     if (!hasTerms) expect(why('/terms/')).toBe('content-noindex');
   });
 

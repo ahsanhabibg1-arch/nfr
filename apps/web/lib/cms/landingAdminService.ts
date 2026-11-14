@@ -8,6 +8,7 @@ import { assertEntityExists, requireEntityPerm } from './landingEntities';
 import { getEntitySeo } from './entitySeoService';
 import { listFaqsAdmin } from './faqService';
 import { PRIMARY_SECTIONS, ROUTES } from '../../config/routes';
+import { LEGACY_SLUGS } from './infoPageService';
 import { listAssignableClassifications, type PublicClassification } from './disciplineClassificationService';
 
 /**
@@ -32,12 +33,12 @@ export interface LandingEntityGroup { type: LandingEntityType; label: string; it
 
 const GROUP_LABEL: Record<LandingEntityType, string> = {
   RODEO_HUB: 'Rodeo Hubs', RODEO_EVENT: 'Rodeo Events', RODEO_EDITION: 'Event Editions', DISCIPLINE: 'Disciplines', CATEGORY: 'Categories',
-  VENUE: 'Venues', COMPETITOR: 'Competitors', SECTION: 'Primary Sections', SUBCATEGORY: 'Subcategories',
+  VENUE: 'Venues', COMPETITOR: 'Competitors', SECTION: 'Primary Sections', SUBCATEGORY: 'Subcategories', INFO_PAGE: 'Information & Policy Pages',
 };
 
 export async function listLandingEntities(actor: Actor): Promise<LandingEntityGroup[]> {
   if (!canUseLandingManager(actor)) throw new ServiceError('forbidden', 'Not permitted to manage landing content.');
-  const [hubs, events, editions, disciplines, categories, subcategories, venues, competitors, seoRows, faqRows] = await Promise.all([
+  const [hubs, events, editions, disciplines, categories, subcategories, infoPages, venues, competitors, seoRows, faqRows] = await Promise.all([
     prisma.rodeoHub.findMany({ orderBy: { title: 'asc' }, select: { id: true, title: true, slug: true } }),
     prisma.rodeoEvent.findMany({ orderBy: { name: 'asc' }, select: { id: true, name: true, slug: true } }),
     prisma.rodeoEventEdition.findMany({ orderBy: [{ year: 'desc' }], select: { id: true, label: true, editionSlug: true, event: { select: { slug: true } } } }),
@@ -51,6 +52,15 @@ export async function listLandingEntities(actor: Actor): Promise<LandingEntityGr
     prisma.subcategory.findMany({
       orderBy: [{ categoryId: 'asc' }, { sortOrder: 'asc' }],
       select: { id: true, name: true, slug: true, category: { select: { name: true } } },
+    }),
+    /*
+      Archived info pages are listed too. An archived page keeps its row and may
+      be restored, so its SEO row still describes a page that can come back —
+      dropping it from this screen would hide settings that are still in force.
+    */
+    prisma.infoPage.findMany({
+      orderBy: { slug: 'asc' },
+      select: { id: true, slug: true, title: true, pageType: true, archivedAt: true },
     }),
     prisma.venue.findMany({ orderBy: { name: 'asc' }, select: { id: true, name: true, slug: true } }),
     prisma.competitor.findMany({ orderBy: [{ sortOrder: 'asc' }, { fullName: 'asc' }], select: { id: true, fullName: true, slug: true } }),
@@ -74,6 +84,18 @@ export async function listLandingEntities(actor: Actor): Promise<LandingEntityGr
      * it, and two sections can no longer share a slug, so the label is the only
      * place an operator can still see which section a subcategory belongs to.
      */
+    {
+      type: 'INFO_PAGE',
+      label: GROUP_LABEL.INFO_PAGE,
+      items: infoPages.map((ip) => row(
+        'INFO_PAGE',
+        ip.id,
+        `${ip.title}${ip.archivedAt ? ' — archived' : ''}`,
+        // A legacy policy slug is served from its own top-level route; anything
+        // else lives under /info/. Matching `LegalPageView`'s own resolution.
+        (LEGACY_SLUGS as readonly string[]).includes(ip.slug) ? `/${ip.slug}/` : `/info/${ip.slug}/`,
+      )),
+    },
     { type: 'SUBCATEGORY', label: GROUP_LABEL.SUBCATEGORY, items: subcategories.map((s) => row('SUBCATEGORY', s.id, `${s.name} — ${s.category.name}`, ROUTES.SUBCATEGORY(s.slug))) },
     { type: 'VENUE', label: GROUP_LABEL.VENUE, items: venues.map((v) => row('VENUE', v.id, v.name, `/venues/${v.slug}/`)) },
     { type: 'COMPETITOR', label: GROUP_LABEL.COMPETITOR, items: competitors.map((c) => row('COMPETITOR', c.id, c.fullName, `/competitors/${c.slug}/`)) },

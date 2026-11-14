@@ -54,12 +54,14 @@ function render(slots: { slot: SectionSlot; data: Record<string, unknown> }[], e
 
 /* ── 1. Premises ───────────────────────────────────────────────────── */
 
-describe('Stage 07 — the seven detail template families exist as claimed', () => {
-  it('there are exactly seven template page keys', () => {
-    expect(TEMPLATE_KEYS).toHaveLength(7);
+describe('Stage 07 — the detail template families exist as claimed', () => {
+  it('there are exactly eight template page keys', () => {
+    // Eight since PM-05 added `template:info-page`. The list stays EXPLICIT so
+    // a template appearing without anyone noticing is still caught.
+    expect(TEMPLATE_KEYS).toHaveLength(8);
     expect([...TEMPLATE_KEYS].sort()).toEqual([
       'template:article', 'template:category', 'template:competitor', 'template:discipline',
-      'template:rodeo-edition', 'template:rodeo-hub', 'template:venue',
+      'template:info-page', 'template:rodeo-edition', 'template:rodeo-hub', 'template:venue',
     ]);
   });
 
@@ -294,7 +296,7 @@ describe('Stage 07 Task D — the CMS keeps the facts', () => {
   });
 });
 
-/* ── 6. All seven routes really compose — DB-backed ───────────────── */
+/* ── 6. All eight routes really compose — DB-backed ───────────────── */
 
 let available = false;
 let prisma: PrismaClient;
@@ -314,6 +316,8 @@ if (process.env.DATABASE_URL) {
       'template:category': m.resolveCategoryTemplateSlots,
       'template:competitor': m.resolveCompetitorTemplateSlots,
       'template:venue': m.resolveVenueTemplateSlots,
+      // PM-05 — information & policy pages joined the detail-template family.
+      'template:info-page': m.resolveInfoPageTemplateSlots,
     } as typeof resolvers;
     available = true;
   } catch {

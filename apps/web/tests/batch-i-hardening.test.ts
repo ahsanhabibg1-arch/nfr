@@ -107,12 +107,14 @@ describe('Phase I — canAddBlock and countBlockInstances', () => {
 /* ── 2. Page key governance ──────────────────────────────────────── */
 
 describe('Phase I — KNOWN_PAGE_KEYS governance', () => {
-  it('has exactly 15 keys (Tasks 2+3 added competitor/venue)', () => {
-    expect(KNOWN_PAGE_KEYS.length).toBe(15);
+  it('has exactly 16 keys (Tasks 2+3 added competitor/venue; PM-05 added info-page)', () => {
+    // 16 since PM-05 added `template:info-page`. These counts are tripwires:
+    // they exist so a page key cannot appear without somebody stating why.
+    expect(KNOWN_PAGE_KEYS.length).toBe(16);
   });
 
-  it('ADMIN_VISIBLE_PAGE_KEYS has all 15 keys (Tasks 2+3 activated all templates)', () => {
-    expect(ADMIN_VISIBLE_PAGE_KEYS.length).toBe(15);
+  it('ADMIN_VISIBLE_PAGE_KEYS has all 16 keys (Tasks 2+3 activated all templates)', () => {
+    expect(ADMIN_VISIBLE_PAGE_KEYS.length).toBe(16);
   });
 
   it('every ADMIN_VISIBLE key is in KNOWN_PAGE_KEYS', () => {

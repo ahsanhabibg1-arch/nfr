@@ -32,7 +32,10 @@ describe('Phase G — info/[slug] route file', () => {
     expect(src).toContain('generateStaticParams');
     expect(src).toContain('LEGAL_PAGES.map');
     expect(src).toContain('listInfoPages');
-    expect(src).toContain("'PUBLISHED'");
+    // Live now means "has a snapshot and is not archived", which is what a
+    // reader can reach — the draft's status no longer decides it.
+    expect(src).toContain('publishedSnapshot');
+    expect(src).toContain('archivedAt');
   });
 
   it('exports generateMetadata that delegates to legalPageMetadata', () => {
@@ -98,8 +101,10 @@ describe('Phase G — Hardcoded info page routes preserved', () => {
 describe('Phase G — LegalPageView extensible rendering', () => {
   const src = read('views/LegalPageView.tsx');
 
-  it('calls getPublishedInfoPage for CMS content', () => {
-    expect(src).toContain('getPublishedInfoPage(slug)');
+  it('resolves CMS content through resolvePublicInfoPage', () => {
+    // Renamed to `resolvePublicInfoPage`, which returns three outcomes instead
+    // of two so a withdrawn page is distinguishable from an unmanaged one.
+    expect(src).toContain('resolvePublicInfoPage');
   });
 
   it('calls getLegalPage for config-based content', () => {
@@ -156,7 +161,7 @@ describe('Phase G — legalPageMetadata extensible SEO', () => {
 
   it('does not early-return when config is missing', () => {
     expect(src).not.toContain('if (!page) return {}');
-    expect(src).toContain('if (!page && !db) return {}');
+    expect(src).toContain('if (!config && !live) return {}');
   });
 
   it('uses optional chaining for config fields', () => {
@@ -170,7 +175,7 @@ describe('Phase G — legalPageMetadata extensible SEO', () => {
   });
 
   it('sets noindex correctly for CMS-only pages without DB', () => {
-    expect(src).toContain('!db && (!page || page.review');
+    expect(src).toContain('!live && (!config || config.review');
   });
 
   it('uses buildMetadata for generation', () => {
@@ -296,8 +301,10 @@ describe('Phase G — Slug validation rules', () => {
 describe('Phase G — Service workflow preserved', () => {
   const src = read('lib/cms/infoPageService.ts');
 
-  it('getPublishedInfoPage queries by slug and PUBLISHED status', () => {
-    expect(src).toContain("slug, status: 'PUBLISHED'");
+  it('the public read resolves through the published snapshot', () => {
+    // The live read goes through the snapshot, not a status filter.
+    expect(src).toContain('publishedSnapshot');
+    expect(src).toContain('readSnapshot');
   });
 
   it('saveInfoPageDraft requires system.config permission', () => {
@@ -319,13 +326,18 @@ describe('Phase G — Service workflow preserved', () => {
     expect(src).toContain('revertToDraft');
   });
 
-  it('saveInfoPageDraft uses upsert for create-or-update', () => {
-    expect(src).toContain('prisma.infoPage.upsert');
+  it('saveInfoPageDraft creates or updates, with a version guard on update', () => {
+    // `upsert` was replaced by an explicit create/update split so the update
+    // branch can carry the optimistic-lock guard on `version`.
+    expect(src).toContain('prisma.infoPage.create');
+    expect(src).toContain('version: existing.version');
   });
 
-  it('prevents editing published pages directly', () => {
-    expect(src).toContain("existing.status === 'PUBLISHED'");
-    expect(src).toContain('Cannot edit a published page');
+  it('refuses a STALE edit rather than a published one', () => {
+    // Inverted by S-1: a published page is now editable, and what the save
+    // refuses instead is a STALE one.
+    expect(src).toContain('expectedVersion !== existing.version');
+    expect(src).toContain('changed by someone else');
   });
 
   it('audit logs all operations', () => {

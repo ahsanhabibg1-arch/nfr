@@ -1,0 +1,11 @@
+-- Information pages join the centralized SEO architecture (PM-04).
+--
+-- Additive only. Adding an enum value writes no row and cannot fail on data;
+-- the value is not used anywhere until an operator saves SEO for a page.
+--
+-- This REMOVES a duplicate rather than adding a system: info pages were the one
+-- public family keeping their own `seoTitle` / `metaDescription` columns while
+-- every other entity resolved SEO through EntitySeo. Those two columns stay for
+-- now as the compatibility path for existing rows; EntitySeo takes precedence
+-- where a row exists.
+ALTER TYPE "LandingEntityType" ADD VALUE IF NOT EXISTS 'INFO_PAGE';

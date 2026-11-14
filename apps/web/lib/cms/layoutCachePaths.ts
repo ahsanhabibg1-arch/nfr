@@ -74,6 +74,23 @@ const PUBLISHED_PATHS: Record<string, CacheTarget[]> = {
   'template:discipline': [{ path: '/disciplines/[slug]', type: 'page' }],
   'template:competitor': [{ path: '/competitors/[slug]', type: 'page' }],
   'template:venue': [{ path: '/venues/[slug]', type: 'page' }],
+  /**
+   * Information pages are served from TWO shapes: the seven legacy policy
+   * slugs have their own top-level routes, and everything else lives under
+   * `/info/[slug]`. Both are listed, because publishing a layout that
+   * revalidated only one of them would leave the other serving the old
+   * arrangement with no sign that anything had been missed.
+   */
+  'template:info-page': [
+    { path: '/info/[slug]', type: 'page' },
+    { path: '/about', type: 'page' },
+    { path: '/editorial-policy', type: 'page' },
+    { path: '/corrections', type: 'page' },
+    { path: '/affiliate-disclosure', type: 'page' },
+    { path: '/privacy', type: 'page' },
+    { path: '/terms', type: 'page' },
+    { path: '/contact', type: 'page' },
+  ],
   'template:rodeo-hub': [{ path: '/rodeo-events/[slug]', type: 'page' }],
   'template:rodeo-edition': [{ path: '/rodeo-events/[slug]/[edition]', type: 'page' }],
 

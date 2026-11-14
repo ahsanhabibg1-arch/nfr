@@ -221,9 +221,11 @@ describe.skipIf(!available)('Stage 03 Task B — draft to public causation', () 
   });
 });
 
-describe.skipIf(!available)('Stage 03 Task C — draft isolation across all 15 page keys', () => {
-  it('KNOWN_PAGE_KEYS still contains exactly 15 keys', () => {
-    expect(KNOWN_PAGE_KEYS.length).toBe(15);
+describe.skipIf(!available)('Stage 03 Task C — draft isolation across all 16 page keys', () => {
+  it('KNOWN_PAGE_KEYS still contains exactly 16 keys', () => {
+    // 16 since PM-05 added `template:info-page`, which gets the same draft
+    // isolation as every other key — that is what this suite then proves.
+    expect(KNOWN_PAGE_KEYS.length).toBe(16);
   });
 
   for (const pageKey of KNOWN_PAGE_KEYS) {

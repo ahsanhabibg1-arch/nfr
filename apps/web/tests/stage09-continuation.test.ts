@@ -213,26 +213,32 @@ function infoRow(over: Record<string, unknown>) {
   return {
     slug: 'privacy', isLegacy: true, defaultTitle: 'Privacy Policy', defaultDescription: null, hardcodedReview: 'pending-owner-review',
     dbId: 'p1', dbTitle: 'Privacy Policy', dbBody: '<p>x</p>', dbSeoTitle: null, dbMetaDescription: null,
-    dbStatus: 'PUBLISHED', dbUpdatedAt: '2026-11-01T00:00:00.000Z', ...over,
+    dbStatus: 'PUBLISHED', dbUpdatedAt: '2026-11-01T00:00:00.000Z',
+    // Page Manager Stage 1 fields: live state is now distinct from draft status.
+    isLive: true, hasUnpublishedChanges: false, isProtected: true, isArchived: false,
+    pageType: 'SYSTEM', version: 1, ...over,
   } as never;
 }
 
 describe('Stage 09 continuation Task E/H — the InfoPage screen', () => {
-  it('explains WHY Edit is disabled on a published page, instead of a silent grey button', () => {
+  it('Edit is ENABLED on a live page, and the screen says what saving will do', () => {
+    /*
+      Inverted by S-1. This used to assert a disabled Edit button with an
+      explanation attached, because editing a published page was impossible.
+      Now it is possible, so the screen's job changed from justifying a block
+      to setting the expectation that a save does not reach readers at once.
+    */
     const html = renderToStaticMarkup(React.createElement(info.AdminInfoPagesPage, { pages: [infoRow({})] }));
     const edit = html.match(/<button[^>]*>Edit<\/button>/)![0];
-    expect(edit).toContain('disabled=""');
-    expect(edit).toMatch(/aria-describedby="([^"]+)"/);
-    const describedBy = edit.match(/aria-describedby="([^"]+)"/)![1];
-    expect(html, 'the description element exists and is visible').toMatch(new RegExp(`id="${describedBy.replace(/[:]/g, '\\:')}"[^>]*>Published pages cannot be edited in place`));
+    expect(edit, 'a live page is editable in place').not.toContain('disabled=""');
+    expect(html).toContain('visitors keep seeing the published version');
   });
 
-  it('does not invent a mechanism: it names the real path and its public cost', () => {
-    expect(info.PUBLISHED_EDIT_BLOCKED).toMatch(/Unpublish first/);
-    expect(info.PUBLISHED_EDIT_BLOCKED).toMatch(/removes this version from the public site/);
-    expect(info.PUBLISHED_EDIT_BLOCKED).not.toMatch(/draft revision/i);
+  it('the explainer promises isolation rather than naming a cost', () => {
+    expect(info.PUBLISHED_EDIT_EXPLAINER).toMatch(/can be edited while it stays up/);
+    expect(info.PUBLISHED_EDIT_EXPLAINER).toMatch(/visitors keep seeing the published version/);
+    expect(info.PUBLISHED_EDIT_EXPLAINER).not.toMatch(/Unpublish first/);
   });
-
   it('the unpublish confirmation states the actual public effect for each kind of page', () => {
     expect(info.unpublishConsequence({ slug: 'privacy', isLegacy: true, hardcodedReview: 'pending-owner-review' }))
       .toMatch(/falls back to its built-in text, which is still pending legal review/);

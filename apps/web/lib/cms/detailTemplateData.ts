@@ -173,6 +173,35 @@ export async function resolveCategoryTemplateSlots(
   );
 }
 
+/* ── Information & policy page template ───────────────────────────────── */
+
+/**
+ * Presentation slots for an information page (PM-05).
+ *
+ * The ownership split is the whole reason this is a separate call rather than
+ * fields on `InfoPage`: the page owns its facts, the Builder owns how they are
+ * arranged, and neither stores the other's data. A layout change therefore
+ * never edits page content, and editing page content never disturbs a layout.
+ *
+ * `options.draft` reaches the Builder's own draft/published layouts, which
+ * already exist — so a layout being worked on is no more visible to readers
+ * than a body being worked on.
+ */
+export async function resolveInfoPageTemplateSlots(
+  _slug: string,
+  options?: { draft?: boolean },
+): Promise<ResolvedDetailSlot[]> {
+  const visible = await fetchVisibleSlots('template:info-page', options);
+  /**
+   * No related-articles feed is offered. A policy page is not an editorial
+   * entry point, and appending "more like this" to a Privacy Policy is how a
+   * legal document starts looking like a blog post. Slots that need an article
+   * list resolve to an empty one rather than being silently dropped, so the
+   * Builder still reports honestly what it is showing.
+   */
+  return resolveAppendageSlots(visible, async () => []);
+}
+
 /* ── Competitor template ───────────────────────────────────────────────── */
 
 export async function resolveCompetitorTemplateSlots(

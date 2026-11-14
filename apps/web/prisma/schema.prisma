@@ -412,6 +412,8 @@ model MediaAsset {
   events              RodeoEventMedia[]
   hubs                RodeoHubMedia[]
   venues              VenueMedia[]
+  /// Pages using this asset as their hero (PM-03).
+  infoPageHeroes      InfoPage[]               @relation("InfoPageHero")
 
   @@index([visibility, processingStatus])
   @@index([uploadedById])
@@ -1832,6 +1834,7 @@ enum CommercialEntityType {
 enum LandingEntityType {
   DISCIPLINE
   SUBCATEGORY
+  INFO_PAGE
   CATEGORY
   RODEO_HUB
   RODEO_EVENT
@@ -1871,10 +1874,14 @@ model SectionConfig {
 model InfoPage {
   id              String         @id @default(uuid())
   slug            String         @unique
+  /// THE WORKING DRAFT. These columns are what an editor edits; they are not
+  /// what the public reads. See `publishedSnapshot`.
   title           String
   body            String
   seoTitle        String?
   metaDescription String?
+  /// The status of the DRAFT, not of the live page. A page can be PUBLISHED
+  /// (a snapshot exists) while its draft sits at DRAFT or PENDING_REVIEW.
   status          InfoPageStatus @default(DRAFT)
   approvedById    String?
   approvedAt      DateTime?
@@ -1883,6 +1890,91 @@ model InfoPage {
   updatedById     String?
   createdAt       DateTime       @default(now())
   updatedAt       DateTime       @updatedAt
+
+  /// THE LIVE VERSION, and the whole point of this model's shape.
+  ///
+  /// Before this column existed, a published page could not be edited at all:
+  /// `saveInfoPageDraft` refused, and the only way through was to unpublish —
+  /// which pulled the page off the public site and, for a legacy policy slug,
+  /// reverted the live URL to unapproved built-in text carrying a
+  /// pending-review banner. Correcting a typo in a published Privacy Policy
+  /// meant showing visitors a draft while you worked. That was defect D-09, and
+  /// its fix was recorded as blocked schema change S-1.
+  ///
+  /// Holding the live version as one JSON snapshot separates the two states
+  /// with a single column: the public reads `publishedSnapshot`, the editor
+  /// writes the draft columns, and neither can see the other half-done.
+  /// Publication copies draft to snapshot inside one transaction, so content,
+  /// SEO, media, layout and FAQ can never go live as a mix of two versions —
+  /// the failure a column-per-field design invites.
+  ///
+  /// NULL means never published. It is deliberately distinct from "published
+  /// then withdrawn", which `archivedAt` and an absent snapshot express
+  /// together, because the fallback rules for those two cases differ (§9).
+  publishedSnapshot Json?
+
+  /// SYSTEM pages own a route contract the application depends on; CUSTOM
+  /// pages are operator-created and live under /info/<slug>/.
+  pageType        InfoPageType   @default(CUSTOM)
+  /// Blocks deletion and slug changes. Deliberately NOT the same thing as
+  /// `NavigationItem.isSystem`, which locks a menu row: a page can be
+  /// protected while its nav link is freely editable, and vice versa.
+  isProtected     Boolean        @default(false)
+  /// Soft delete. An archived page is withdrawn from the public site and the
+  /// sitemap but keeps its row, its revisions and its audit trail.
+  archivedAt      DateTime?
+  /// Optimistic lock on the DRAFT, incremented on every draft write. Two
+  /// editors with the page open can no longer silently overwrite each other —
+  /// the second save is refused rather than winning by arriving later.
+  version         Int            @default(1)
+
+  /**
+   * The page's hero image, as a REFERENCE to a Media Library asset rather than
+   * a URL plus copies of its metadata.
+   *
+   * Alt text, caption, credit, rights status and dimensions all already live on
+   * `MediaAsset`. Duplicating them here would mean a rights status corrected in
+   * the Media Library stayed wrong on every page that had copied it — the kind
+   * of divergence nobody notices until a licence question arrives. One
+   * foreign key keeps a single source of truth.
+   *
+   * `onDelete: SetNull`: removing an asset must not take the page with it.
+   */
+  heroMediaId     String?
+  heroMedia       MediaAsset?    @relation("InfoPageHero", fields: [heroMediaId], references: [id], onDelete: SetNull)
+
+  revisions       InfoPageRevision[]
+
+  @@index([pageType, archivedAt])
+}
+
+/// Why a page's family is stored rather than inferred from its slug: the seven
+/// policy slugs are currently recognised by a compiled-in list, so a page's
+/// protection would move with a code change rather than with the data.
+enum InfoPageType {
+  SYSTEM
+  CUSTOM
+}
+
+/// Full-snapshot revision history, following `ArticleRevision` exactly rather
+/// than inventing a second shape: one row per saved state, a monotonic number
+/// per page, and the whole content as JSON so a restore cannot be defeated by a
+/// column added later.
+model InfoPageRevision {
+  id         String         @id @default(uuid())
+  pageId     String
+  revisionNo Int
+  actorId    String?
+  actorName  String
+  status     InfoPageStatus
+  summary    String
+  snapshot   Json
+  createdAt  DateTime       @default(now())
+
+  page       InfoPage       @relation(fields: [pageId], references: [id], onDelete: Cascade)
+
+  @@unique([pageId, revisionNo])
+  @@index([pageId, createdAt])
 }
 
 enum InfoPageStatus {

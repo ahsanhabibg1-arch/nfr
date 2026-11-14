@@ -184,10 +184,10 @@ describe('Stage 06 — no registry definition is left unclassified', () => {
 
 /* ── Page capability for all 15 keys (Task 12.15) ──────────────────── */
 
-describe('Stage 06 Task 12.15 — all 15 page keys carry an honest capability label', () => {
+describe('Stage 06 Task 12.15 — all 16 page keys carry an honest capability label', () => {
   it('covers every known page key', () => {
     expect(Object.keys(PAGE_CAPABILITIES).sort()).toEqual([...KNOWN_PAGE_KEYS].sort());
-    expect(KNOWN_PAGE_KEYS.length).toBe(15);
+    expect(KNOWN_PAGE_KEYS.length).toBe(16);
   });
 
   it('gives each one a level, a summary and a fixed-parts list', () => {
@@ -212,9 +212,9 @@ describe('Stage 06 Task 12.15 — all 15 page keys carry an honest capability la
     ]);
   });
 
-  it('marks all seven detail templates as template-plus-appendage, never composed', () => {
+  it('marks all eight detail templates as template-plus-appendage, never composed', () => {
     const detail = KNOWN_PAGE_KEYS.filter((k) => getPageFamily(k) === 'detail-template');
-    expect(detail.length).toBe(7);
+    expect(detail.length).toBe(8);
     for (const k of detail) {
       expect(getPageCapability(k).level, k).toBe('template-appendage');
       expect(getPageCapability(k).summary).toContain('shared structured template');
