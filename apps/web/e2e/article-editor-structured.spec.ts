@@ -139,10 +139,21 @@ test.describe('inserting and editing structured elements from Write', () => {
 
   test('the toolbar exposes every new control, each with an accessible name', async ({ page }) => {
     const tb = toolbar(page);
+    /*
+      Four names carry their glyph as a prefix, and that is the contract.
+
+      WCAG 2.5.3 "Label in Name" requires the accessible name to contain the
+      visible text, so that someone driving the page by voice can activate a
+      control by saying what they see. `x²` against a bare "Superscript" fails
+      that — and axe reported it as `label-content-name-mismatch` — so the
+      editor composes `x² — Superscript`. Controls whose glyph already appears
+      in the description ("H4" in "H4 sub-section heading") are untouched, which
+      is why most of this list is unchanged.
+    */
     for (const name of [
-      'Superscript', 'Subscript', 'Clear formatting from the selection',
+      'x² — Superscript', 'x₂ — Subscript', 'Tx — Clear formatting from the selection',
       'H4 sub-section heading', 'Align left (default)', 'Align centre', 'Align right', 'Justify',
-      'Checklist', 'Insert an editorial element', 'Find and replace', 'Write in full screen',
+      '☑ List — Checklist', 'Insert an editorial element', 'Find and replace', 'Write in full screen',
     ]) {
       await expect(tb.getByRole('button', { name, exact: true }), name).toBeVisible();
     }
@@ -154,10 +165,30 @@ test.describe('inserting and editing structured elements from Write', () => {
 
     const menu = page.getByTestId('rt-insert-menu');
     await expect(menu).toBeVisible();
-    // The elements that were previously unreachable from Write.
-    for (const label of ['Table', 'Comparison table', 'Key takeaway', 'Callout',
-      'Attributed quote', 'Citation / source reference', 'Disclosure', 'Image']) {
-      await expect(menu.getByRole('menuitem', { name: new RegExp(label) }), label).toBeVisible();
+    /*
+      The elements that were previously unreachable from Write, addressed by
+      their block key rather than by a name pattern.
+
+      A substring match on the accessible name is ambiguous now that an Image
+      gallery block exists: /Image/ resolves to both "Image" and "Image
+      gallery", and Playwright's strict mode rightly refuses. Anchoring the
+      pattern would not help either — each item's accessible name is its label
+      followed by its hint sentence, so there is nothing stable to anchor to,
+      and forcing a short `aria-label` onto the button would hide the hint from
+      assistive technology and reintroduce a label-in-name mismatch.
+
+      The block key is what the editor actually dispatches on, so asserting it
+      verifies the same thing without the ambiguity. The visible label is still
+      checked, so a renamed or blanked item still fails.
+    */
+    for (const [key, label] of [
+      ['table', 'Table'], ['comparisonTable', 'Comparison table'], ['takeaway', 'Key takeaway'],
+      ['callout', 'Callout'], ['quote', 'Attributed quote'], ['sourceLink', 'Citation / source reference'],
+      ['disclosure', 'Disclosure'], ['image', 'Image'], ['gallery', 'Image gallery'],
+    ] as const) {
+      const item = menu.getByTestId(`rt-insert-${key}`);
+      await expect(item, key).toBeVisible();
+      await expect(item, `${key} label`).toContainText(label);
     }
 
     const before = await cards(page).count();

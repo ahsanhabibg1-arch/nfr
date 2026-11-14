@@ -126,9 +126,23 @@ describe('Batch B — ArticleView refactoring', () => {
   });
 });
 
+
+/**
+ * The article page is TWO files since the flat subcategory route landed.
+ *
+ * An article is served from `/articles/<slug>/` when it has no subcategory and
+ * from `/<subcategory>/<slug>/` when it has one, so the shared body lives in
+ * `views/ArticlePageBody.tsx` and both routes render it. These checks are about
+ * what the PAGE does, not which file a line sits in, so they read the route and
+ * its body together — a capability genuinely deleted from both still fails.
+ */
+function readArticlePage(): string {
+  return [read('app/(public)/articles/[slug]/page.tsx'), read('views/ArticlePageBody.tsx')].join(String.fromCharCode(10));
+}
+
 describe('Batch B — Existing routes preserved', () => {
   it('article route is unchanged', () => {
-    const src = read('app/(public)/articles/[slug]/page.tsx');
+    const src = readArticlePage();
     expect(src).toContain('ArticleView');
     expect(src).toContain('buildMetadata');
     expect(src).toContain('articleJsonLd');
@@ -136,7 +150,7 @@ describe('Batch B — Existing routes preserved', () => {
   });
 
   it('article route SEO: metadata, canonical, robots, JSON-LD all intact', () => {
-    const src = read('app/(public)/articles/[slug]/page.tsx');
+    const src = readArticlePage();
     expect(src).toContain('articleMetadataInput');
     expect(src).toContain('unavailableArticleMetadataInput');
     expect(src).toContain('JsonLd');

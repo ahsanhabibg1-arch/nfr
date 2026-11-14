@@ -106,6 +106,8 @@ export interface AdminArticleRow {
   title: string;
   category: string;
   subcategory: string | null;
+  /** The MANAGED subcategory's slug. It is the first segment of the live URL. */
+  subcategoryRef: { slug: string } | null;
   authorName: string;
   articleType: string | null;
   workflowStatus: ArticleWorkflowStatus;
@@ -165,13 +167,14 @@ export async function getAdminArticleList(params: ArticleListParams = {}): Promi
       orderBy: { [sortField]: dir },
       skip: (page - 1) * pageSize,
       take: pageSize,
-      include: { author: true, category: true },
+      include: { author: true, category: true, subcategoryTaxon: { select: { slug: true } } },
     }),
   ]);
 
   return {
     rows: rows.map((r) => ({
       id: r.id, slug: r.slug, title: r.title, category: r.category.name, subcategory: r.subcategory,
+      subcategoryRef: r.subcategoryTaxon,
       authorName: r.author.name, articleType: r.articleType, workflowStatus: STATUS_TO_TS[r.workflowStatus],
       publishedAt: r.publishedAt ? r.publishedAt.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' }) : null,
       createdById: r.createdById,

@@ -1,7 +1,7 @@
 import React from 'react';
 import Link from 'next/link';
 import { Article } from '../../types';
-import { ROUTES } from '../../config/routes';
+import { ROUTES, articleUrl } from '../../config/routes';
 import { IMAGE_SIZES } from '../../lib/media/imageMeta';
 
 /**
@@ -162,7 +162,7 @@ export const EditorialHero: React.FC<EditorialHeroProps> = ({
                     reader announces "Read Full Article: <title>" instead of
                     several identical "Read Full Article" links on one page. */}
                 <Link
-                  href={ROUTES.ARTICLE(leadArticle.slug)}
+                  href={articleUrl(leadArticle)}
                   aria-label={`${ctaText?.trim() || 'Read Full Article'}: ${leadArticle.title}`}
                   className="inline-block px-5 py-2.5 bg-[#D4A757] hover:bg-[#C59642] text-[#0F1115] font-sans font-bold text-xs uppercase tracking-wider rounded-sm shadow-md transition-all duration-200 cursor-pointer focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white focus-visible:ring-offset-2 focus-visible:ring-offset-[#0F1115]"
                 >
@@ -191,7 +191,7 @@ export const EditorialHero: React.FC<EditorialHeroProps> = ({
                   followable by a crawler. `group` moved to the <article> so
                   every existing `group-hover:` rule still fires. */}
               <Link
-                href={ROUTES.ARTICLE(story.slug)}
+                href={articleUrl(story)}
                 className="flex flex-col sm:flex-row gap-4 items-start p-5 bg-[#1E293B]/60 hover:bg-[#1E293B] border border-white/10 rounded-sm transition-all duration-200 cursor-pointer focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#D4A757] focus-visible:ring-offset-2 focus-visible:ring-offset-[#0F1115]"
               >
               <div className="w-full sm:w-36 h-28 shrink-0 overflow-hidden rounded-sm bg-black/40">

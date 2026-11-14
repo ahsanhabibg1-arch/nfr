@@ -205,8 +205,22 @@ describe('Phase G — Article Detail draft support', () => {
     expect(src).toContain('{ draft }');
   });
 
+
+/**
+ * The article page is TWO files since the flat subcategory route landed.
+ *
+ * An article is served from `/articles/<slug>/` when it has no subcategory and
+ * from `/<subcategory>/<slug>/` when it has one, so the shared body lives in
+ * `views/ArticlePageBody.tsx` and both routes render it. These checks are about
+ * what the PAGE does, not which file a line sits in, so they read the route and
+ * its body together — a capability genuinely deleted from both still fails.
+ */
+function readArticlePage(): string {
+  return [read('app/(public)/articles/[slug]/page.tsx'), read('views/ArticlePageBody.tsx')].join(String.fromCharCode(10));
+}
+
   it('article route imports and calls isStaffDraftPreview', () => {
-    const src = read('app/(public)/articles/[slug]/page.tsx');
+    const src = readArticlePage();
     expect(src).toContain("from '@/lib/cms/previewGuard'");
     expect(src).toContain('isStaffDraftPreview');
   });

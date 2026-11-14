@@ -100,13 +100,16 @@ export const AdminEditorialOrgPage: React.FC<Props> = ({
    */
   const [subModal, setSubModal] = useState(false);
   const [subId, setSubId] = useState<string | null>(null);
-  const [subForm, setSubForm] = useState({ categoryId: '', name: '', slug: '', description: '', sortOrder: '' });
+  const [subForm, setSubForm] = useState({ categoryId: '', name: '', slug: '', description: '', summary: '', image: '', imageCredit: '', guide: '', sortOrder: '' });
   const [subFilter, setSubFilter] = useState<{ categoryId: string; q: string; showArchived: boolean }>({ categoryId: '', q: '', showArchived: false });
   const openSub = (s?: SubcategoryRow) => {
     setSubId(s?.id ?? null);
     setSubForm({
       categoryId: s?.categoryId ?? subFilter.categoryId ?? '',
       name: s?.name ?? '', slug: s?.slug ?? '', description: s?.description ?? '',
+      summary: s?.summary ?? '', image: s?.image ?? '', imageCredit: s?.imageCredit ?? '',
+      // One paragraph per line, which is also how it is stored.
+      guide: (s?.guide ?? []).join(String.fromCharCode(10)),
       sortOrder: s ? String(s.sortOrder) : '',
     });
     setSubModal(true);
@@ -117,6 +120,10 @@ export const AdminEditorialOrgPage: React.FC<Props> = ({
       name: subForm.name,
       slug: subForm.slug.trim() || undefined,
       description: subForm.description.trim() || undefined,
+      summary: subForm.summary.trim() || undefined,
+      image: subForm.image.trim() || undefined,
+      imageCredit: subForm.imageCredit.trim() || undefined,
+      guide: subForm.guide.split(String.fromCharCode(10)).map((l) => l.trim()).filter(Boolean),
       sortOrder: subForm.sortOrder.trim() === '' ? undefined : Number(subForm.sortOrder),
     };
     const r = subId ? await updateSubcategoryAction(subId, payload) : await createSubcategoryAction(payload);
@@ -606,11 +613,32 @@ export const AdminEditorialOrgPage: React.FC<Props> = ({
               <label htmlFor="sub-slug" className="block text-[10px] font-mono uppercase text-stone-500 mb-1">Slug (optional)</label>
               <input id="sub-slug" value={subForm.slug} onChange={(e) => setSubForm({ ...subForm, slug: e.target.value })} placeholder="derived from the name" className="w-full p-2 bg-stone-50 border border-stone-200 rounded-xs font-mono" />
               <p className="text-[10px] text-stone-500 mt-1">
-                Lowercase letters, numbers and single hyphens. Unique within the section — the same slug may exist
-                under a different section. No public subcategory pages exist yet, so changing it needs no redirect.
+                Lowercase letters, numbers and single hyphens. <strong>This is the public URL</strong> —
+                the archive is served at <span className="font-mono">/{subForm.slug || 'slug'}/</span> and its
+                articles at <span className="font-mono">/{subForm.slug || 'slug'}/article-slug/</span>.
+                It must be unique across <em>every</em> section, and it cannot be the name of an existing page
+                (<span className="font-mono">search</span>, <span className="font-mono">venues</span>,
+                <span className="font-mono">competition</span>&hellip;). Changing it moves every article inside
+                it; the old URLs keep working through a permanent redirect.
               </p>
             </div>
             <div><label htmlFor="sub-desc" className="block text-[10px] font-mono uppercase text-stone-500 mb-1">Description</label><textarea id="sub-desc" rows={2} value={subForm.description} onChange={(e) => setSubForm({ ...subForm, description: e.target.value })} className="w-full p-2 bg-stone-50 border border-stone-200 rounded-xs" /></div>
+            {/*
+              Landing-page content. A subcategory archive is a public entity
+              page, so these are what a reader sees above the article list.
+            */}
+            <div className="pt-3 mt-1 border-t border-stone-200">
+              <p className="text-[10px] font-mono uppercase tracking-wider text-[#8B5E3C] mb-2">Landing page</p>
+              <label htmlFor="sub-summary" className="block text-[10px] font-mono uppercase text-stone-500 mb-1">Summary</label>
+              <textarea id="sub-summary" rows={2} value={subForm.summary} onChange={(e) => setSubForm({ ...subForm, summary: e.target.value })} placeholder="One or two sentences under the headline, also used as the meta description." className="w-full p-2 bg-stone-50 border border-stone-200 rounded-xs" />
+            </div>
+            <div><label htmlFor="sub-image" className="block text-[10px] font-mono uppercase text-stone-500 mb-1">Hero image URL</label><input id="sub-image" value={subForm.image} onChange={(e) => setSubForm({ ...subForm, image: e.target.value })} placeholder="/api/media/..." className="w-full p-2 bg-stone-50 border border-stone-200 rounded-xs font-mono" /></div>
+            <div><label htmlFor="sub-credit" className="block text-[10px] font-mono uppercase text-stone-500 mb-1">Image credit</label><input id="sub-credit" value={subForm.imageCredit} onChange={(e) => setSubForm({ ...subForm, imageCredit: e.target.value })} className="w-full p-2 bg-stone-50 border border-stone-200 rounded-xs" /></div>
+            <div>
+              <label htmlFor="sub-guide" className="block text-[10px] font-mono uppercase text-stone-500 mb-1">Guide</label>
+              <textarea id="sub-guide" rows={4} value={subForm.guide} onChange={(e) => setSubForm({ ...subForm, guide: e.target.value })} placeholder="One paragraph per line." className="w-full p-2 bg-stone-50 border border-stone-200 rounded-xs" />
+              <p className="text-[10px] text-stone-500 mt-1">One paragraph per line, shown above the coverage list. Up to 12.</p>
+            </div>
             <div><label htmlFor="sub-order" className="block text-[10px] font-mono uppercase text-stone-500 mb-1">Sort order</label><input id="sub-order" type="number" min={0} value={subForm.sortOrder} onChange={(e) => setSubForm({ ...subForm, sortOrder: e.target.value })} placeholder="append" className="w-24 p-2 bg-stone-50 border border-stone-200 rounded-xs" /></div>
           </div>
         </AdminModal>

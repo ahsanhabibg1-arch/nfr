@@ -5,7 +5,7 @@ import { useRouter } from 'next/navigation';
 import type { BlockProps } from './blockProps';
 import { slotStr } from './blockProps';
 import { copyFromProps } from '@/components/sections/sectionCopy';
-import { ROUTES } from '@/config/routes';
+import { ROUTES, articleUrl } from '@/config/routes';
 import type { Article, Discipline } from '@/types';
 import type { HomeSlotData } from '@/lib/cms/homepageData';
 
@@ -60,7 +60,7 @@ function LatestCoverageBlock({ slot, data }: BlockProps) {
   return (
     <LatestCoverage
       articles={d.articles}
-      onSelectArticle={(a: Article) => router.push(ROUTES.ARTICLE(a.slug))}
+      onSelectArticle={(a: Article) => router.push(articleUrl(a))}
       copy={copy}
       anchorId={`latest-coverage-${slot.id}`}
     />

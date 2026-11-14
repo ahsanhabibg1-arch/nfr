@@ -5,6 +5,7 @@ import { idListProp, limitList, pickedThenAuto } from './slotUtils';
 import type { SectionSlot } from './sectionRegistry';
 import { selectRenderableSlots, orderAfter } from './slotSelection';
 import type { Article, Discipline } from '../../types';
+import { getSubcategoryCardsForSection, type SubcategoryCard } from './subcategoryContent';
 
 export interface LandingSlotData {
   featuredStory?: Article | null;
@@ -21,6 +22,14 @@ export interface LandingSlotData {
    * value is never applied over it.
    */
   sectionHeroImage?: string | null;
+  /**
+   * The section's active subcategories, with their published article counts.
+   *
+   * Supplied to EVERY section landing, not placed by an operator: a subcategory
+   * archive has no other entry point, so if the hero did not list them the
+   * pages would exist with nothing linking to them.
+   */
+  subcategories?: SubcategoryCard[];
 }
 
 export interface ResolvedLandingSlot {
@@ -38,6 +47,7 @@ export async function resolveSectionLandingSlots(
   // per-slot work.
   const { getSectionConfig } = await import('./sectionConfigService');
   const sectionHeroImage = (await getSectionConfig(sectionKey))?.heroImage ?? null;
+  const subcategories = await getSubcategoryCardsForSection(sectionMeta.categoryKey);
   const fetchSections = options?.draft ? getDraftSections : getPublishedSections;
   const layoutSections = await fetchSections(`section:${sectionKey}`);
   const visible = selectRenderableSlots(layoutSections);
@@ -84,10 +94,10 @@ export async function resolveSectionLandingSlots(
 
     if (t === 'landing-stat-pills') continue;
 
-    const base: LandingSlotData = { sectionMeta: metaObj, sectionKey, totalArticleCount: sectionArticles.length };
+    const base: LandingSlotData = { sectionMeta: metaObj, sectionKey, totalArticleCount: sectionArticles.length, subcategories };
 
     if (t === 'landing-hero') {
-      out.push({ slot, data: { ...base, pillsVisible, sectionHeroImage } });
+      out.push({ slot, data: { ...base, pillsVisible, sectionHeroImage, subcategories } });
     } else if (t === 'landing-competition-disciplines') {
       // An operator-placed block gets the same data the injected one gets, so
       // the two paths cannot diverge (Stage 07 Task E).

@@ -242,7 +242,16 @@ async function resolveAuthorId(tx: Prisma.TransactionClient, name: string, role:
 
 // --- Publication gate -----------------------------------------------------
 
-const articlePath = (slug: string) => `/articles/${slug}/`;
+/**
+ * The public path of an article, which now depends on its subcategory as well
+ * as its slug: `/<subcategory>/<slug>/` with one, `/articles/<slug>/` without.
+ *
+ * Mirrors `ROUTES.ARTICLE`. It is restated rather than imported because this
+ * module runs inside a transaction against raw rows, where the only thing in
+ * hand is the subcategory's slug string.
+ */
+const articlePath = (slug: string, subcategorySlug?: string | null) =>
+  subcategorySlug ? `/${subcategorySlug}/${slug}/` : `/articles/${slug}/`;
 
 /** Image URLs (hero + inline image blocks) referenced by an article input. */
 function referencedImageUrls(v: ParsedInput): string[] {
@@ -604,16 +613,20 @@ async function loadArticleInput(articleId: string): Promise<ParsedInput | null> 
 // --- Published URL changes ------------------------------------------------
 
 /**
- * When a published article's slug changes (§6.3, ADM-14, WEB-11): redirect the old path to
+ * When a published article's URL changes (§6.3, ADM-14, WEB-11): redirect the old path to
  * the new one, collapse any redirect that pointed at the old path (no chains), and disable
  * any redirect whose source is the new path — the article now owns it (no loops / shadowing).
  * Destinations are always internal article paths built from a validated slug.
+ *
+ * TWO things move an article now. A slug rename always did; assigning,
+ * changing or clearing a SUBCATEGORY does as well, because the subcategory is
+ * the first segment of the URL. Both arrive here as a from/to pair, so an
+ * editor who only ticks a subcategory dropdown still leaves a 308 behind and
+ * never silently strands an indexed URL.
  */
-async function syncSlugRedirect(tx: Prisma.TransactionClient, fromSlug: string, toSlug: string): Promise<boolean> {
-  const from = articlePath(fromSlug);
-  const to = articlePath(toSlug);
+async function syncUrlRedirect(tx: Prisma.TransactionClient, from: string, to: string): Promise<boolean> {
   if (from === to) return false;
-  await claimArticlePath(tx, toSlug);
+  await claimPath(tx, to);
   await tx.articleRedirect.updateMany({ where: { targetPath: from, status: 'ACTIVE' }, data: { targetPath: to } });
   await tx.articleRedirect.upsert({
     where: { sourcePath: from },
@@ -624,17 +637,20 @@ async function syncSlugRedirect(tx: Prisma.TransactionClient, fromSlug: string, 
 }
 
 /** A live article owns its canonical path: disable any active redirect away from it. */
-async function claimArticlePath(tx: Prisma.TransactionClient, slug: string): Promise<void> {
-  await tx.articleRedirect.updateMany({ where: { sourcePath: articlePath(slug), status: 'ACTIVE' }, data: { status: 'DISABLED' } });
+async function claimPath(tx: Prisma.TransactionClient, path: string): Promise<void> {
+  await tx.articleRedirect.updateMany({ where: { sourcePath: path, status: 'ACTIVE' }, data: { status: 'DISABLED' } });
 }
 
 export interface SaveResult { id: string; slug: string; version: number; previousSlug?: string; redirectCreated?: boolean }
 
-type EditableRow = { id: string; slug: string; version: number; createdById: string | null; workflowStatus: WorkflowStatus };
+type EditableRow = { id: string; slug: string; version: number; createdById: string | null; workflowStatus: WorkflowStatus;
+  /** The subcategory the article is CURRENTLY under — the first segment of its live URL. */
+  subcategoryTaxon: { slug: string } | null };
 
 async function loadEditable(actor: ActorContext, id: string): Promise<EditableRow> {
   const existing = await prisma.article.findUnique({
-    where: { id }, select: { id: true, slug: true, version: true, createdById: true, workflowStatus: true },
+    where: { id },
+    select: { id: true, slug: true, version: true, createdById: true, workflowStatus: true, subcategoryTaxon: { select: { slug: true } } },
   });
   if (!existing) throw new ServiceError('not_found', 'Article not found');
   const canAny = roleHasPermission(actor.roles, 'article.edit.any');
@@ -700,14 +716,25 @@ async function persistArticle(
     await reconcileHeroMedia(tx, articleId, v.heroImage || null);
     await reconcileInlineMedia(tx, articleId, v.blocks);
     const slugChanged = !!existing && existing.slug !== v.slug;
-    const redirectCreated = isLive && slugChanged ? await syncSlugRedirect(tx, existing!.slug, v.slug) : false;
+    /**
+     * The URL is (subcategory, slug), so BOTH are resolved before and after.
+     * `v.subcategoryId` is already validated against the article's section by
+     * `assertSubcategoryInCategory`, so this lookup cannot pick up a row from
+     * another section.
+     */
+    const nextSub = v.subcategoryId
+      ? await tx.subcategory.findUnique({ where: { id: v.subcategoryId }, select: { slug: true } })
+      : null;
+    const fromPath = existing ? articlePath(existing.slug, existing.subcategoryTaxon?.slug) : '';
+    const toPath = articlePath(v.slug, nextSub?.slug);
+    const redirectCreated = isLive && !!existing ? await syncUrlRedirect(tx, fromPath, toPath) : false;
     await addRevision(tx, articleId, actor, v.authorName, existing?.workflowStatus ?? 'DRAFT', opts.summary, buildSnapshot(v));
     await tx.auditLog.create({
       data: { actorId: actor.id, action: opts.action, entityType: 'article', entityId: articleId, detail: opts.auditDetail ?? v.slug },
     });
     if (redirectCreated) {
       await tx.auditLog.create({
-        data: { actorId: actor.id, action: 'redirect.create', entityType: 'article', entityId: articleId, detail: `${articlePath(existing!.slug)} -> ${articlePath(v.slug)}` },
+        data: { actorId: actor.id, action: 'redirect.create', entityType: 'article', entityId: articleId, detail: `${fromPath} -> ${toPath}` },
       });
     }
 
@@ -809,7 +836,12 @@ export async function transitionWorkflow(
 
   const existing = await prisma.article.findUnique({
     where: { id },
-    include: { blocks: { orderBy: { sortOrder: 'asc' } }, seo: true, createdBy: true, author: true },
+    include: {
+      blocks: { orderBy: { sortOrder: 'asc' } }, seo: true, createdBy: true, author: true,
+      // Needed to build the article's live path when it becomes public: the
+      // subcategory is the first segment of that path.
+      subcategoryTaxon: { select: { slug: true } },
+    },
   });
   if (!existing) throw new ServiceError('not_found', 'Article not found');
 
@@ -875,7 +907,7 @@ export async function transitionWorkflow(
       data,
     });
     if (upd.count === 0) throw new ServiceError('conflict', 'Concurrent edit detected. Reload and retry.');
-    if (willBePublic) await claimArticlePath(tx, existing.slug);
+    if (willBePublic) await claimPath(tx, articlePath(existing.slug, existing.subcategoryTaxon?.slug));
 
     await tx.editorialWorkflowHistory.create({
       data: { articleId: id, fromStatus: existing.workflowStatus, toStatus: target, actorId: actor.id, actorName: actor.id, note: `→ ${target}` },

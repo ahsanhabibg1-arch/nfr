@@ -14,7 +14,7 @@
  *   robots      parsed ArticleSeo.robots (lib/seo/robots.ts, all four combinations) → index, follow
  */
 import { SITE_URL, buildMetadata } from '../seo';
-import { ROUTES } from '../../config/routes';
+import { ROUTES, articleUrl } from '../../config/routes';
 import type { Article } from '../../types';
 import { parseRobotsDirective, UNAVAILABLE_ARTICLE_ROBOTS } from './robots';
 import { normalizeSameSiteCanonical as normalizeCanonical } from './canonical';
@@ -58,7 +58,7 @@ export function articleMetadataInput(
   return {
     title: seo?.storedTitle || article.title,
     description: seo?.storedDescription || article.deck || article.excerpt || ARTICLE_DESCRIPTION_FALLBACK,
-    path: ROUTES.ARTICLE(article.slug),
+    path: articleUrl(article),
     image: seo?.ogImage?.trim() || article.heroImage,
     type: 'article',
     publishedTime: article.publishedAt,

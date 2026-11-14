@@ -63,6 +63,11 @@ suite('Batch 04-B — managed Subcategory taxonomy', () => {
     return { id: u.id, roles: [roleKey] };
   }
 
+  /** Mirrors the service's own derivation, so a test can predict the stored slug. */
+  function slugify(name: string): string {
+    return name.toLowerCase().trim().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '');
+  }
+
   async function makeSub(categoryId: string, name?: string): Promise<string> {
     const r = await tax.createSubcategory(admin, { categoryId, name: name ?? `Sub ${rid()}` });
     subIds.push(r.id);
@@ -138,15 +143,34 @@ suite('Batch 04-B — managed Subcategory taxonomy', () => {
       .rejects.toThrow(/URL slug/i);
   });
 
-  it('(4) the SAME slug is allowed in a different category', async () => {
+  /**
+   * INVERTED by the flat-route decision, deliberately.
+   *
+   * This test previously asserted the opposite — that two sections could share
+   * a slug — which was correct while the planned route was nested
+   * (`/categories/<section>/<subcategory>/`), where the parent disambiguated.
+   * The owner chose the flat route `/<subcategory>/`, so the slug alone has to
+   * identify the row and the constraint is now global. Two sections may still
+   * hold the same NAME; they may no longer hold the same slug.
+   */
+  it('(4) the same slug is REFUSED in a different category, naming the owner', async () => {
     const name = `Shared ${rid()}`;
+    await makeSub(catA.id, name);
+    await expect(tax.createSubcategory(admin, { categoryId: catB.id, name, slug: slugify(name) }))
+      .rejects.toThrow(/already used by a subcategory in/i);
+  });
+
+  it('(4b) the same NAME in a different category is allowed, given a distinct slug', async () => {
+    const name = `Tickets ${rid()}`;
     const a = await makeSub(catA.id, name);
-    const b = await makeSub(catB.id, name);
+    const b = await tax.createSubcategory(admin, { categoryId: catB.id, name, slug: `alt-${slugify(name)}` });
+    subIds.push(b.id);
     const [ra, rb] = await Promise.all([
       prisma.subcategory.findUniqueOrThrow({ where: { id: a } }),
-      prisma.subcategory.findUniqueOrThrow({ where: { id: b } }),
+      prisma.subcategory.findUniqueOrThrow({ where: { id: b.id } }),
     ]);
-    expect(ra.slug).toBe(rb.slug);
+    expect(ra.name).toBe(rb.name);
+    expect(ra.slug).not.toBe(rb.slug);
     expect(ra.categoryId).not.toBe(rb.categoryId);
   });
 
@@ -459,13 +483,41 @@ suite('Batch 04-B — managed Subcategory taxonomy', () => {
     expect(crumb.itemListElement).toHaveLength(3);
   });
 
-  it('(19b) the sitemap gains no subcategory URLs', async () => {
+  /**
+   * REWRITTEN for the flat route. A subcategory HAS a public URL now, so "never
+   * in the sitemap" is no longer the contract — "in the sitemap only once it is
+   * worth indexing" is. An empty archive must still stay out, and the old
+   * assertion passing for a thin archive is exactly the case this pins.
+   */
+  it('(19b) a THIN subcategory archive stays out of the sitemap', async () => {
     const sub = await makeSub(catA.id, `Sitemapless ${rid()}`);
     const { buildSitemapEntries } = await import('../lib/seo/sitemapEntries');
     const entries = await buildSitemapEntries();
     const slug = (await prisma.subcategory.findUniqueOrThrow({ where: { id: sub } })).slug;
-    expect(entries.some((e) => e.url.includes(slug))).toBe(false);
+    expect(entries.some((e) => e.url.includes(`/${slug}/`))).toBe(false);
+    // The flat route was chosen over `/subcategories/<slug>/`; nothing may emit it.
     expect(entries.some((e) => e.url.includes('/subcategories/'))).toBe(false);
+  });
+
+  it('(19c) an archive at or above the threshold IS listed, at its flat URL', async () => {
+    const { SUBCATEGORY_INDEX_THRESHOLD } = await import('../lib/cms/subcategoryContent');
+    const sub = await makeSub(catA.id, `Stocked ${rid()}`);
+    const slug = (await prisma.subcategory.findUniqueOrThrow({ where: { id: sub } })).slug;
+    for (let i = 0; i < SUBCATEGORY_INDEX_THRESHOLD; i++) {
+      const saved = await article.saveArticle(
+        admin as ArticleSvc.ActorContext,
+        input({ categoryName: catA.name, subcategoryId: sub }),
+      );
+      // Published directly: this test is about the sitemap threshold, not the
+      // workflow, and the gate transitions are covered elsewhere in this file.
+      await prisma.article.update({
+        where: { id: saved.id },
+        data: { workflowStatus: 'PUBLISHED', publishedAt: new Date() },
+      });
+    }
+    const { buildSitemapEntries } = await import('../lib/seo/sitemapEntries');
+    const entries = await buildSitemapEntries();
+    expect(entries.some((e) => e.url.endsWith(`/${slug}/`))).toBe(true);
   });
 
   // ================================= 20-22. earlier batches and search

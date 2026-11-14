@@ -7,7 +7,7 @@ import { ServiceError } from './articleService';
 import { assertEntityExists, requireEntityPerm } from './landingEntities';
 import { getEntitySeo } from './entitySeoService';
 import { listFaqsAdmin } from './faqService';
-import { PRIMARY_SECTIONS } from '../../config/routes';
+import { PRIMARY_SECTIONS, ROUTES } from '../../config/routes';
 import { listAssignableClassifications, type PublicClassification } from './disciplineClassificationService';
 
 /**
@@ -32,17 +32,26 @@ export interface LandingEntityGroup { type: LandingEntityType; label: string; it
 
 const GROUP_LABEL: Record<LandingEntityType, string> = {
   RODEO_HUB: 'Rodeo Hubs', RODEO_EVENT: 'Rodeo Events', RODEO_EDITION: 'Event Editions', DISCIPLINE: 'Disciplines', CATEGORY: 'Categories',
-  VENUE: 'Venues', COMPETITOR: 'Competitors', SECTION: 'Primary Sections',
+  VENUE: 'Venues', COMPETITOR: 'Competitors', SECTION: 'Primary Sections', SUBCATEGORY: 'Subcategories',
 };
 
 export async function listLandingEntities(actor: Actor): Promise<LandingEntityGroup[]> {
   if (!canUseLandingManager(actor)) throw new ServiceError('forbidden', 'Not permitted to manage landing content.');
-  const [hubs, events, editions, disciplines, categories, venues, competitors, seoRows, faqRows] = await Promise.all([
+  const [hubs, events, editions, disciplines, categories, subcategories, venues, competitors, seoRows, faqRows] = await Promise.all([
     prisma.rodeoHub.findMany({ orderBy: { title: 'asc' }, select: { id: true, title: true, slug: true } }),
     prisma.rodeoEvent.findMany({ orderBy: { name: 'asc' }, select: { id: true, name: true, slug: true } }),
     prisma.rodeoEventEdition.findMany({ orderBy: [{ year: 'desc' }], select: { id: true, label: true, editionSlug: true, event: { select: { slug: true } } } }),
     prisma.discipline.findMany({ orderBy: { sortOrder: 'asc' }, select: { id: true, name: true, slug: true } }),
     prisma.category.findMany({ orderBy: { sortOrder: 'asc' }, select: { id: true, name: true, slug: true } }),
+    /**
+     * Archived subcategories are listed too, deliberately. An archived archive
+     * keeps its URL at HTTP 200 with `noindex`, so its SEO row still decides
+     * what a search engine is told about a page that remains reachable.
+     */
+    prisma.subcategory.findMany({
+      orderBy: [{ categoryId: 'asc' }, { sortOrder: 'asc' }],
+      select: { id: true, name: true, slug: true, category: { select: { name: true } } },
+    }),
     prisma.venue.findMany({ orderBy: { name: 'asc' }, select: { id: true, name: true, slug: true } }),
     prisma.competitor.findMany({ orderBy: [{ sortOrder: 'asc' }, { fullName: 'asc' }], select: { id: true, fullName: true, slug: true } }),
     prisma.entitySeo.findMany({ select: { entityType: true, entityId: true, noindex: true } }),
@@ -60,6 +69,12 @@ export async function listLandingEntities(actor: Actor): Promise<LandingEntityGr
     { type: 'RODEO_EDITION', label: GROUP_LABEL.RODEO_EDITION, items: editions.map((e) => row('RODEO_EDITION', e.id, e.label, `/rodeo-events/${e.event.slug}/${e.editionSlug}/`)) },
     { type: 'DISCIPLINE', label: GROUP_LABEL.DISCIPLINE, items: disciplines.map((d) => row('DISCIPLINE', d.id, d.name, `/disciplines/${d.slug}/`)) },
     { type: 'CATEGORY', label: GROUP_LABEL.CATEGORY, items: categories.map((c) => row('CATEGORY', c.id, c.name, `/categories/${c.slug}/`)) },
+    /**
+     * The parent section is in the LABEL but not the URL. The flat route drops
+     * it, and two sections can no longer share a slug, so the label is the only
+     * place an operator can still see which section a subcategory belongs to.
+     */
+    { type: 'SUBCATEGORY', label: GROUP_LABEL.SUBCATEGORY, items: subcategories.map((s) => row('SUBCATEGORY', s.id, `${s.name} — ${s.category.name}`, ROUTES.SUBCATEGORY(s.slug))) },
     { type: 'VENUE', label: GROUP_LABEL.VENUE, items: venues.map((v) => row('VENUE', v.id, v.name, `/venues/${v.slug}/`)) },
     { type: 'COMPETITOR', label: GROUP_LABEL.COMPETITOR, items: competitors.map((c) => row('COMPETITOR', c.id, c.fullName, `/competitors/${c.slug}/`)) },
     { type: 'SECTION', label: GROUP_LABEL.SECTION, items: Object.values(PRIMARY_SECTIONS).map((s) => row('SECTION', s.id, s.name, s.path)) },

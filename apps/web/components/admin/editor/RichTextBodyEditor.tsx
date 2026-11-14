@@ -112,6 +112,27 @@ const StructuredBlock = Node.create({
 // Every control is the same height and no narrower than a square, so the
 // single-character buttons (B, I, 1, L) line up with the word-length ones
 // (Quote, Full screen) instead of reading as a row of cramped mixed boxes.
+/**
+ * The accessible name for a toolbar control, per WCAG 2.5.3 "Label in Name".
+ *
+ * These buttons show a terse glyph and carry the explanation in `title`, which
+ * is also the `aria-label`. Where the glyph does NOT appear in that
+ * explanation — `x²` against "Superscript", `Tx` against "Clear formatting" —
+ * the visible label and the spoken name disagree, and someone driving the page
+ * by voice cannot activate a button by saying what they can see. Axe reports it
+ * as `label-content-name-mismatch`.
+ *
+ * Prefixing only in that case keeps the common buttons announcing cleanly
+ * ("Bold", not "B — Bold"), and makes the rule structural: a future button with
+ * a mismatched glyph is corrected automatically rather than reintroducing the
+ * defect. The containment test mirrors axe's own: case-insensitive, whitespace
+ * collapsed.
+ */
+function accessibleName(label: string, title: string): string {
+  const norm = (v: string) => v.toLowerCase().replace(/\s+/g, ' ').trim();
+  return norm(title).includes(norm(label)) ? title : `${label} — ${title}`;
+}
+
 const BTN =
   'inline-flex items-center justify-center h-8 min-w-8 px-2.5 text-[13px] leading-none font-sans rounded-xs border border-stone-200 hover:bg-stone-100 disabled:opacity-40 disabled:hover:bg-transparent';
 const BTN_ON = 'bg-[#0F1115] text-[#D4A757] border-[#0F1115] hover:bg-[#0F1115]';
@@ -283,7 +304,7 @@ const SelectionToolbar: React.FC<{
           key={a.label}
           type="button"
           title={a.title}
-          aria-label={a.title}
+          aria-label={accessibleName(a.label, a.title)}
           aria-pressed={editor.isActive(a.mark)}
           onMouseDown={(ev) => ev.preventDefault()}
           onClick={() => a.run(editor)}
@@ -1002,7 +1023,7 @@ export const RichTextBodyEditor: React.FC<RichTextBodyEditorProps> = ({
                   key={b.label}
                   type="button"
                   title={b.title}
-                  aria-label={b.title}
+                  aria-label={accessibleName(b.label, b.title)}
                   aria-pressed={b.isActive ? active : undefined}
                   disabled={disabled || (b.disabled?.(editor) ?? false)}
                   /**
@@ -1130,7 +1151,16 @@ export const RichTextBodyEditor: React.FC<RichTextBodyEditorProps> = ({
           title="Find and replace"
           aria-label="Find and replace"
           aria-pressed={findOpen}
-          aria-controls="rt-find-panel"
+          /*
+            Only while the panel is actually in the document.
+            `aria-controls` must reference a real id; the find panel is mounted
+            conditionally, so pointing at it while it is closed is a dangling
+            reference. Assistive technology is told to look for an element that
+            is not there, and axe reports it as a critical
+            `aria-valid-attr-value` failure. `aria-pressed` already conveys the
+            open/closed state on its own.
+          */
+          aria-controls={findOpen ? 'rt-find-panel' : undefined}
           data-testid="rt-find-toggle"
           onMouseDown={(ev) => ev.preventDefault()}
           onClick={() => { setFindOpen((o) => !o); setFindNote(null); }}

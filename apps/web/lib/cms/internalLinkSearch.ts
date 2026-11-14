@@ -95,12 +95,12 @@ export async function searchInternalLinkTargets(
        * what is linkable.
        */
       where: { ...publicArticleWhere(), OR: [{ title: like(q) }, { slug: like(q) }] },
-      select: { id: true, slug: true, title: true, category: { select: { name: true } } },
+      select: { id: true, slug: true, title: true, category: { select: { name: true } }, subcategoryTaxon: { select: { slug: true } } },
       orderBy: { publishedAt: 'desc' },
       take: LIMIT_PER_KIND,
     });
     for (const r of rows) {
-      out.push({ kind: 'article', id: r.id, label: r.title, url: ROUTES.ARTICLE(r.slug), detail: r.category.name });
+      out.push({ kind: 'article', id: r.id, label: r.title, url: ROUTES.ARTICLE(r.slug, r.subcategoryTaxon?.slug), detail: r.category.name });
     }
   }
 

@@ -3,7 +3,7 @@ import path from 'node:path';
 import { test, expect, type Page } from '@playwright/test';
 import AxeBuilder from '@axe-core/playwright';
 import { FIXTURE_SLUGS } from '../prisma/fixtures';
-import { E2E_DIR, readState, testDb } from './support';
+import { E2E_DIR, readState, testDb, openEditorArea } from './support';
 
 /**
  * Basic automated accessibility checks (Batch A, A7). This is NOT a WCAG 2.2 AA conformance
@@ -212,9 +212,22 @@ test.describe('accessibility (automated subset)', () => {
     for (const label of EDITOR_LABELLED_CONTROLS) {
       await expect(page.getByLabel(label, { exact: false }).first(), `control labelled "${label}"`).toBeAttached();
     }
-    // A focused editor field shows the shared focus ring (utilities cannot remove it).
-    await page.getByLabel('Subcategory').first().focus();
-    const ring = await page.getByLabel('Subcategory').first().evaluate((el) => {
+    /*
+      A focused editor field shows the shared focus ring (utilities cannot
+      remove it).
+
+      The tab is opened first. The editor became a tab set in the UX
+      modernisation, and the Subcategory control sits on Setup — mounted but
+      `hidden`, so it stayed attached (the loop above still passed) while
+      `.focus()` silently left focus on <body> and the ring was measured on an
+      element that was never focused. Opening the tab is what a user does before
+      reaching the field, and it restores what this assertion was written for.
+    */
+    await openEditorArea(page, 'setup');
+    const subcategory = page.locator('#editor-subcategory');
+    await subcategory.focus();
+    await expect(subcategory).toBeFocused();
+    const ring = await subcategory.evaluate((el) => {
       const s = getComputedStyle(el);
       return { outline: s.outlineStyle, width: s.outlineWidth, shadow: s.boxShadow };
     });

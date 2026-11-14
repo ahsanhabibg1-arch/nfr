@@ -1,7 +1,7 @@
 import { test, expect, type Page } from '@playwright/test';
 import { FIXTURE_SLUGS } from '../prisma/fixtures';
 import { LEGAL_PAGES } from '../config/legalPages';
-import { readState, testDb } from './support';
+import { readState, testDb, openEditorArea } from './support';
 
 /**
  * Stage 09 continuation — browser verification (Chromium) of the SEO admin UX
@@ -58,6 +58,8 @@ test.describe('Stage 09 — SEO admin screens report the real state', () => {
     await db.$disconnect();
     await login(page);
     await page.goto(`/admin/articles/${article.id}/edit/`);
+    // The indexing status is on the SEO tab.
+    await openEditorArea(page, 'seo');
     const status = page.getByTestId('seo-indexing-status');
     await expect(status).toBeVisible();
     await expect(page.getByTestId('seo-robots')).toHaveText(/^(no)?index, (no)?follow$/);

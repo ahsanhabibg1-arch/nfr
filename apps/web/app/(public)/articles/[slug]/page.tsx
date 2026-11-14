@@ -1,26 +1,32 @@
 import type { Metadata } from 'next';
 import { notFound, permanentRedirect, redirect } from 'next/navigation';
 import { getPublishedArticleBySlug, getPublishedArticleSlugs, resolveArticleRedirect } from '@/lib/content';
-import { ArticleView } from '@/views/ArticleView';
-import { buildMetadata, articleJsonLd, breadcrumbJsonLd, JsonLd } from '@/lib/seo';
+import { buildMetadata, JsonLd } from '@/lib/seo';
 import { articleMetadataInput, unavailableArticleMetadataInput } from '@/lib/seo/articleMeta';
-import { ROUTES } from '@/config/routes';
-import { ViewBeacon } from '@/components/analytics/ViewBeacon';
-import { ArticleMonetization } from '@/components/monetization/ArticleMonetization';
-import { AdPlacementSlot } from '@/components/monetization/AdPlacementSlot';
-import { CommentSection } from '@/components/editorial/CommentSection';
-import { listApprovedForArticle } from '@/lib/cms/commentService';
-import { isStaffDraftPreview } from '@/lib/cms/previewGuard';
-import { getArticleSchemaType } from '@/lib/cms/articleTypeRegistry';
-import { articleCategoryCrumb } from '@/lib/seo/articleBreadcrumb';
-import { getPublicSiteName } from '@/lib/cms/settingsService';
+import { articleUrl } from '@/config/routes';
+import { ArticlePageBody } from '@/views/ArticlePageBody';
 
 type Params = { params: Promise<{ slug: string }> };
 
 export const revalidate = 60;
 
+/**
+ * Only articles WITHOUT a managed subcategory are pre-rendered here.
+ *
+ * One article, one URL. An article that has a subcategory belongs to
+ * `/<subcategory>/<slug>/`, and this route redirects it there rather than
+ * serving the same content at a second address — two live URLs for one article
+ * is duplicate content, and whichever one search picked would be the one the
+ * site did not link to.
+ */
 export async function generateStaticParams() {
-  return (await getPublishedArticleSlugs()).map((slug) => ({ slug }));
+  const all = await getPublishedArticleSlugs();
+  const bare: { slug: string }[] = [];
+  for (const slug of all) {
+    const a = await getPublishedArticleBySlug(slug);
+    if (a && !a.subcategoryRef) bare.push({ slug });
+  }
+  return bare;
 }
 
 export async function generateMetadata({ params }: Params): Promise<Metadata> {
@@ -45,35 +51,12 @@ export default async function ArticlePage({ params }: Params) {
   }
 
   /**
-   * Batch 04-E — the structured-data classification comes from the managed
-   * registry, resolved here because this is a Server Component and `lib/seo`
-   * is synchronous and isomorphic. An unknown value, an uninitialised table or
-   * an unreachable database all yield `'Article'`, never `'NewsArticle'`.
+   * The article has moved into a subcategory since this URL was indexed, or was
+   * linked here by something that did not know about the subcategory. Either
+   * way the canonical home is the nested URL, so send readers and crawlers
+   * there permanently instead of serving a duplicate.
    */
-  const schemaType = await getArticleSchemaType(article.articleType);
-  const crumb = articleCategoryCrumb(article);
-  // Stage 03 (H-06): resolved here because `lib/seo` is synchronous.
-  const publisherName = await getPublicSiteName();
+  if (article.subcategoryRef) permanentRedirect(articleUrl(article));
 
-  return (
-    <>
-      <JsonLd
-        data={[
-          articleJsonLd(article, { schemaType, publisherName }),
-          breadcrumbJsonLd([
-            { name: 'Home', path: '/' },
-            // Stage 03 (R-3): the SAME resolver the visible breadcrumb uses, so
-            // the structured data and the rendered trail cannot diverge.
-            { name: crumb.name, path: crumb.path },
-            { name: article.title, path: ROUTES.ARTICLE(article.slug) },
-          ]),
-        ]}
-      />
-      <ArticleView article={article} draft={await isStaffDraftPreview()} />
-      <ArticleMonetization articleId={article.id} />
-      <AdPlacementSlot pageScope="article" />
-      <CommentSection articleId={article.id} initialComments={await listApprovedForArticle(article.id)} />
-      <ViewBeacon entityType="ARTICLE" entityId={article.id} path={ROUTES.ARTICLE(article.slug)} />
-    </>
-  );
+  return <ArticlePageBody article={article} />;
 }

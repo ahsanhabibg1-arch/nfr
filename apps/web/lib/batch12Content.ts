@@ -14,10 +14,12 @@ import { prisma } from './db';
 
 const PUBLISHED = 'PUBLISHED' as const;
 
-export interface PublicArticleRef { slug: string; title: string; deck: string | null; category: string; publishedAt: string | null }
-const articleRef = { select: { slug: true, title: true, deck: true, publishedAt: true, category: { select: { name: true } } } } as const;
-function mapArticle(a: { slug: string; title: string; deck: string | null; publishedAt: Date | null; category: { name: string } }): PublicArticleRef {
-  return { slug: a.slug, title: a.title, deck: a.deck, category: a.category.name, publishedAt: a.publishedAt?.toISOString() ?? null };
+export interface PublicArticleRef { slug: string; title: string; deck: string | null; category: string; publishedAt: string | null;
+  /** The managed subcategory's slug, when assigned — it is the first segment of the article's URL. */
+  subcategoryRef?: { slug: string } | null }
+const articleRef = { select: { slug: true, title: true, deck: true, publishedAt: true, category: { select: { name: true } }, subcategoryTaxon: { select: { slug: true } } } } as const;
+function mapArticle(a: { slug: string; title: string; deck: string | null; publishedAt: Date | null; category: { name: string }; subcategoryTaxon: { slug: string } | null }): PublicArticleRef {
+  return { slug: a.slug, title: a.title, deck: a.deck, category: a.category.name, publishedAt: a.publishedAt?.toISOString() ?? null, subcategoryRef: a.subcategoryTaxon };
 }
 function sortByPublished(list: PublicArticleRef[]): PublicArticleRef[] {
   return [...list].sort((x, y) => (y.publishedAt ?? '').localeCompare(x.publishedAt ?? ''));

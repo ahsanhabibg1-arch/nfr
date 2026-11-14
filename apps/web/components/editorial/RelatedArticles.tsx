@@ -3,7 +3,7 @@ import Link from 'next/link';
 import { Article } from '../../types';
 import { ImageWithCredit } from '../ImageWithCredit';
 import { IMAGE_SIZES } from '../../lib/media/imageMeta';
-import { ROUTES } from '../../config/routes';
+import { ROUTES, articleUrl } from '../../config/routes';
 
 interface RelatedArticlesProps {
   articles: Article[];
@@ -38,7 +38,7 @@ export const RelatedArticles: React.FC<RelatedArticlesProps> = ({
             className="bg-white border border-stone-200 rounded-sm overflow-hidden hover:border-[#8B5E3C] hover:shadow-sm transition-all flex flex-col justify-between group"
           >
             <div>
-              <Link href={ROUTES.ARTICLE(art.slug)} tabIndex={-1}>
+              <Link href={articleUrl(art)} tabIndex={-1}>
                 {/* MED-01B/C — below the fold by definition: editorial ALT,
                     card-sized derivative, lazy. */}
                 <ImageWithCredit
@@ -61,7 +61,7 @@ export const RelatedArticles: React.FC<RelatedArticlesProps> = ({
                 </div>
 
                 <h3 className="text-base font-serif font-bold text-[#0F1115] group-hover:text-[#8B5E3C] transition-colors leading-snug">
-                  <Link href={ROUTES.ARTICLE(art.slug)}>
+                  <Link href={articleUrl(art)}>
                     {art.title}
                   </Link>
                 </h3>
@@ -75,7 +75,7 @@ export const RelatedArticles: React.FC<RelatedArticlesProps> = ({
             <div className="px-4 py-2.5 bg-stone-50 border-t border-stone-100 flex items-center justify-between text-[11px] font-sans text-stone-500">
               <span>{art.author.name}</span>
               <Link
-                href={ROUTES.ARTICLE(art.slug)}
+                href={articleUrl(art)}
                 className="text-[#8B5E3C] font-semibold group-hover:translate-x-1 transition-transform inline-flex items-center gap-1"
               >
                 Read &rarr;

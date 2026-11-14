@@ -1,6 +1,6 @@
 import React from 'react';
 import Link from 'next/link';
-import { ROUTES } from '../config/routes';
+import { ROUTES, articleUrl } from '../config/routes';
 import type { PublicHub, PublicEvent, PublicEdition, PublicArticleRef, PublicEditionCard, PublicEventCard } from '../lib/rodeoContent';
 import type { PublicAssociation } from '../lib/monetization/publicMonetization';
 import { EntityIntro } from '../components/editorial/EntityIntro';
@@ -33,7 +33,7 @@ function ArticleList({ articles }: { articles: PublicArticleRef[] }) {
       <ul className="space-y-2">
         {articles.map((a) => (
           <li key={a.slug} className="p-3 bg-white border border-stone-200 rounded-sm hover:border-[#D4A757]">
-            <Link href={ROUTES.ARTICLE(a.slug)} className="block">
+            <Link href={articleUrl(a)} className="block">
               <span className="text-[11px] font-sans text-[#8B5E3C] font-semibold uppercase tracking-wider">{a.category}</span>
               <span className="block font-serif font-semibold text-stone-900">{a.title}</span>
               {a.deck && <span className="block text-xs text-stone-600 font-sans line-clamp-1">{a.deck}</span>}

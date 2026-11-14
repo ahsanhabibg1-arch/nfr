@@ -1,4 +1,5 @@
 import React from 'react';
+import Link from 'next/link';
 import { Breadcrumbs } from './Breadcrumbs';
 
 interface SectionLandingHeroProps {
@@ -8,6 +9,16 @@ interface SectionLandingHeroProps {
   kicker?: string;
   breadcrumbs?: { label: string; path?: string }[];
   statPills?: { label: string; value: string }[];
+  /**
+   * The section's subcategories, shown beside the stats as links into each
+   * archive. Rendered for every primary section with no operator setup: a
+   * subcategory created under a section appears here automatically, which is
+   * the only way a reader can discover these archives exist.
+   *
+   * Empty or absent renders nothing, so a section with no subcategories (NFR
+   * Competition, today) looks exactly as it does now.
+   */
+  subcategories?: { id: string; slug: string; name: string; articleCount: number }[];
   /**
    * Stage 04 Task D: optional background image, from the Page Builder's
    * `landing-hero.heroImageUrl` property. That property was declared in the
@@ -30,6 +41,7 @@ export const SectionLandingHero: React.FC<SectionLandingHeroProps> = ({
   kicker = 'Editorial Section',
   breadcrumbs,
   statPills,
+  subcategories,
   backgroundImageUrl,
   backgroundImageAlt,
   className = '',
@@ -71,14 +83,40 @@ export const SectionLandingHero: React.FC<SectionLandingHeroProps> = ({
             {description}
           </p>
 
-          {statPills && statPills.length > 0 && (
-            <div className="mt-6 pt-6 border-t border-white/10 flex flex-wrap gap-6 text-xs font-sans">
-              {statPills.map((stat, i) => (
+          {((statPills && statPills.length > 0) || (subcategories && subcategories.length > 0)) && (
+            <div className="mt-6 pt-6 border-t border-white/10 flex flex-wrap items-start gap-x-6 gap-y-4 text-xs font-sans">
+              {statPills?.map((stat, i) => (
                 <div key={i} className="flex flex-col">
                   <span className="text-stone-400 text-[10px] uppercase tracking-wider">{stat.label}</span>
                   <span className="text-sm font-bold text-[#D4A757] mt-0.5">{stat.value}</span>
                 </div>
               ))}
+
+              {subcategories && subcategories.length > 0 && (
+                <div className="flex flex-col min-w-0">
+                  <span className="text-stone-400 text-[10px] uppercase tracking-wider">In this section</span>
+                  <nav aria-label="Subcategories in this section" className="mt-1.5 flex flex-wrap gap-2">
+                    {subcategories.map((sub) => (
+                      <Link
+                        key={sub.id}
+                        href={`/${sub.slug}/`}
+                        className="group inline-flex items-center gap-1.5 rounded-xs border border-white/20 bg-white/5 px-2.5 py-1 text-[11px] font-semibold text-stone-200 transition-colors hover:border-[#D4A757] hover:bg-white/10 hover:text-white"
+                      >
+                        {sub.name}
+                        {/*
+                          The count is the reader's only signal that an archive
+                          is worth opening. A subcategory with nothing published
+                          still shows — it is part of the section's structure —
+                          but it says so rather than promising coverage.
+                        */}
+                        <span className="text-[10px] font-mono text-stone-400 group-hover:text-[#D4A757]">
+                          {sub.articleCount}
+                        </span>
+                      </Link>
+                    ))}
+                  </nav>
+                </div>
+              )}
             </div>
           )}
         </div>

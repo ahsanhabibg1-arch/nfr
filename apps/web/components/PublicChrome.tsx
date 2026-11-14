@@ -6,7 +6,7 @@ import { SiteHeader } from './SiteHeader';
 import { SiteFooter } from './SiteFooter';
 import { SearchModal } from './SearchModal';
 import { Discipline, SearchIndexItem } from '../types';
-import { ROUTES } from '../config/routes';
+import { ROUTES, articleUrl } from '../config/routes';
 import type { PublicNavigation } from '../lib/cms/navTypes';
 import type { FooterConfig } from '../lib/cms/siteConfigService';
 import { AnnouncementBanner, type PublicAnnouncement } from './public/AnnouncementBanner';
@@ -67,7 +67,7 @@ export const PublicChrome: React.FC<PublicChromeProps> = ({
         searchDisciplines={searchDisciplines}
         onSelectArticle={(a) => {
           setSearchOpen(false);
-          router.push(ROUTES.ARTICLE(a.slug));
+          router.push(articleUrl(a));
         }}
         onSelectDiscipline={(d) => {
           setSearchOpen(false);

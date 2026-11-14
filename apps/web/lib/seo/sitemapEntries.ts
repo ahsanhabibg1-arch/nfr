@@ -4,6 +4,7 @@ import { prisma } from '../db';
 import { SITE_URL } from '../seo';
 import { PRIMARY_SECTIONS } from '../../config/routes';
 import { LEGAL_PAGES } from '../../config/legalPages';
+import { SUBCATEGORY_INDEX_THRESHOLD } from '../cms/subcategoryContent';
 import { publicArticleWhere, isHiddenFixtureSlug } from '../fixturePolicy';
 import { publicRodeoWhere, publicEditionWhere, ACTIVE_ONLY } from '../cms/lifecycle';
 import { resolveCanonical } from '../cms/entitySeoService';
@@ -79,12 +80,12 @@ const slugifyCategory = (categoryKey: string) => categoryKey.toLowerCase().repla
 export async function loadSitemapCandidates(): Promise<SitemapCandidate[]> {
   const sectionKeys = Object.keys(PRIMARY_SECTIONS);
   const [
-    articles, entitySeo, sectionConfigs, layouts, categories, disciplines,
+    articles, entitySeo, sectionConfigs, layouts, categories, disciplines, subcategories,
     hubs, events, editions, venues, competitors, coverage, infoPages,
   ] = await Promise.all([
     prisma.article.findMany({
       where: publicArticleWhere(),
-      select: { slug: true, updatedAt: true, category: { select: { name: true, slug: true } }, seo: { select: { robots: true, canonicalUrl: true } } },
+      select: { slug: true, updatedAt: true, category: { select: { name: true, slug: true } }, subcategoryTaxon: { select: { slug: true } }, seo: { select: { robots: true, canonicalUrl: true } } },
       orderBy: { publishedAt: 'desc' },
     }),
     prisma.entitySeo.findMany({ select: { entityType: true, entityId: true, noindex: true, canonicalOverride: true } }),
@@ -92,6 +93,7 @@ export async function loadSitemapCandidates(): Promise<SitemapCandidate[]> {
     prisma.pageLayout.findMany({ where: { pageKey: { in: ['homepage', ...sectionKeys.map((k) => `section:${k}`)] } }, select: { pageKey: true, publishedAt: true } }),
     prisma.category.findMany({ select: { id: true, slug: true } }),
     prisma.discipline.findMany({ where: ACTIVE_ONLY, orderBy: { sortOrder: 'asc' }, select: { id: true, slug: true } }),
+    prisma.subcategory.findMany({ orderBy: { sortOrder: 'asc' }, select: { id: true, slug: true, archivedAt: true } }),
     prisma.rodeoHub.findMany({
       where: publicRodeoWhere(),
       select: { id: true, slug: true, hubEvents: { select: { event: { select: { slug: true } } } }, _count: { select: { articles: { where: { article: publicArticleWhere() } } } } },
@@ -190,12 +192,42 @@ export async function loadSitemapCandidates(): Promise<SitemapCandidate[]> {
     out.push({ family: 'discipline', subject: { path: `/disciplines/${d.slug}/`, published: true, ...entity('DISCIPLINE', d.id) }, changeFrequency: 'monthly', priority: 0.6 });
   }
 
+  /**
+   * Subcategory archives — only the ones that earn a place.
+   *
+   * An archive is listed when it is active AND holds at least
+   * SUBCATEGORY_INDEX_THRESHOLD published articles, the same rule the page
+   * itself uses to decide its robots directive. The two must agree: a sitemap
+   * entry for a `noindex` page is a contradiction search engines report back.
+   */
+  const publishedBySubcategorySlug = new Map<string, number>();
+  for (const a of articles) {
+    const slug = a.subcategoryTaxon?.slug;
+    if (slug) publishedBySubcategorySlug.set(slug, (publishedBySubcategorySlug.get(slug) ?? 0) + 1);
+  }
+  for (const sub of subcategories) {
+    const count = publishedBySubcategorySlug.get(sub.slug) ?? 0;
+    if (sub.archivedAt || count < SUBCATEGORY_INDEX_THRESHOLD) continue;
+    out.push({
+      family: 'category',
+      subject: { path: `/${sub.slug}/`, published: true, ...entity('SUBCATEGORY', sub.id) },
+      lastModified: newestArticle((a) => a.subcategoryTaxon?.slug === sub.slug),
+      changeFrequency: 'weekly', priority: 0.6,
+    });
+  }
+
   // Articles — stored ArticleSeo robots + same-site canonical (as rendered by S1)
   for (const a of articles) {
     out.push({
       family: 'article',
       subject: {
-        path: `/articles/${a.slug}/`, published: true,
+        /*
+          An article with a subcategory lives at `/<subcategory>/<slug>/` and
+          `/articles/<slug>/` 308s to it. Listing the old path would fill the
+          sitemap with redirects, which is exactly what a sitemap must not
+          contain.
+        */
+        path: a.subcategoryTaxon ? `/${a.subcategoryTaxon.slug}/${a.slug}/` : `/articles/${a.slug}/`, published: true,
         storedRobots: a.seo ? a.seo.robots : undefined,
         canonical: normalizeSameSiteCanonical(a.seo?.canonicalUrl),
       },

@@ -7,6 +7,7 @@ import { roleHasPermission } from '../auth/rbac';
 import { ServiceError } from './articleService';
 import { ACTIVE_ONLY, lifecycleWhere, type LifecycleFilter } from './lifecycle';
 import { normalizeSlug, slugShapeError } from './slugRules';
+import { RESERVED_SUBCATEGORY_SLUGS } from '../../config/routes';
 
 /**
  * Editorial Organization: categories, tags, authors (Batch 04 §8/§9).
@@ -80,6 +81,11 @@ export interface SubcategoryRow {
   name: string;
   slug: string;
   description: string | null;
+  /** Landing-page content for the public `/<slug>/` archive. */
+  summary: string | null;
+  image: string | null;
+  imageCredit: string | null;
+  guide: string[];
   sortOrder: number;
   archivedAt: Date | null;
   articleCount: number;
@@ -112,6 +118,8 @@ export async function listSubcategories(params: ListSubcategoriesParams = {}): P
   return rows.map((s) => ({
     id: s.id, categoryId: s.categoryId, categorySlug: s.category.slug, categoryName: s.category.name,
     name: s.name, slug: s.slug, description: s.description, sortOrder: s.sortOrder,
+    summary: s.summary, image: s.image, imageCredit: s.imageCredit,
+    guide: Array.isArray(s.guide) ? (s.guide as unknown[]).filter((g): g is string => typeof g === 'string') : [],
     archivedAt: s.archivedAt, articleCount: s._count.articles,
   }));
 }
@@ -122,9 +130,38 @@ const SubcategoryInput = z.object({
   /** Omitted on create → derived from the name. */
   slug: z.string().trim().max(80).optional(),
   description: z.string().max(600).optional(),
+  /**
+   * Landing-page content. A subcategory archive is a public entity page, so it
+   * carries the same editorial surface a discipline guide does.
+   *
+   * `guide` is an array of paragraphs rather than rich text: the archive is a
+   * short orientation above a list of articles, not another article, and a
+   * plain string array needs no sanitiser on the way out.
+   */
+  summary: z.string().max(600).optional(),
+  image: z.string().max(600).optional(),
+  imageCredit: z.string().max(300).optional(),
+  guide: z.array(z.string().max(2000)).max(12).optional(),
   sortOrder: z.number().int().min(0).max(9999).optional(),
 });
 export type SubcategoryInput = z.input<typeof SubcategoryInput>;
+
+/**
+ * The landing-page columns, normalised the same way on create and update.
+ *
+ * Blank strings become NULL so "not filled in" is one value rather than two,
+ * and an all-blank guide becomes NULL rather than an empty JSON array that
+ * would read as "a guide exists and is empty".
+ */
+function landingFields(v: z.infer<typeof SubcategoryInput>) {
+  const guide = v.guide?.map((p) => p.trim()).filter(Boolean) ?? [];
+  return {
+    summary: v.summary?.trim() || null,
+    image: v.image?.trim() || null,
+    imageCredit: v.imageCredit?.trim() || null,
+    guide: guide.length ? guide : Prisma.DbNull,
+  };
+}
 
 /** Shape + reserved-word rules, shared with the UI so both agree exactly. */
 function resolveSlug(name: string, raw?: string): string {
@@ -134,19 +171,57 @@ function resolveSlug(name: string, raw?: string): string {
   return slug;
 }
 
-async function uniqueWithinCategory(categoryId: string, name: string, slug: string, excludeId?: string): Promise<void> {
-  const clash = await prisma.subcategory.findFirst({
-    where: { categoryId, OR: [{ name }, { slug }], ...(excludeId ? { id: { not: excludeId } } : {}) },
-    select: { name: true, slug: true },
-  });
-  if (!clash) return;
-  // Name the actual conflict: the two unique constraints fail for different reasons.
+/**
+ * A subcategory slug becomes a depth-1 public path, so it shares a namespace
+ * with every section and static page the site serves.
+ *
+ * Next.js would resolve the static route and leave the subcategory permanently
+ * unreachable — no error, no warning, just a page nobody can ever open. Refusing
+ * the name at write time is the only point where that is still visible.
+ */
+function assertSlugNotReserved(slug: string): void {
+  if (!RESERVED_SUBCATEGORY_SLUGS.has(slug)) return;
   throw new ServiceError(
-    'conflict',
-    clash.name === name
-      ? `This section already has a subcategory named "${name}".`
-      : `This section already has a subcategory with the URL slug "${slug}".`,
+    'validation',
+    `"${slug}" is already a page on this site, so a subcategory cannot use it as its URL — the subcategory would never be reachable. Choose a different slug, for example "nfr-${slug}".`,
   );
+}
+
+/**
+ * Name is unique per section; SLUG is unique across the whole site.
+ *
+ * The two scopes differ because the flat public route `/<subcategory>/` is
+ * identified by slug alone. Two sections may still both have a "Tickets" — but
+ * not two `tickets` — so the slug clash is reported with the owning section
+ * named, since that row is invisible from the section the operator is editing.
+ */
+async function assertUnique(categoryId: string, name: string, slug: string, excludeId?: string): Promise<void> {
+  const exclude = excludeId ? { id: { not: excludeId } } : {};
+  /**
+   * NAME is checked first, and the order is deliberate.
+   *
+   * A slug is derived from the name, so a duplicate name inside one section
+   * produces a duplicate slug as well and BOTH checks fail. Reporting the slug
+   * first would answer a question the operator did not ask — they typed a name,
+   * not a URL — and would send them to rename the slug when the real problem is
+   * the name they just entered.
+   */
+  const nameClash = await prisma.subcategory.findFirst({
+    where: { categoryId, name, ...exclude },
+    select: { id: true },
+  });
+  if (nameClash) throw new ServiceError('conflict', `This section already has a subcategory named "${name}".`);
+
+  const slugClash = await prisma.subcategory.findFirst({
+    where: { slug, ...exclude },
+    select: { category: { select: { name: true } } },
+  });
+  if (slugClash) {
+    throw new ServiceError(
+      'conflict',
+      `The URL slug "${slug}" is already used by a subcategory in ${slugClash.category.name}. Subcategory URLs are site-wide, so each one must be unique across every section.`,
+    );
+  }
 }
 
 export async function createSubcategory(actor: Actor, raw: SubcategoryInput): Promise<{ id: string }> {
@@ -155,12 +230,14 @@ export async function createSubcategory(actor: Actor, raw: SubcategoryInput): Pr
   const category = await prisma.category.findUnique({ where: { id: v.categoryId }, select: { id: true, name: true } });
   if (!category) throw new ServiceError('not_found', 'That primary section does not exist.');
   const slug = resolveSlug(v.name, v.slug);
-  await uniqueWithinCategory(v.categoryId, v.name, slug);
+  assertSlugNotReserved(slug);
+  await assertUnique(v.categoryId, v.name, slug);
   const max = await prisma.subcategory.aggregate({ where: { categoryId: v.categoryId }, _max: { sortOrder: true } });
   const row = await prisma.subcategory.create({
     data: {
       categoryId: v.categoryId, name: v.name, slug,
       description: v.description?.trim() || null,
+      ...landingFields(v),
       sortOrder: v.sortOrder ?? (max._max.sortOrder ?? -1) + 1,
     },
     select: { id: true },
@@ -201,12 +278,14 @@ export async function updateSubcategory(actor: Actor, id: string, raw: Subcatego
   }
 
   const slug = resolveSlug(v.name, v.slug);
-  await uniqueWithinCategory(v.categoryId, v.name, slug, id);
+  assertSlugNotReserved(slug);
+  await assertUnique(v.categoryId, v.name, slug, id);
   await prisma.subcategory.update({
     where: { id },
     data: {
       categoryId: v.categoryId, name: v.name, slug,
       description: v.description?.trim() || null,
+      ...landingFields(v),
       ...(v.sortOrder === undefined ? {} : { sortOrder: v.sortOrder }),
     },
   });

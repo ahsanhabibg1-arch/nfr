@@ -3,7 +3,7 @@ import Link from 'next/link';
 import { notFound } from 'next/navigation';
 import { getPublicCompetitorBySlug, getAllCompetitorSlugs, competitorHometown } from '@/lib/batch12Content';
 import { buildMetadata, competitorJsonLd, breadcrumbJsonLd, faqPageJsonLd, JsonLd } from '@/lib/seo';
-import { ROUTES } from '@/config/routes';
+import { ROUTES, articleUrl } from '@/config/routes';
 import { getEntitySeo, mergeSeoMeta } from '@/lib/cms/entitySeoService';
 import { listPublicFaqs } from '@/lib/cms/faqService';
 import { EntityIntro } from '@/components/editorial/EntityIntro';
@@ -113,7 +113,7 @@ export default async function CompetitorPage({ params }: Params) {
             <ul className="divide-y divide-stone-200">
               {c.articles.map((a) => (
                 <li key={a.slug} className="py-2.5">
-                  <Link href={ROUTES.ARTICLE(a.slug)} className="text-stone-900 hover:text-[#8B5E3C] font-medium">{a.title}</Link>
+                  <Link href={articleUrl(a)} className="text-stone-900 hover:text-[#8B5E3C] font-medium">{a.title}</Link>
                   {a.deck && <p className="text-sm text-stone-600 line-clamp-2">{a.deck}</p>}
                 </li>
               ))}

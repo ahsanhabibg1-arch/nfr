@@ -84,8 +84,22 @@ export const CompetitionSection: React.FC<CompetitionSectionProps> = ({
         />
 
         {/* Filter Toggle */}
-        <div className="flex items-center justify-between mb-8 pb-3 border-b border-stone-200">
-          <div className="flex items-center gap-2">
+        {/*
+          The header and the filters WRAP rather than overflowing.
+
+          Three filter buttons whose labels grow with the data ("All 7 Events",
+          "Roughstock (3)", "Timed Events (4)") do not fit a 320px viewport on
+          one line. Without wrapping they pushed the whole document wider than
+          the screen, so every page using this section scrolled sideways — the
+          defect `discipline-classifications.spec` measures at 320 and 390.
+
+          Wrapping is used deliberately in place of a horizontal scroller or
+          `overflow-x: hidden`: all three filters stay visible, keep their full
+          hit area, and remain reachable in order by keyboard and screen reader.
+          Nothing is hidden to make the measurement pass.
+        */}
+        <div className="flex flex-wrap items-center justify-between gap-x-4 gap-y-3 mb-8 pb-3 border-b border-stone-200">
+          <div className="flex flex-wrap items-center gap-2">
             {[{ key: 'all', label: `All ${disciplines.length} Events` },
               ...groups.map((g) => ({ key: g.key, label: `${g.label} (${g.count})` }))].map((mode) => (
               <button

@@ -447,7 +447,12 @@ describe('Phase D — Draft preview regression', () => {
 
   for (const route of routes) {
     it(`${route} still imports isStaffDraftPreview`, () => {
-      const src = read(route);
+      // The article page is two files since the flat subcategory route landed:
+      // the route, and the shared `views/ArticlePageBody.tsx` both article
+      // routes render. Draft support lives in the body, so read both.
+      const src = route.includes('articles/[slug]')
+        ? read(route) + read('views/ArticlePageBody.tsx')
+        : read(route);
       expect(src).toContain('isStaffDraftPreview');
     });
   }

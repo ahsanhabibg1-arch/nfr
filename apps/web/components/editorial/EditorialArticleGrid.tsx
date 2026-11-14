@@ -3,7 +3,7 @@ import Link from 'next/link';
 import { Article } from '../../types';
 import { ImageWithCredit } from '../ImageWithCredit';
 import { IMAGE_SIZES } from '../../lib/media/imageMeta';
-import { ROUTES } from '../../config/routes';
+import { ROUTES, articleUrl } from '../../config/routes';
 
 interface EditorialArticleGridProps {
   articles: Article[];
@@ -30,7 +30,7 @@ export const EditorialArticleGrid: React.FC<EditorialArticleGridProps> = ({
           className="bg-white border border-stone-200 rounded-sm overflow-hidden hover:border-[#8B5E3C] hover:shadow-sm transition-all flex flex-col justify-between group"
         >
           <div>
-            <Link href={ROUTES.ARTICLE(art.slug)} tabIndex={-1}>
+            <Link href={articleUrl(art)} tabIndex={-1}>
               {/* MED-01B/C — editorial ALT (resolved server-side), card-sized
                   derivative, lazy by default. Cards are never the LCP image. */}
               <ImageWithCredit
@@ -61,7 +61,7 @@ export const EditorialArticleGrid: React.FC<EditorialArticleGridProps> = ({
               </div>
 
               <h3 className="text-lg font-serif font-bold text-[#0F1115] group-hover:text-[#8B5E3C] transition-colors leading-snug">
-                <Link href={ROUTES.ARTICLE(art.slug)}>
+                <Link href={articleUrl(art)}>
                   {art.title}
                 </Link>
               </h3>
@@ -75,7 +75,7 @@ export const EditorialArticleGrid: React.FC<EditorialArticleGridProps> = ({
           <div className="px-5 py-3 bg-stone-50 border-t border-stone-100 flex items-center justify-between text-xs font-sans text-stone-500">
             <span>By {art.author.name}</span>
             <Link
-              href={ROUTES.ARTICLE(art.slug)}
+              href={articleUrl(art)}
               className="text-[#8B5E3C] font-semibold group-hover:translate-x-1 transition-transform inline-flex items-center gap-1"
             >
               Read Article &rarr;

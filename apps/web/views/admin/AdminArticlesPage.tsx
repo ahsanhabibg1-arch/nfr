@@ -4,7 +4,7 @@ import React, { useState, useTransition } from 'react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { AdminPageHeader } from '../../components/admin/AdminPageHeader';
-import { ROUTES } from '../../config/routes';
+import { ROUTES, articleUrl } from '../../config/routes';
 import type { AdminArticleRow, ArticleListResult } from '../../lib/cms/adminQueries';
 import { transitionArticleAction, deleteArticleAction } from '../../app/admin/article-actions';
 
@@ -134,7 +134,7 @@ export const AdminArticlesPage: React.FC<Props> = ({ result, filters, categories
                     <td className="py-3 px-4 max-w-md">
                       <Link href={ROUTES.ADMIN_ARTICLE_EDIT(art.id)} className="font-serif font-bold text-stone-900 hover:text-[#8B5E3C] line-clamp-1 text-sm">{art.title}</Link>
                       <span className="font-mono text-[10px] text-ink-muted block mt-0.5 truncate">
-                        /articles/{art.slug}/
+                        {articleUrl(art)}
                         {art.slug.startsWith('fixture-') && (
                           <span className="ml-2 px-1 rounded-xs bg-amber-100 text-amber-900 font-semibold" title="Synthetic test fixture — not editorial content; hidden from public pages in production">FIXTURE</span>
                         )}
@@ -145,7 +145,7 @@ export const AdminArticlesPage: React.FC<Props> = ({ result, filters, categories
                     <td className="py-3 px-4 whitespace-nowrap"><span className={`text-[10px] font-mono px-2 py-0.5 rounded-xs font-semibold ${STATUS_STYLES[art.workflowStatus] ?? 'bg-stone-100'}`}>{art.workflowStatus === 'scheduled' ? 'SCHEDULED — MANUAL PUBLISH REQUIRED' : art.workflowStatus.toUpperCase()}</span></td>
                     <td className="py-3 px-4 whitespace-nowrap text-stone-500 font-mono text-[11px]">{art.publishedAt ?? '—'}</td>
                     <td className="py-3 px-4 text-right whitespace-nowrap space-x-2">
-                      {art.workflowStatus === 'published' && <Link href={ROUTES.ARTICLE(art.slug)} target="_blank" className="text-stone-500 hover:text-stone-900 font-medium">Live</Link>}
+                      {art.workflowStatus === 'published' && <Link href={articleUrl(art)} target="_blank" className="text-stone-500 hover:text-stone-900 font-medium">Live</Link>}
                       <Link href={ROUTES.ADMIN_ARTICLE_EDIT(art.id)} className="text-[#8B5E3C] hover:text-stone-900 font-bold">Edit</Link>
                     </td>
                   </tr>

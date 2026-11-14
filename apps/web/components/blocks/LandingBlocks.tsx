@@ -1,6 +1,6 @@
 import React from 'react';
 import Link from 'next/link';
-import { ROUTES } from '@/config/routes';
+import { ROUTES, articleUrl } from '@/config/routes';
 import { SectionLandingHero } from '@/components/editorial/SectionLandingHero';
 import { EditorialArticleGrid } from '@/components/editorial/EditorialArticleGrid';
 import { ContentEmptyState } from '@/components/editorial/ContentEmptyState';
@@ -17,6 +17,8 @@ interface LandingData {
   sectionKey?: string;
   totalArticleCount?: number;
   sectionHeroImage?: string | null;
+  /** Active subcategories of this section, for the hero's navigation row. */
+  subcategories?: { id: string; slug: string; name: string; articleCount: number }[];
 }
 
 function ld(data: Record<string, unknown>): LandingData {
@@ -56,6 +58,12 @@ export function LandingHeroBlock({ slot, data }: BlockProps) {
         { label: 'Published articles', value: String(d.totalArticleCount ?? 0) },
         { label: 'Publisher', value: 'Independent' },
       ] : undefined}
+      /*
+        Not gated on `pillsVisible`. That property hides the two stat counters,
+        which are decoration; the subcategory links are navigation, and they are
+        the only route a reader has into these archives.
+      */
+      subcategories={d.subcategories}
     />
   );
 }
@@ -72,7 +80,7 @@ export function LandingFeaturedBlock({ slot, data }: BlockProps) {
     <section className="bg-white border border-stone-200 rounded-sm overflow-hidden shadow-xs">
       <div className="grid grid-cols-1 lg:grid-cols-12 items-stretch">
         <div className="lg:col-span-7">
-          <Link href={ROUTES.ARTICLE(featuredStory.slug)}>
+          <Link href={articleUrl(featuredStory)}>
             <ImageWithCredit
               src={featuredStory.heroImage}
               alt={featuredStory.title}
@@ -91,7 +99,7 @@ export function LandingFeaturedBlock({ slot, data }: BlockProps) {
               <span>{featuredStory.readTime}</span>
             </div>
             <h2 className="text-2xl sm:text-3xl font-serif font-bold text-[#0F1115] hover:text-[#8B5E3C] transition-colors leading-tight">
-              <Link href={ROUTES.ARTICLE(featuredStory.slug)}>
+              <Link href={articleUrl(featuredStory)}>
                 {featuredStory.title}
               </Link>
             </h2>
@@ -102,7 +110,7 @@ export function LandingFeaturedBlock({ slot, data }: BlockProps) {
           <div className="mt-6 pt-4 border-t border-stone-100 flex items-center justify-between text-xs font-sans">
             <span className="text-ink-muted">By {featuredStory.author.name}</span>
             <Link
-              href={ROUTES.ARTICLE(featuredStory.slug)}
+              href={articleUrl(featuredStory)}
               className="text-[#8B5E3C] font-semibold hover:text-stone-900 transition-colors inline-flex items-center gap-1"
             >
               {featuredCtaText} &rarr;

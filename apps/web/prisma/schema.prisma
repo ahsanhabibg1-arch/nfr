@@ -57,8 +57,28 @@ model Subcategory {
   id          String    @id @default(uuid())
   categoryId  String
   name        String
-  slug        String
+  /// GLOBALLY unique, not per-parent.
+  ///
+  /// The owner chose a flat public route — `/<subcategory>/` for the archive and
+  /// `/<subcategory>/<article>/` for an article inside it — so the slug alone has
+  /// to identify the row. The original spec (Issue 04 §1.3) specified
+  /// `@@unique([categoryId, slug])` precisely because a FLAT route would need
+  /// this constraint added later, "a migration that can fail on real data". It
+  /// did not fail: production held 14 subcategories with zero cross-section slug
+  /// collisions when the constraint was added.
+  ///
+  /// One consequence, and it is permanent: "Tickets" can no longer exist under
+  /// two sections at once. A second section wanting that name needs a distinct
+  /// slug (`nfr-tickets`, `vegas-tickets`).
+  slug        String    @unique
   description String?
+  /// Below here: the Discipline-grade landing-page content. A subcategory archive
+  /// is a real entity page now, so it carries the same editorial surface a
+  /// discipline guide does rather than being a bare list of links.
+  summary     String?
+  image       String?
+  imageCredit String?
+  guide       Json?
   sortOrder   Int       @default(0)
   /// Archive lifecycle, matching the Discipline convention: nullable with NO
   /// default, so every row reads as ACTIVE and the migration rewrites nothing.
@@ -71,7 +91,6 @@ model Subcategory {
   category    Category  @relation(fields: [categoryId], references: [id], onDelete: Restrict)
   articles    Article[] @relation("ArticleSubcategory")
 
-  @@unique([categoryId, slug])
   @@unique([categoryId, name])
   /// Not redundant: this is the TARGET of Article's composite foreign key
   /// below. PostgreSQL requires a unique constraint on the referenced column
@@ -1721,6 +1740,7 @@ enum UserAccountStatus {
 enum AnalyticsEntityType {
   ARTICLE
   DISCIPLINE
+  SUBCATEGORY
   CATEGORY
   SECTION
   RODEO_HUB
@@ -1811,6 +1831,7 @@ enum CommercialEntityType {
 /// Landing-page entity kinds that support editable SEO + FAQs (Batch 11 scope).
 enum LandingEntityType {
   DISCIPLINE
+  SUBCATEGORY
   CATEGORY
   RODEO_HUB
   RODEO_EVENT

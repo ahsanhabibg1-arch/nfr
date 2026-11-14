@@ -1,7 +1,7 @@
 import path from 'node:path';
 import { test, expect, type Page } from '@playwright/test';
 import { FIXTURE_SLUGS } from '../prisma/fixtures';
-import { E2E_DIR, readState, testDb } from './support';
+import { E2E_DIR, readState, testDb, openEditorArea } from './support';
 
 /**
  * Batch 25 — Article Editor SEO Assistant. Verifies the detailed, actionable SEO panel:
@@ -35,6 +35,8 @@ test.describe('article editor SEO Assistant', () => {
     const editPath = await fixtureEditPath();
     await page.goto(editPath);
 
+    // The SEO Assistant lives on the SEO tab since the editor became a tab set.
+    await openEditorArea(page, 'seo');
     const panel = page.getByTestId('seo-assistant');
     await expect(panel).toBeVisible();
     await expect(page.getByTestId('seo-counts')).toBeVisible();
@@ -64,6 +66,8 @@ test.describe('article editor SEO Assistant', () => {
     await page.setViewportSize({ width: 1440, height: 900 });
     await loginAsFixtureAdmin(page);
     await page.goto(await fixtureEditPath());
+    // The SEO Assistant lives on the SEO tab since the editor became a tab set.
+    await openEditorArea(page, 'seo');
     const panel = page.getByTestId('seo-assistant');
     await expect(panel).toBeVisible();
     const inspector = page.getByTestId('editor-inspector');

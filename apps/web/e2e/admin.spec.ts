@@ -1,6 +1,6 @@
 import { test, expect, type Page } from '@playwright/test';
 import { FIXTURE_SLUGS } from '../prisma/fixtures';
-import { readState, testDb } from './support';
+import { readState, testDb, openEditorArea } from './support';
 
 async function login(page: Page) {
   const s = readState();
@@ -72,15 +72,27 @@ test.describe('admin smoke', () => {
     await login(page);
     const id = await articleId(FIXTURE_SLUGS.publishedArticle);
     await page.goto(`/admin/articles/${id}/edit/`);
-    // The article editor is a heavy client component with 6 panels; wait for hydration
+    // The article editor is a heavy client component with 6 panels; wait for hydration.
+    // Sources sits on the SEO tab since the editor became a tab set, so the tab is
+    // opened before anything on it is expected to be visible.
+    await openEditorArea(page, 'seo');
     await expect(page.getByRole('heading', { name: /Sources/ })).toBeVisible({ timeout: 15_000 });
 
     await expect(page.getByRole('button', { name: 'Schedule', exact: true })).toHaveCount(0);
     const scheduledOption = page.locator('select option[value="scheduled"]');
     await expect(scheduledOption).toHaveCount(0);
+    /*
+      The readiness summary is on the Review tab, the source picker back on SEO.
+      This one test spans both, so each assertion opens the tab that owns what
+      it is about. `toHaveCount(0)` assertions need no tab: a hidden control is
+      still in the DOM, so counting zero means genuinely absent, which is what
+      they are checking.
+    */
+    await openEditorArea(page, 'review');
     await expect(page.getByText(/checks passed/)).toBeVisible();
     await expect(page.getByText(/% Score/)).toHaveCount(0);
 
+    await openEditorArea(page, 'seo');
     await page.getByRole('button', { name: 'Attach from Directory' }).click();
     const directory = page.getByTestId('source-directory');
     await expect(directory.getByText('Fixture Source A')).toBeVisible();
@@ -97,6 +109,8 @@ test.describe('admin smoke', () => {
     await login(page);
     const s = readState();
     await page.goto(`/admin/articles/${s.scheduledArticleId}/edit/`);
+    // The publishing controls live on the Review tab.
+    await openEditorArea(page, 'review');
     await expect(page.getByTestId('manual-publish-required')).toBeVisible();
     await expect(page.getByText('will not publish automatically')).toBeVisible();
     await expect(page.getByRole('button', { name: 'Unschedule' })).toBeVisible();

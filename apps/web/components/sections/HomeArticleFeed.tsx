@@ -3,7 +3,7 @@ import Link from 'next/link';
 import { Article } from '../../types';
 import { ImageWithCredit } from '../ImageWithCredit';
 import { IMAGE_SIZES } from '../../lib/media/imageMeta';
-import { ROUTES } from '../../config/routes';
+import { ROUTES, articleUrl } from '../../config/routes';
 
 /**
  * Card grid of PUBLISHED articles for a homepage module (Requirements v2.0 §3.1).
@@ -60,7 +60,7 @@ export const HomeArticleFeed: React.FC<HomeArticleFeedProps> = ({
             }`}
           >
             <div>
-              <Link href={ROUTES.ARTICLE(article.slug)} tabIndex={-1} aria-hidden="true">
+              <Link href={articleUrl(article)} tabIndex={-1} aria-hidden="true">
                 {/* MED-01B/C — `heroImageAlt` now also honours the media-level
                     default and a deliberate empty ALT, which `||` could not
                     express (it treats '' as missing). Card-sized derivative. */}
@@ -86,7 +86,7 @@ export const HomeArticleFeed: React.FC<HomeArticleFeedProps> = ({
                   </div>
                 )}
                 <h3 className={`text-base font-serif font-bold leading-snug transition-colors ${dark ? 'text-white group-hover:text-[#D4A757]' : 'text-[#0F1115] group-hover:text-[#8B5E3C]'}`}>
-                  <Link href={ROUTES.ARTICLE(article.slug)}>{article.title}</Link>
+                  <Link href={articleUrl(article)}>{article.title}</Link>
                 </h3>
                 <p className={`mt-2 text-xs font-sans leading-relaxed line-clamp-3 ${dark ? 'text-stone-300' : 'text-stone-600'}`}>
                   {article.deck || article.excerpt}
