@@ -109,8 +109,11 @@ const StructuredBlock = Node.create({
   },
 });
 
+// Every control is the same height and no narrower than a square, so the
+// single-character buttons (B, I, 1, L) line up with the word-length ones
+// (Quote, Full screen) instead of reading as a row of cramped mixed boxes.
 const BTN =
-  'px-2 py-1 text-xs font-sans rounded-xs border border-stone-200 hover:bg-stone-100 disabled:opacity-40 disabled:hover:bg-transparent';
+  'inline-flex items-center justify-center h-8 min-w-8 px-2.5 text-[13px] leading-none font-sans rounded-xs border border-stone-200 hover:bg-stone-100 disabled:opacity-40 disabled:hover:bg-transparent';
 const BTN_ON = 'bg-[#0F1115] text-[#D4A757] border-[#0F1115] hover:bg-[#0F1115]';
 
 type ToolbarButton = {
@@ -597,8 +600,17 @@ export const RichTextBodyEditor: React.FC<RichTextBodyEditorProps> = ({
     content: initialDoc,
     editorProps: {
       attributes: {
+        /**
+         * The surface fills its panel rather than sitting in a centred
+         * measure column. A 46rem column inside a full-width panel read as a
+         * misaligned box: the toolbar above and the status bar below ran the
+         * whole width while the writing area floated narrow between them, with
+         * its own edges landing nowhere near theirs. The panel itself is what
+         * bounds the line length on a wide screen, and the author now sees one
+         * rectangle instead of three different ones.
+         */
         class:
-          'prose-editor min-h-[22rem] max-w-[46rem] mx-auto px-1 py-2 outline-none text-stone-900 font-sans text-base leading-[1.75] focus:outline-none',
+          'prose-editor block w-full max-w-none min-h-[22rem] py-3 outline-none text-stone-900 font-sans text-base leading-[1.75] focus:outline-none',
         'aria-label': 'Article body',
       },
     },
@@ -977,11 +989,11 @@ export const RichTextBodyEditor: React.FC<RichTextBodyEditorProps> = ({
         role="toolbar"
         aria-label="Article body formatting"
         aria-controls="article-body-surface"
-        className="flex flex-wrap items-center gap-1 p-2 border-b border-stone-200 bg-stone-50/80 sticky top-0 z-10 rounded-t-sm"
+        className="flex flex-wrap items-center gap-1.5 px-3 py-2.5 border-b border-stone-200 bg-stone-50/80 sticky top-0 z-10 rounded-t-sm"
       >
         {GROUPS.map((group, gi) => (
           <React.Fragment key={group.name}>
-            {gi > 0 && <span aria-hidden className="mx-1 h-5 w-px bg-stone-200" />}
+            {gi > 0 && <span aria-hidden className="mx-1 h-6 w-px bg-stone-200" />}
             <span className="sr-only">{group.name}</span>
             {group.buttons.map((b) => {
               const active = b.isActive?.(editor) ?? false;
@@ -1029,7 +1041,7 @@ export const RichTextBodyEditor: React.FC<RichTextBodyEditorProps> = ({
           </React.Fragment>
         ))}
 
-        <span aria-hidden className="mx-1 h-5 w-px bg-stone-200" />
+        <span aria-hidden className="mx-1 h-6 w-px bg-stone-200" />
         <span className="sr-only">Links</span>
         <button
           type="button"
@@ -1066,7 +1078,7 @@ export const RichTextBodyEditor: React.FC<RichTextBodyEditorProps> = ({
           the Blocks composer. The same list backs the `/` menu, so the two can
           never drift apart.
         */}
-        <span aria-hidden className="mx-1 h-5 w-px bg-stone-200" />
+        <span aria-hidden className="mx-1 h-6 w-px bg-stone-200" />
         <span className="sr-only">Insert elements</span>
         <div data-rt-insert className="relative">
           <button
@@ -1111,7 +1123,7 @@ export const RichTextBodyEditor: React.FC<RichTextBodyEditorProps> = ({
         </div>
 
         {/* ---- document tools ---- */}
-        <span aria-hidden className="mx-1 h-5 w-px bg-stone-200" />
+        <span aria-hidden className="mx-1 h-6 w-px bg-stone-200" />
         <span className="sr-only">Document tools</span>
         <button
           type="button"
@@ -1481,7 +1493,11 @@ export const RichTextBodyEditor: React.FC<RichTextBodyEditorProps> = ({
         context, so it is placed relative to this panel rather than the page and
         stays correct while the page scrolls.
       */}
-      <div id="article-body-surface" data-rt-host className="relative px-3 sm:px-6">
+      {/*
+        `px-3` is the toolbar's and the status bar's gutter too, so the three
+        stacked regions share one left and right edge.
+      */}
+      <div id="article-body-surface" data-rt-host className="relative px-3">
         <SelectionToolbar editor={editor} onLink={openLink} disabled={disabled} />
         <EditorContent editor={editor} />
 
