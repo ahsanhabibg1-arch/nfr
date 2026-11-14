@@ -776,9 +776,87 @@ async function assertArticleTypeAssignable(value: string, current: string | null
   );
 }
 
+/**
+ * Field labels for the input schema's paths, used when a save is refused.
+ *
+ * Only the fields a schema rule can actually reject are listed; anything else
+ * falls back to its path, which is still better than nothing.
+ */
+const INPUT_FIELD_LABEL: Record<string, string> = {
+  title: 'Headline',
+  slug: 'URL slug',
+  excerpt: 'Excerpt',
+  deck: 'Deck',
+  articleType: 'Article type',
+  categoryName: 'Section',
+  authorName: 'Author byline',
+  seoTitle: 'SEO title',
+  metaDescription: 'Meta description',
+  imageSeoTitle: 'Image SEO title',
+  imageAltText: 'Image ALT text',
+  heroImage: 'Featured image',
+  imageCredit: 'Image credit',
+  blocks: 'Article body',
+  sources: 'Sources',
+  tags: 'Tags',
+};
+
+/**
+ * Parses the save input, reporting a REFUSAL as a refusal.
+ *
+ * WHY THIS EXISTS. `ArticleInputSchema.parse` throws a `ZodError`, which is not
+ * a `ServiceError` — so the server action's catch-all turned every missing
+ * required field into "Unexpected server error." An author who had simply not
+ * written an excerpt or chosen an article type was told the server had broken,
+ * with nothing naming the field, and the same message appeared whether the
+ * cause was their own omission or a genuine fault. Reproduced from a real
+ * report: pressing "Create Draft" on a new article reported a server error
+ * while the actual issues were an empty excerpt and an unchosen article type.
+ *
+ * The issues are also returned as `details`, so the editor can keep offering
+ * its field-level gate rather than only a sentence.
+ */
+function parseArticleInput(rawInput: ArticleInput) {
+  const parsed = ArticleInputSchema.safeParse(rawInput);
+  if (parsed.success) return parsed.data;
+
+  const issues = parsed.error.issues.map((i) => {
+    const path = i.path.map(String).join('.');
+    const field = INPUT_FIELD_LABEL[i.path[0] as string] ?? (path || 'Article');
+    const raw = i.message.replace(/\.\s*$/, '');
+    /*
+      A custom rule's message was written to be read by an author ("Choose an
+      article type"), so it is used verbatim; repeating the field name in front
+      of it would produce "Article type — Choose an article type". A built-in
+      zod message is jargon ("Too small: expected string to have >=1
+      characters"), so the field is named and the rule said plainly.
+    */
+    const sentence =
+      i.code === 'custom'
+        ? raw
+        : i.code === 'too_small' && (i as { minimum?: number }).minimum === 1
+          ? `${field} is required`
+          : `${field}: ${raw}`;
+    return { path, field, message: raw, sentence };
+  });
+
+  // One entry per distinct field, so a save missing three things says all three.
+  const seen = new Set<string>();
+  const summary = issues
+    .filter((i) => (seen.has(i.field) ? false : seen.add(i.field)))
+    .map((i) => i.sentence)
+    .join('; ');
+
+  throw new ServiceError(
+    'validation',
+    `This article cannot be saved yet — ${summary}.`,
+    { issues },
+  );
+}
+
 /** Create or update an article (draft-safe; never auto-publishes). */
 export async function saveArticle(actor: ActorContext, rawInput: ArticleInput): Promise<SaveResult> {
-  const v = ArticleInputSchema.parse(rawInput);
+  const v = parseArticleInput(rawInput);
   if (!v.id) {
     assert(actor, 'article.create');
     await assertArticleTypeAssignable(v.articleType, null);

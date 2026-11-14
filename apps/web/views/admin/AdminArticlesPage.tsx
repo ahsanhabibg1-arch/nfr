@@ -7,6 +7,7 @@ import { AdminPageHeader } from '../../components/admin/AdminPageHeader';
 import { ROUTES, articleUrl } from '../../config/routes';
 import type { AdminArticleRow, ArticleListResult } from '../../lib/cms/adminQueries';
 import { transitionArticleAction, deleteArticleAction } from '../../app/admin/article-actions';
+import { discardDraftSnapshotAction } from '../../app/admin/draft-recovery-actions';
 
 interface Props {
   result: ArticleListResult;
@@ -14,6 +15,20 @@ interface Props {
   categories: { slug: string; name: string }[];
   canPublish: boolean;
   canDelete: boolean;
+  /** This editor's recovery drafts; populated only while that tab is open. */
+  recoveryDrafts?: RecoveryDraftRow[];
+  /** Always supplied, so the tab can carry a badge before it is opened. */
+  recoveryCount?: number;
+}
+
+export interface RecoveryDraftRow {
+  id: string;
+  composerKey: string;
+  articleId: string | null;
+  title: string;
+  slug: string;
+  wordCount: number;
+  updatedAt: string;
 }
 
 const STATUS_STYLES: Record<string, string> = {
@@ -23,7 +38,24 @@ const STATUS_STYLES: Record<string, string> = {
 };
 const STATUS_TABS = ['', 'published', 'in_review', 'approved', 'scheduled', 'draft', 'archived'];
 
-export const AdminArticlesPage: React.FC<Props> = ({ result, filters, categories, canPublish, canDelete }) => {
+/**
+ * The recovery tab is NOT a workflow status.
+ *
+ * Every other tab narrows the article list; this one asks a different question
+ * — which composer sessions never became articles — against a different table.
+ * It is kept beside them because that is where an author looks for their work,
+ * and separated by a rule in the tab strip because it is a different kind of
+ * thing from PUBLISHED or IN REVIEW.
+ */
+const RECOVERY_TAB = 'unsaved';
+
+/** Mirrors `SNAPSHOT_RETENTION_DAYS`; stated in words for an editor to read. */
+const SNAPSHOT_RETENTION_NOTE = '30 days after you last touch them';
+
+export const AdminArticlesPage: React.FC<Props> = ({
+  result, filters, categories, canPublish, canDelete,
+  recoveryDrafts = [], recoveryCount = 0,
+}) => {
   const router = useRouter();
   const [isPending, startTransition] = useTransition();
   const [search, setSearch] = useState(filters.q);
@@ -68,6 +100,28 @@ export const AdminArticlesPage: React.FC<Props> = ({ result, filters, categories
             {s === 'scheduled' ? 'scheduled (manual publish)' : s ? s.replace('_', ' ') : 'All'}
           </button>
         ))}
+
+        <span aria-hidden className="mx-1 h-5 w-px bg-stone-200" />
+        <button
+          onClick={() => navigate({ status: RECOVERY_TAB })}
+          data-testid="articles-tab-unsaved"
+          title="Work from the composer that was never saved as an article"
+          className={`px-3 py-1.5 rounded-xs font-semibold uppercase tracking-wider inline-flex items-center gap-2 ${
+            filters.status === RECOVERY_TAB ? 'bg-[#0F1115] text-[#D4A757]' : 'text-stone-600 hover:bg-stone-100'
+          }`}
+        >
+          Unsaved drafts
+          {recoveryCount > 0 && (
+            <span
+              className={`font-mono text-[10px] px-1.5 py-0.5 rounded-full ${
+                filters.status === RECOVERY_TAB ? 'bg-[#D4A757] text-[#0F1115]' : 'bg-amber-100 text-amber-800'
+              }`}
+            >
+              {recoveryCount}
+              <span className="sr-only"> recoverable draft{recoveryCount === 1 ? '' : 's'}</span>
+            </span>
+          )}
+        </button>
       </div>
 
       {/* Filter bar */}
@@ -100,6 +154,97 @@ export const AdminArticlesPage: React.FC<Props> = ({ result, filters, categories
         </div>
       )}
 
+      {/*
+        ---- RECOVERY DRAFTS ----
+
+        A composer session that was never saved as an article. It is shown as
+        its own table rather than squeezed into the article one, because almost
+        none of those columns apply: there is no status, no category to speak
+        of, no author byline and nothing published. What matters here is what
+        was being written, how much of it there is, and when it was last seen.
+
+        The actions are deliberately two: RESUME, which puts the work back in
+        the composer, and DISCARD, which throws it away — with a confirmation,
+        because this is the only copy of that work in existence.
+      */}
+      {filters.status === RECOVERY_TAB ? (
+        <div className="bg-white border border-stone-200 rounded-sm shadow-2xs overflow-hidden">
+          <p className="px-4 py-3 border-b border-stone-200 bg-stone-50 text-[11px] text-stone-600 font-sans">
+            Work from the article composer that was never saved as an article — kept privately for you,
+            for {SNAPSHOT_RETENTION_NOTE}. Resuming puts it back in the editor; it becomes an article
+            only when you save it.
+          </p>
+          <div className="overflow-x-auto">
+            <table className="w-full text-left text-xs font-sans border-collapse">
+              <thead>
+                <tr className="bg-stone-50 border-b border-stone-200 text-stone-600 font-semibold uppercase text-[10px] tracking-wider">
+                  <th className="py-3 px-4">Draft</th>
+                  <th className="py-3 px-4">Body</th>
+                  <th className="py-3 px-4">Kind</th>
+                  <th className="py-3 px-4">Last kept</th>
+                  <th className="py-3 px-4 text-right">Actions</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-stone-100">
+                {recoveryDrafts.length === 0 ? (
+                  <tr>
+                    <td colSpan={5} className="py-8 text-center text-stone-400 font-mono text-xs">
+                      Nothing to recover — every composer session you opened was saved.
+                    </td>
+                  </tr>
+                ) : recoveryDrafts.map((d) => (
+                  <tr key={d.id} className="hover:bg-stone-50/80" data-testid="recovery-row">
+                    <td className="py-3 px-4 max-w-md">
+                      <span className="font-serif font-bold text-stone-900 line-clamp-1 text-sm">{d.title}</span>
+                      {d.slug && <span className="font-mono text-[10px] text-ink-muted block mt-0.5 truncate">/{d.slug}/</span>}
+                    </td>
+                    <td className="py-3 px-4 whitespace-nowrap text-stone-600 font-mono text-[11px]">
+                      {d.wordCount.toLocaleString()} word{d.wordCount === 1 ? '' : 's'}
+                    </td>
+                    <td className="py-3 px-4 whitespace-nowrap">
+                      <span className="text-[10px] font-mono px-2 py-0.5 rounded-xs font-semibold bg-stone-100 text-stone-700">
+                        {d.articleId ? 'EDIT OF A SAVED ARTICLE' : 'NEVER SAVED'}
+                      </span>
+                    </td>
+                    <td className="py-3 px-4 whitespace-nowrap text-stone-500 font-mono text-[11px]">
+                      {new Date(d.updatedAt).toLocaleString()}
+                    </td>
+                    <td className="py-3 px-4 text-right whitespace-nowrap space-x-3">
+                      <Link
+                        href={
+                          d.articleId
+                            ? `${ROUTES.ADMIN_ARTICLE_EDIT(d.articleId)}?recover=${d.id}`
+                            : `${ROUTES.ADMIN_ARTICLE_NEW}?recover=${d.id}`
+                        }
+                        className="text-[#8B5E3C] hover:text-stone-900 font-bold"
+                      >
+                        Resume
+                      </Link>
+                      <button
+                        type="button"
+                        disabled={isPending}
+                        onClick={() => {
+                          // The only copy of this work: an accidental click
+                          // here cannot be undone from anywhere.
+                          if (!window.confirm(`Discard the recovery draft "${d.title}"? This cannot be undone.`)) return;
+                          startTransition(async () => {
+                            const res = await discardDraftSnapshotAction({ id: d.id });
+                            setNotice(res.ok ? 'Recovery draft discarded.' : res.error);
+                            router.refresh();
+                          });
+                        }}
+                        className="text-stone-500 hover:text-rose-600 font-medium disabled:opacity-40"
+                      >
+                        Discard
+                      </button>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      ) : (
       <div className="bg-white border border-stone-200 rounded-sm shadow-2xs overflow-hidden">
         <div className="overflow-x-auto">
           <table className="w-full text-left text-xs font-sans border-collapse">
@@ -155,9 +300,10 @@ export const AdminArticlesPage: React.FC<Props> = ({ result, filters, categories
           </table>
         </div>
       </div>
+      )}
 
-      {/* Pagination */}
-      <div className="flex items-center justify-between text-xs font-sans text-stone-600">
+      {/* Pagination — article pages only; the recovery list is short by design. */}
+      <div hidden={filters.status === RECOVERY_TAB} className="flex items-center justify-between text-xs font-sans text-stone-600">
         <span>{result.total} article(s) · page {result.page} of {result.totalPages}</span>
         <div className="flex items-center gap-1.5">
           <button disabled={result.page <= 1} onClick={() => navigate({ page: String(result.page - 1) })} className="px-3 py-1.5 border border-stone-300 rounded-xs disabled:opacity-40 hover:bg-stone-50">Previous</button>

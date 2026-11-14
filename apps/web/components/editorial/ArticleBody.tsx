@@ -6,6 +6,7 @@ import { safeHref } from '../../lib/url';
 import { InlineText } from './InlineText';
 import { alignmentClass } from '../../lib/content/articleBlockStyle';
 import { videoEmbedUrl, videoWatchUrl, VIDEO_PROVIDER_LABEL } from '../../lib/content/articleEmbeds';
+import { completeFaqItems } from '../../lib/content/articleFaq';
 
 interface ArticleBodyProps {
   article: Article;
@@ -270,6 +271,15 @@ export const ArticleBody: React.FC<ArticleBodyProps> = ({ article, className = '
               it is also not a heading — headings would appear in the article's
               outline and in the contents list beside real sections.
             */
+            /*
+              ONLY COMPLETE PAIRS ARE DRAWN, and `completeFaqItems` is the same
+              call the FAQPage structured data uses. A question with an empty
+              answer under it reads as broken to a reader AND is invalid as
+              markup, so it must reach neither — and the only way to guarantee
+              the page and the markup agree is for both to ask one function.
+            */
+            const faqItems = completeFaqItems(block);
+            if (faqItems.length === 0) return null;
             return (
               <section key={index} className="my-8" aria-label={block.title || 'Questions and answers'}>
                 {block.title && (
@@ -278,7 +288,7 @@ export const ArticleBody: React.FC<ArticleBodyProps> = ({ article, className = '
                   </h3>
                 )}
                 <dl className="divide-y divide-stone-200 border-y border-stone-200">
-                  {block.items.map((item, i) => (
+                  {faqItems.map((item, i) => (
                     <div key={i} className="py-3.5">
                       <dt className="font-sans font-semibold text-base text-[#0F1115]">{item.question}</dt>
                       <dd className="mt-1.5 text-stone-800">

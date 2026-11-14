@@ -1,6 +1,7 @@
 import React from 'react';
 import { ArticleView } from '@/views/ArticleView';
-import { articleJsonLd, breadcrumbJsonLd, JsonLd } from '@/lib/seo';
+import { articleJsonLd, breadcrumbJsonLd, faqPageJsonLd, JsonLd } from '@/lib/seo';
+import { collectArticleFaqs } from '@/lib/content/articleFaq';
 import { articleUrl } from '@/config/routes';
 import { ViewBeacon } from '@/components/analytics/ViewBeacon';
 import { ArticleMonetization } from '@/components/monetization/ArticleMonetization';
@@ -56,12 +57,32 @@ export async function ArticlePageBody({ article }: { article: Article }) {
     { name: article.title, path },
   ];
 
+  /*
+    FAQPage, BUILT FROM WHAT THE PAGE ACTUALLY SHOWS.
+
+    `collectArticleFaqs` is the same call `ArticleBody` renders from, so the
+    markup cannot describe a question the reader does not see — the line
+    between accurate structured data and cloaking. It returns only COMPLETE
+    pairs, so a half-written question reaches neither the page nor the markup.
+
+    What this does not promise: a rich result. Google has limited FAQ rich
+    results to authoritative government and health sites since 2023. The value
+    is a correct machine-readable description of the content, and consistency
+    with the category, discipline, competitor and event pages, which have
+    emitted this since Batch 11.
+  */
+  const faqLd = faqPageJsonLd(collectArticleFaqs(article.structuredBody));
+
   return (
     <>
       <JsonLd
         data={[
           articleJsonLd(article, { schemaType, publisherName }),
           breadcrumbJsonLd(trail),
+          // Omitted entirely when the article has no complete question, which
+          // is the same pattern the category and discipline pages use — an
+          // empty FAQPage node is invalid markup, not a harmless one.
+          ...(faqLd ? [faqLd] : []),
         ]}
       />
       <ArticleView article={article} draft={await isStaffDraftPreview()} />

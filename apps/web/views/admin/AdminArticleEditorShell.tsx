@@ -1,8 +1,8 @@
 'use client';
 
-import React, { useState, useEffect, useMemo } from 'react';
+import React, { useState, useEffect, useMemo, useRef } from 'react';
 import Link from 'next/link';
-import { useParams, useRouter } from 'next/navigation';
+import { useParams, useRouter, useSearchParams } from 'next/navigation';
 import { Article, ArticleWorkflowStatus, PrimarySection, ContentBlock, SourceReference, DisclosureType, ArticleRevision } from '../../types';
 import { ROUTES } from '../../config/routes';
 /**
@@ -26,10 +26,14 @@ import {
 export interface AuthorOption { id: string; name: string; role: string }
 import { validateArticle } from '../../utils/seoValidator';
 import { saveArticleAction, transitionArticleAction, restoreRevisionAction } from '../../app/admin/article-actions';
+import {
+  saveDraftSnapshotAction, loadDraftSnapshotAction, discardDraftSnapshotAction,
+} from '../../app/admin/draft-recovery-actions';
 import { useUnsavedChangesWarning } from '../../lib/hooks/useUnsavedChangesWarning';
 import type { ArticleInput } from '../../lib/cms/articleService';
 import { RichBlockEditor } from '../../components/admin/editor/RichBlockEditor';
 import { RichTextBodyEditor } from '../../components/admin/editor/RichTextBodyEditor';
+import { ArticleFaqPanel } from '../../components/admin/editor/ArticleFaqPanel';
 import { SearchAppearancePreview } from '../../components/admin/editor/SearchAppearancePreview';
 import { productionCanonicalUrl } from '../../lib/seo/canonical';
 import { SeoAssistantPanel } from '../../components/admin/editor/SeoAssistantPanel';
@@ -174,6 +178,7 @@ export const AdminArticleEditorShell: React.FC<AdminArticleEditorShellProps> = (
   );
   const offeredTypes = useMemo(() => assignableTypes(typeSnapshot), [typeSnapshot]);
   const params = useParams<{ id: string }>();
+  const searchParams = useSearchParams();
   const id = params?.id;
   const router = useRouter();
   const isNew = !id;
@@ -310,6 +315,62 @@ export const AdminArticleEditorShell: React.FC<AdminArticleEditorShellProps> = (
    * exactly what it sent before this change.
    */
   const [area, setArea] = useState<EditorArea>('writing');
+
+  /**
+   * ---- RECOVERY AUTOSAVE ----
+   *
+   * WHAT THIS IS, AND WHAT IT IS NOT. It keeps a private copy of the composer's
+   * contents so that a closed tab, a crash or a stray navigation does not lose
+   * an afternoon's writing. It does NOT save the article: nothing is created,
+   * no version is bumped, no revision is written and nothing becomes publicly
+   * visible. The author still decides when the work becomes an article by
+   * pressing Save — which is also the moment the recovery copy is thrown away,
+   * because by then it would only offer to restore something older.
+   *
+   * `composerKey` identifies this editing session. An existing article keys on
+   * its id, so reopening it finds the same snapshot. A NEW article gets a
+   * random key kept in `sessionStorage`, so a reload continues the same session
+   * while a genuinely new composer starts a new one — and a session whose tab
+   * is gone simply stays in the recovery list, which is the point.
+   */
+  const [composerKey, setComposerKey] = useState<string>(() => {
+    if (id) return `article:${id}`;
+    if (typeof window === 'undefined') return 'new:pending';
+    const STORE = 'nfr.composerKey.new';
+    try {
+      const existing = window.sessionStorage.getItem(STORE);
+      if (existing && /^new:[A-Za-z0-9_-]{1,64}$/.test(existing)) return existing;
+      const fresh = `new:${crypto.randomUUID().replace(/-/g, '')}`;
+      window.sessionStorage.setItem(STORE, fresh);
+      return fresh;
+    } catch {
+      // Private browsing, or storage disabled: recovery still works for this
+      // tab, it just does not survive a reload. Better than failing to open.
+      return `new:${Math.random().toString(36).slice(2, 18)}`;
+    }
+  });
+  const [recoveryAt, setRecoveryAt] = useState<string | null>(null);
+  const [recoveryError, setRecoveryError] = useState<string | null>(null);
+
+  /**
+   * Bumped when the BODY is replaced wholesale, to remount the writing surface.
+   *
+   * WHY THIS IS NEEDED, AND WHY IT IS THE RIGHT SHAPE. `RichTextBodyEditor`
+   * builds its document from `blocks` exactly ONCE, on mount, and owns it
+   * afterwards — that is deliberate, and it is what stops the caret jumping on
+   * every keystroke. The consequence is that handing it a different `blocks`
+   * array later does nothing at all.
+   *
+   * Recovery does exactly that: it puts a whole stored body back into state.
+   * Browser-verified before this existed — the headline and excerpt came back
+   * while the paragraphs silently did not, which is the worst possible outcome
+   * for a recovery feature, because the author believes they have their work.
+   *
+   * Using the epoch as a React `key` says what is actually happening: this is
+   * not an edit to the current document, it is a different document. The
+   * editor's own rule is left untouched.
+   */
+  const [bodyEpoch, setBodyEpoch] = useState(0);
 
   // Warn on browser refresh / tab close while there are unsaved edits (Batch 20 §2).
   // Cleared automatically once a successful save sets isDirty=false; preserved on
@@ -586,8 +647,154 @@ export const AdminArticleEditorShell: React.FC<AdminArticleEditorShellProps> = (
     setVersion(res.version);
     setIsDirty(false);
     showNotification('Saved to the database.');
+    /*
+      The work is an article now, so the recovery copy is discarded. Keeping it
+      would be worse than useless: the recovery list would offer to restore a
+      version older than what is stored.
+
+      Deliberately not awaited before navigating — the save has already
+      succeeded, and a slow cleanup must not hold the author on the page. A
+      failure here leaves one stale entry in their own recovery list, which is
+      recoverable by hand and never loses anything.
+    */
+    void discardDraftSnapshotAction({ composerKey }).catch(() => {});
+    setRecoveryAt(null);
     if (isNew) router.replace(`/admin/articles/${res.id}/edit/`);
   };
+
+  /**
+   * Restores a recovery draft chosen from the Article Directory.
+   *
+   * The payload is the composer's own input shape, so this is a straight
+   * put-it-back rather than a reconstruction. Three things make it safe:
+   *
+   *   - it runs ONCE, guarded by a ref, so a re-render cannot overwrite what
+   *     the author has typed since;
+   *   - it marks the editor dirty, because restored work is still unsaved and
+   *     must not look otherwise;
+   *   - it adopts the snapshot's composer key, so the eventual save discards
+   *     the row that was restored instead of leaving it behind as a duplicate.
+   *
+   * The restored values go through the SAME save boundary as anything else, so
+   * a snapshot cannot put a state into the article that a save would refuse.
+   */
+  const restoredRef = useRef(false);
+  useEffect(() => {
+    const recoverId = searchParams?.get('recover');
+    if (!recoverId || restoredRef.current) return;
+    restoredRef.current = true;
+
+    void (async () => {
+      const res = await loadDraftSnapshotAction(recoverId);
+      if (!res.ok) {
+        showNotification(res.error);
+        return;
+      }
+      const p = res.snapshot.payload as Partial<ArticleInput> | null;
+      if (!p || typeof p !== 'object') {
+        showNotification('That recovery draft could not be read.');
+        return;
+      }
+
+      const str = (v: unknown, fallback = '') => (typeof v === 'string' ? v : fallback);
+      setTitle(str(p.title));
+      setDeck(str(p.deck));
+      setExcerpt(str(p.excerpt));
+      if (Array.isArray(p.blocks)) {
+        setBlocks(p.blocks as ContentBlock[]);
+        // A different document, not an edit to the current one.
+        setBodyEpoch((n) => n + 1);
+      }
+      setSeoTitle(str(p.seoTitle));
+      setIsSeoTitleCustom(Boolean(p.seoTitle));
+      setMetaDescription(str(p.metaDescription));
+      setImageSeoTitle(str(p.imageSeoTitle));
+      setImageAltText(str(p.imageAltText));
+      if (p.slug) { setSlug(str(p.slug)); setIsSlugCustom(true); }
+      if (p.categoryName) setCategory(str(p.categoryName));
+      setSubcategoryId(str(p.subcategoryId ?? ''));
+      if (p.articleType) setArticleType(str(p.articleType));
+      if (p.authorName) {
+        const match = authors.find((a) => a.name === p.authorName);
+        if (match) setAuthorKey(match.id);
+      }
+      setReviewerName(str(p.reviewerName));
+      setHeroImage(str(p.heroImage));
+      setImageCredit(str(p.imageCredit));
+      setImageCaption(str(p.imageCaption));
+      if (p.imageRightsStatus) setImageRightsStatus(p.imageRightsStatus as typeof imageRightsStatus);
+      if (p.disclosure) setDisclosure(p.disclosure as DisclosureType);
+      setDisclosureNote(str(p.disclosureNote));
+      if (Array.isArray(p.tags)) setTags(p.tags as string[]);
+      if (Array.isArray(p.sources)) {
+        setSources((p.sources as { sourceId?: string; title: string; url?: string; publisher: string; note?: string }[])
+          .map((s, i) => ({
+            id: s.sourceId ?? `${NEW_SOURCE_ID_PREFIX}${i}`,
+            title: s.title, url: s.url ?? '', publisher: s.publisher, note: s.note ?? '',
+          })) as typeof sources);
+      }
+      setRelationships({
+        disciplineIds: (p.disciplineIds as string[]) ?? [],
+        hubIds: (p.hubIds as string[]) ?? [],
+        eventIds: (p.eventIds as string[]) ?? [],
+        editionIds: (p.editionIds as string[]) ?? [],
+      });
+
+      setComposerKey(res.snapshot.composerKey);
+      if (res.snapshot.composerKey.startsWith('new:')) {
+        try { window.sessionStorage.setItem('nfr.composerKey.new', res.snapshot.composerKey); } catch { /* storage off */ }
+      }
+      setIsDirty(true);
+      showNotification('Recovered your unsaved draft. Save it to keep it.');
+    })();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [searchParams]);
+
+  /**
+   * Keeps a recovery copy while there are unsaved changes.
+   *
+   * DEBOUNCED, NOT ON A TIMER. The effect re-runs whenever the composer's
+   * contents change and waits for a pause in typing, so an author who types
+   * steadily for a minute causes one write at the end of it rather than twelve
+   * on a five-second tick. `isDirty` gates it, so an open-but-untouched editor
+   * never writes at all.
+   *
+   * The snapshot is the SAME payload a real save would send, so recovery is
+   * "put this back in the form" rather than a partial reconstruction that might
+   * differ from what the author was looking at.
+   */
+  useEffect(() => {
+    if (!isDirty || saving) return;
+    const timer = window.setTimeout(async () => {
+      const res = await saveDraftSnapshotAction({
+        composerKey,
+        articleId: id ?? null,
+        title: title || 'Untitled draft',
+        slug,
+        payload: buildInput() as unknown,
+      });
+      if (res.ok) {
+        setRecoveryAt(res.savedAt);
+        setRecoveryError(null);
+      } else {
+        // Reported quietly: a failed recovery copy must never interrupt
+        // writing, but the author has to be able to see that the safety net is
+        // not there — silently pretending to protect the work is worse than
+        // saying it cannot.
+        setRecoveryError(res.error);
+      }
+    }, 2500);
+    return () => window.clearTimeout(timer);
+    // `buildInput` is rebuilt on every render; the dependency list is the
+    // editor state it reads, so the debounce restarts only on a real change.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [
+    isDirty, saving, composerKey, id, title, slug, deck, excerpt, blocks,
+    seoTitle, metaDescription, imageSeoTitle, imageAltText, subcategoryId,
+    articleType, category, authorKey, reviewerName, heroImage, imageCredit,
+    imageCaption, imageRightsStatus, disclosure, disclosureNote, tags,
+    sources, relationships,
+  ]);
 
   // Server-validated, RBAC-enforced workflow transition.
   const handleWorkflowTransition = async (targetStatus: ArticleWorkflowStatus) => {
@@ -673,6 +880,34 @@ export const AdminArticleEditorShell: React.FC<AdminArticleEditorShellProps> = (
               Unsaved Changes
             </span>
           )}
+          {/*
+            THE RECOVERY INDICATOR.
+
+            It says what is actually true — that a private copy exists and when
+            it was taken — rather than "Saved", which would be a lie: the
+            article itself is still unsaved, and an author who read "Saved" and
+            closed the tab would be relying on something that has not happened.
+            When the copy cannot be written, that is shown too, because a safety
+            net nobody can see is one nobody can trust.
+          */}
+          {recoveryError ? (
+            <span
+              data-testid="editor-recovery-state"
+              role="status"
+              title={recoveryError}
+              className="text-[10px] font-mono px-2 py-0.5 bg-rose-100 text-rose-700 rounded-xs font-bold"
+            >
+              Recovery copy failed
+            </span>
+          ) : recoveryAt ? (
+            <span
+              data-testid="editor-recovery-state"
+              role="status"
+              className="text-[10px] font-mono px-2 py-0.5 bg-stone-100 text-stone-600 rounded-xs"
+            >
+              Recovery copy {new Date(recoveryAt).toLocaleTimeString()}
+            </span>
+          ) : null}
         </div>
 
         {/* Right: Role Switcher & Primary Action Buttons */}
@@ -1084,6 +1319,7 @@ export const AdminArticleEditorShell: React.FC<AdminArticleEditorShellProps> = (
               {bodyMode === 'rich' ? (
                 <>
                   <RichTextBodyEditor
+                    key={bodyEpoch}
                     blocks={blocks}
                     onChange={(nextBlocks) => {
                       setBlocks(nextBlocks);
@@ -1091,8 +1327,17 @@ export const AdminArticleEditorShell: React.FC<AdminArticleEditorShellProps> = (
                     }}
                   />
                   <p className="text-[11px] text-stone-500 font-sans">
-                    Tables, callouts, images, citations and disclosures appear here as locked cards that keep their
-                    content exactly as saved. Switch to <strong>Blocks</strong> to add or edit one.
+                    {/*
+                      This used to say "switch to Blocks to add or edit one",
+                      which stopped being true when the Insert menu and the
+                      in-place card panel arrived. A help line that describes a
+                      detour the surface no longer requires sends authors the
+                      long way round.
+                    */}
+                    Tables, callouts, images, galleries, videos, citations and disclosures are added from
+                    <strong> Insert</strong> (or by typing <code className="font-mono">/</code> on an empty line),
+                    and clicking a card opens its fields here. <strong>Blocks</strong> remains available as a
+                    plain list view of the same body.
                   </p>
                 </>
               ) : (
@@ -1108,6 +1353,23 @@ export const AdminArticleEditorShell: React.FC<AdminArticleEditorShellProps> = (
                 />
               )}
             </div>
+
+            {/*
+              ---- ARTICLE FAQ ----
+
+              Directly below the body, because that is where it is written and
+              where it is read: an author decides what a reader will still be
+              asking only once the piece exists. It edits a body block rather
+              than a second store, so the published page and the FAQPage
+              structured data are built from exactly these rows.
+            */}
+            <ArticleFaqPanel
+              blocks={blocks}
+              onChange={(nextBlocks) => {
+                setBlocks(nextBlocks);
+                markDirty();
+              }}
+            />
 
             </div>
             <div data-editor-area="seo" hidden={area !== 'seo'} className="space-y-6">
