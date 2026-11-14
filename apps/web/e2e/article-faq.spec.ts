@@ -197,6 +197,47 @@ test.describe('the FAQ panel below the body', () => {
     await expect(panel.getByRole('textbox', { name: 'Question 1' })).toHaveCount(0);
     await expect(panel.getByTestId('article-faq-count')).toContainText('0 published');
   });
+
+  test('a question removed in the panel STAYS removed after typing in the body', async ({ page }) => {
+    /*
+      THE REGRESSION THIS EXISTS TO CATCH.
+
+      The writing surface builds its document once on mount and owns it
+      afterwards. While that document also contained the question set, removing
+      a question in the panel below looked like it worked and then silently
+      undid itself: the next keystroke in the body made the editor re-emit the
+      document it was still holding, question included.
+
+      The fix gives the editor the body WITHOUT the question set and re-attaches
+      it on the way out, so the two never hold the same block. Typing in the
+      body afterwards is the exact action that used to resurrect it.
+    */
+    await login(page);
+    await page.goto(`/admin/articles/${draftId}/edit/`);
+    const panel = page.getByTestId('article-faq-panel');
+    await expect(panel).toBeVisible();
+
+    if (await panel.getByRole('textbox', { name: 'Question 1' }).count() === 0) {
+      await panel.getByTestId('article-faq-add').click();
+      await panel.getByRole('textbox', { name: 'Question 1' }).fill('Will this come back?');
+      await panel.getByRole('textbox', { name: 'Answer 1' }).fill('It must not.');
+    }
+
+    await panel.getByRole('button', { name: 'Remove question 1' }).click();
+    await expect(panel.getByRole('textbox', { name: 'Question 1' })).toHaveCount(0);
+
+    // The action that used to bring it back.
+    const surface = page.locator('#article-body-surface [contenteditable="true"]');
+    await surface.click();
+    await page.keyboard.press('Control+End');
+    await page.keyboard.type(' A word typed after the removal.');
+
+    await expect(
+      panel.getByRole('textbox', { name: 'Question 1' }),
+      'typing in the body must not resurrect a removed question',
+    ).toHaveCount(0);
+    await expect(panel.getByTestId('article-faq-count')).toContainText('0 published');
+  });
 });
 
 test.describe('the published article and its structured data', () => {

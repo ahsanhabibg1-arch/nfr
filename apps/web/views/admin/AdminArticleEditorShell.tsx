@@ -34,6 +34,7 @@ import type { ArticleInput } from '../../lib/cms/articleService';
 import { RichBlockEditor } from '../../components/admin/editor/RichBlockEditor';
 import { RichTextBodyEditor } from '../../components/admin/editor/RichTextBodyEditor';
 import { ArticleFaqPanel } from '../../components/admin/editor/ArticleFaqPanel';
+import { articleFaqBlocks } from '../../lib/content/articleFaq';
 import { SearchAppearancePreview } from '../../components/admin/editor/SearchAppearancePreview';
 import { productionCanonicalUrl } from '../../lib/seo/canonical';
 import { SeoAssistantPanel } from '../../components/admin/editor/SeoAssistantPanel';
@@ -371,6 +372,12 @@ export const AdminArticleEditorShell: React.FC<AdminArticleEditorShellProps> = (
    * editor's own rule is left untouched.
    */
   const [bodyEpoch, setBodyEpoch] = useState(0);
+  /**
+   * The body as the writing surface sees it: everything EXCEPT the question
+   * set, which the FAQ panel owns. See the comment at `<RichTextBodyEditor>`
+   * for why the two must not share a block.
+   */
+  const bodyBlocksWithoutFaq = useMemo(() => blocks.filter((b) => b.type !== 'faq'), [blocks]);
 
   // Warn on browser refresh / tab close while there are unsaved edits (Batch 20 §2).
   // Cleared automatically once a successful save sets isDirty=false; preserved on
@@ -1318,11 +1325,30 @@ export const AdminArticleEditorShell: React.FC<AdminArticleEditorShellProps> = (
 
               {bodyMode === 'rich' ? (
                 <>
+                  {/*
+                    THE WRITING SURFACE DOES NOT SEE THE FAQ, AND THAT IS THE FIX.
+
+                    Both this editor and the FAQ panel below edit `blocks`, and
+                    the editor builds its document ONCE on mount and owns it
+                    afterwards. So while its copy still held the question set, a
+                    question removed in the panel came back the moment anything
+                    was typed in the body — the editor re-emitted the document
+                    it was holding, question included. Browser-verified: the
+                    removal looked like it worked and silently undid itself.
+
+                    Splitting ownership removes the conflict rather than
+                    papering over it: the editor is given the body WITHOUT the
+                    question set, and the set is re-attached on the way out. Two
+                    editors, two disjoint sets of blocks, no race.
+
+                    The question set is appended LAST, which is also where a
+                    reader meets it.
+                  */}
                   <RichTextBodyEditor
                     key={bodyEpoch}
-                    blocks={blocks}
+                    blocks={bodyBlocksWithoutFaq}
                     onChange={(nextBlocks) => {
-                      setBlocks(nextBlocks);
+                      setBlocks([...nextBlocks, ...articleFaqBlocks(blocks)]);
                       markDirty();
                     }}
                   />

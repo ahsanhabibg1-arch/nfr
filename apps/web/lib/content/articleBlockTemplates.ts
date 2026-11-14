@@ -26,6 +26,13 @@ import type { ContentBlock } from '../../types';
 export type InsertableBlockType =
   | 'image' | 'table' | 'comparisonTable' | 'callout' | 'takeaway'
   | 'sourceLink' | 'disclosure' | 'quote' | 'divider' | 'list' | 'checklist'
+  /**
+   * `faq` is NOT offered in the Insert menu: the question set is owned by the
+   * FAQ panel below the body, and two ways to create one meant two editors
+   * holding the same block — which lost an author's removal. The key stays in
+   * the union because stored content and `insertableBlock` lookups still use
+   * it.
+   */
   | 'faq' | 'footnotes' | 'gallery' | 'video';
 
 export interface InsertableBlockDef {
@@ -106,19 +113,6 @@ export const INSERTABLE_BLOCKS: readonly InsertableBlockDef[] = [
     // The provider is a placeholder and the id is empty until the dialog
     // supplies a real reference; an empty id is saveable and renders nothing.
     build: () => ({ type: 'video', provider: 'youtube', videoId: '', title: '' }),
-  },
-  {
-    key: 'faq',
-    label: 'Questions and answers',
-    slash: ['faq', 'questions', 'qa'],
-    hint: 'A question-and-answer set, rendered as a description list',
-    build: () => ({
-      type: 'faq',
-      title: 'Frequently asked',
-      items: [
-        { question: 'What does a reader most often ask here?', answer: 'Answer it in a sentence or two.' },
-      ],
-    }),
   },
   {
     key: 'footnotes',
