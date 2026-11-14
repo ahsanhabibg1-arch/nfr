@@ -151,7 +151,7 @@ PostgreSQL report a bare duplicate-index error.
 | **Next.js production build** | **PASS** — `/[section]` and `/[section]/[article]` both compile; no route conflict |
 | **Prisma** | schema valid; dev + test up to date; drift check clean |
 | **Playwright — targeted subset** (8 specs that held all 12 failures) | 12 failed → **1 failed, 87 passed** |
-| **Playwright — full suite** | see §F; final figure to be recorded from the completing run |
+| **Playwright — full suite** | **1 failed · 205 passed** (was 12 failed · 194 passed). The single failure is the open sticky-inspector finding in §F |
 | **Responsive** | 320 / 375 / 390 / 768 / 1024 / 1280 / 1440 — overflow assertions pass at every width |
 | **Accessibility** | axe serious/critical violations on the admin editor: 2 → **0** |
 
@@ -200,10 +200,10 @@ Stated plainly: these were in the brief and are **not done**.
    the Builder. Every other page family can.
 2. **Phase 4.2 — Media Library picker for the subcategory hero.** Hero image is still a
    pasted URL. No ALT/credit/rights workflow, no responsive derivative selection.
-3. **Phase 6 — full regression breadth.** Vitest, TypeScript, build, Prisma and the
-   targeted Playwright subset were all run. The 12 named user journeys were not each
-   walked end to end; the Subcategory journey (create → attach → section card → archive →
-   article → redirect) was browser-verified, the rest were not.
+3. **Phase 6 — full regression breadth.** Vitest, TypeScript, build, Prisma and the full
+   Playwright suite were all run (**205 passed, 1 failed**). What was *not* done is the
+   12 named user journeys walked end to end: the Subcategory journey (create → attach →
+   section card → archive → article → redirect) was browser-verified, the rest were not.
 4. **Phase 7 — final quality review** was not performed as its own pass.
 
 ---
