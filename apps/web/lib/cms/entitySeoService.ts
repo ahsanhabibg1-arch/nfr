@@ -69,6 +69,24 @@ export async function upsertEntitySeo(actor: Actor, entityType: LandingEntityTyp
   return row;
 }
 
+/** Updates only the indexing flag while preserving the other SEO overrides. */
+export async function setEntitySeoNoindex(
+  actor: Actor,
+  entityType: LandingEntityType,
+  entityId: string,
+  noindex: boolean,
+): Promise<EntitySeo> {
+  requireEntityPerm(actor, entityType);
+  await assertEntityExists(entityType, entityId);
+  const row = await prisma.entitySeo.upsert({
+    where: { entityType_entityId: { entityType, entityId } },
+    create: { entityType, entityId, noindex, updatedById: actor.id },
+    update: { noindex, updatedById: actor.id },
+  });
+  await audit(actor.id, 'entity.seo.upsert', 'entity_seo', `${entityType}:${entityId}`, noindex ? 'noindex' : 'index');
+  return row;
+}
+
 /**
  * Merge editor SEO overrides onto a page's derived metadata, for `buildMetadata`.
  * Overrides fall back to derived values; `noindex` is additive-only (derived OR editor),

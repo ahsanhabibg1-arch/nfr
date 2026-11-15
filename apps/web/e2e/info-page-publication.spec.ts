@@ -49,6 +49,18 @@ async function saveDraft(page: Page, title: string, body: string) {
   await page.waitForTimeout(600);
 }
 
+async function setIndexing(page: Page, allowed: boolean) {
+  await page.goto('/admin/info-pages/');
+  const row = page.locator('tr', { hasText: SLUG }).first();
+  await row.getByRole('button', { name: 'Edit', exact: true }).click();
+  const checkbox = page.getByLabel('Allow Search Engine Indexing', { exact: true });
+  await expect(checkbox).toBeVisible();
+  if (allowed) await checkbox.check();
+  else await checkbox.uncheck();
+  await page.getByRole('button', { name: 'Save Draft' }).click();
+  await page.waitForTimeout(600);
+}
+
 /**
  * Fetches the public URL until it shows `expected`, or gives up.
  *
@@ -103,6 +115,7 @@ test.describe('an information page, created and published through the admin', ()
     await expect(page.getByRole('button', { name: 'Create Draft' })).toBeEnabled();
     await page.getByRole('button', { name: 'Create Draft' }).click();
     await expect(page.locator('tr', { hasText: SLUG }).first()).toBeVisible();
+    await setIndexing(page, false);
 
     // ---- 2. The draft is NOT public before publication --------------------
     let res = await request.get(PUBLIC_PATH);
@@ -129,15 +142,17 @@ test.describe('an information page, created and published through the admin', ()
     let html = await publicHtmlContaining(request, 'V1 BODY');
     expect((await request.get(PUBLIC_PATH)).status(), 'the published page is now reachable').toBe(200);
     expect(html).toContain('V1 BODY');
-    expect(html, 'a published page is indexable').not.toContain('name="robots" content="noindex');
+    expect(html, 'unchecked draft selection publishes noindex').toContain('name="robots" content="noindex');
 
     // ---- 5. Write V2. Visitors must still get V1. -------------------------
     await saveDraft(page, 'Version Two', 'COMPLETELY DIFFERENT V2 BODY.');
+    await setIndexing(page, true);
 
     res = await request.get(PUBLIC_PATH);
     html = await res.text();
     expect(html, 'the live page is untouched while V2 is written').toContain('V1 BODY');
     expect(html).not.toContain('V2 BODY');
+    expect(html, 'draft indexing changes do not reach live metadata').toContain('name="robots" content="noindex');
 
     // The editor can see V2; the public cannot.
     await page.goto(PREVIEW_PATH);
@@ -148,6 +163,7 @@ test.describe('an information page, created and published through the admin', ()
     html = await publicHtmlContaining(request, 'V2 BODY');
     expect(html, 'publishing is what moves the live page').toContain('V2 BODY');
     expect(html).not.toContain('V1 BODY');
+    expect(html, 'checked eligible draft removes noindex on publication').not.toContain('name="robots" content="noindex');
 
     // ---- 7. V1 is still recoverable, and restoring does not disturb V2 ----
     await page.goto('/admin/info-pages/');

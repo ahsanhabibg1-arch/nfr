@@ -7,6 +7,7 @@ import type { Actor } from './guard';
 import { audit } from './guard';
 import { ServiceError } from './articleService';
 import { sanitizeLegalHtml } from './sanitizeHtml';
+import { setEntitySeoNoindex } from './entitySeoService';
 
 export const LEGACY_SLUGS = ['about', 'privacy', 'terms', 'editorial-policy', 'affiliate-disclosure', 'corrections', 'contact'] as const;
 
@@ -43,6 +44,8 @@ const SaveSchema = z.object({
   metaDescription: z.string().max(500).nullable().optional(),
   /** A Media Library asset id, or null to clear the hero. */
   heroMediaId: z.string().uuid().nullable().optional(),
+  /** Existing EntitySeo control; captured into the published snapshot on publish. */
+  noindex: z.boolean().optional(),
 });
 export type InfoPageInput = z.infer<typeof SaveSchema>;
 
@@ -212,6 +215,10 @@ async function recordRevision(
   const last = await tx.infoPageRevision.findFirst({
     where: { pageId: page.id }, orderBy: { revisionNo: 'desc' }, select: { revisionNo: true },
   });
+  const seo = await tx.entitySeo.findUnique({
+    where: { entityType_entityId: { entityType: 'INFO_PAGE', entityId: page.id } },
+    select: { noindex: true },
+  });
   await tx.infoPageRevision.create({
     data: {
       pageId: page.id,
@@ -223,6 +230,7 @@ async function recordRevision(
       snapshot: {
         title: page.title, body: page.body,
         seoTitle: page.seoTitle, metaDescription: page.metaDescription,
+        ...(seo ? { noindex: seo.noindex } : {}),
       },
     },
   });
@@ -251,7 +259,8 @@ export async function saveInfoPageDraft(
 ): Promise<InfoPage> {
   need(actor, 'system.config');
   const raw = SaveSchema.parse(input);
-  const data = { ...raw, body: sanitizeLegalHtml(raw.body) };
+  const { noindex, ...pageInput } = raw;
+  const data = { ...pageInput, body: sanitizeLegalHtml(pageInput.body) };
   /**
    * The asset must exist and must be one the Media Library serves. An id that
    * does not resolve would otherwise be stored, fail the foreign key at save
@@ -275,9 +284,13 @@ export async function saveInfoPageDraft(
   const droppedApproval = existing != null && (existing.status === 'APPROVED' || existing.approvedAt != null);
 
   if (!existing) {
-    const created = await prisma.infoPage.create({
-      data: { ...data, status: 'DRAFT', createdById: actor.id, updatedById: actor.id },
+    const created = await prisma.$transaction(async (tx) => {
+      const page = await tx.infoPage.create({
+        data: { ...data, status: 'DRAFT', createdById: actor.id, updatedById: actor.id },
+      });
+      return page;
     });
+    if (typeof noindex === 'boolean') await setEntitySeoNoindex(actor, 'INFO_PAGE', created.id, noindex);
     await audit(actor.id, 'info_page.save_draft', 'InfoPage', created.id, `${data.slug} — created`);
     return created;
   }
@@ -315,7 +328,7 @@ export async function saveInfoPageDraft(
     }
     return tx.infoPage.findUniqueOrThrow({ where: { id: existing.id } });
   });
-
+  if (typeof noindex === 'boolean') await setEntitySeoNoindex(actor, 'INFO_PAGE', existing.id, noindex);
   await audit(
     actor.id,
     'info_page.save_draft',
@@ -605,6 +618,13 @@ export async function restoreInfoPageRevision(actor: Actor, slug: string, revisi
         updatedById: actor.id,
       },
     });
+    if (typeof snap.noindex === 'boolean') {
+      await tx.entitySeo.upsert({
+        where: { entityType_entityId: { entityType: 'INFO_PAGE', entityId: page.id } },
+        create: { entityType: 'INFO_PAGE', entityId: page.id, noindex: snap.noindex, updatedById: actor.id },
+        update: { noindex: snap.noindex, updatedById: actor.id },
+      });
+    }
   });
   await audit(actor.id, 'info_page.restore_revision', 'InfoPage', page.id,
     `${slug} — revision ${revisionNo} loaded into the draft; the live page is unchanged`);

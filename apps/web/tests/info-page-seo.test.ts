@@ -142,6 +142,35 @@ dbSuite('PM-04 — info page SEO through EntitySeo', () => {
     ).toBe(false);
   });
 
+  it('saves indexing in the draft, promotes it on publish, and restores it with revisions', async () => {
+    const slug = `seo-indexing-control-${rid()}`; madeSlugs.push(slug);
+    await svc.saveInfoPageDraft(actor, { slug, title: 'V1', body: '<p>one</p>', noindex: true });
+    await svc.submitForReview(actor, slug);
+    await svc.approveInfoPage(actor, slug);
+    await svc.publishInfoPage(actor, slug);
+    expect((await svc.getPublishedInfoPage(slug))!.seo!.noindex).toBe(true);
+
+    await svc.saveInfoPageDraft(actor, { slug, title: 'V2', body: '<p>two</p>', noindex: false });
+    expect((await svc.getPublishedInfoPage(slug))!.seo!.noindex).toBe(true);
+    const draftSeo = await prisma.entitySeo.findUniqueOrThrow({
+      where: { entityType_entityId: { entityType: 'INFO_PAGE', entityId: (await prisma.infoPage.findUniqueOrThrow({ where: { slug } })).id } },
+      select: { noindex: true },
+    });
+    expect(draftSeo.noindex).toBe(false);
+
+    await svc.submitForReview(actor, slug);
+    await svc.approveInfoPage(actor, slug);
+    await svc.publishInfoPage(actor, slug);
+    expect((await svc.getPublishedInfoPage(slug))!.seo!.noindex).toBe(false);
+
+    const revisions = await svc.listInfoPageRevisions(actor, slug);
+    await svc.restoreInfoPageRevision(actor, slug, revisions[revisions.length - 1].revisionNo);
+    expect((await prisma.entitySeo.findUniqueOrThrow({
+      where: { entityType_entityId: { entityType: 'INFO_PAGE', entityId: (await prisma.infoPage.findUniqueOrThrow({ where: { slug } })).id } },
+      select: { noindex: true },
+    })).noindex).toBe(true);
+  });
+
   it('an archived page leaves the sitemap', async () => {
     const slug = `seo-archived-${rid()}`; madeSlugs.push(slug);
     await publish(slug, 'Temp', '<p>t</p>');

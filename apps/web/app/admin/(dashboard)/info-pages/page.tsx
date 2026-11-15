@@ -13,6 +13,25 @@ export default async function Page() {
     ? await prisma.mediaAsset.findMany({ where: { id: { in: heroIds } }, select: { id: true, url: true } })
     : [];
   const heroUrlById = new Map(heroAssets.map((a) => [a.id, a.url]));
+  const seoRows = pages.length
+    ? await prisma.entitySeo.findMany({
+        where: { entityType: 'INFO_PAGE', entityId: { in: pages.map((p) => p.id) } },
+        select: { entityId: true, noindex: true },
+      })
+    : [];
+  const noindexByPageId = new Map(seoRows.map((row) => [row.entityId, row.noindex]));
+  const draftIndexingAllowed = (page: typeof pages[number]) => {
+    const explicit = noindexByPageId.get(page.id);
+    if (typeof explicit === 'boolean') return !explicit;
+    const snapshot = page.publishedSnapshot;
+    if (snapshot && typeof snapshot === 'object' && !Array.isArray(snapshot)) {
+      const seo = (snapshot as Record<string, unknown>).seo;
+      if (seo && typeof seo === 'object' && !Array.isArray(seo) && typeof (seo as Record<string, unknown>).noindex === 'boolean') {
+        return !(seo as Record<string, boolean>).noindex;
+      }
+    }
+    return false;
+  };
 
   const legacySlugs = new Set(LEGAL_PAGES.map((lp) => lp.slug));
 
@@ -45,6 +64,7 @@ export default async function Page() {
       version: db?.version ?? 0,
       heroMediaId: db?.heroMediaId ?? null,
       heroUrl: db?.heroMediaId ? heroUrlById.get(db.heroMediaId) ?? null : null,
+      allowSearchIndexing: db ? draftIndexingAllowed(db) : lp.review === 'approved',
     };
   });
 
@@ -71,6 +91,7 @@ export default async function Page() {
       version: p.version,
       heroMediaId: p.heroMediaId,
       heroUrl: p.heroMediaId ? heroUrlById.get(p.heroMediaId) ?? null : null,
+      allowSearchIndexing: draftIndexingAllowed(p),
     }));
 
   return <AdminInfoPagesPage pages={[...legacyRows, ...cmsRows]} />;

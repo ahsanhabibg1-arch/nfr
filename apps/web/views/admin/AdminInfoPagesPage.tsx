@@ -45,6 +45,7 @@ export interface InfoPageRow {
   /** The hero asset REFERENCE, and its URL for the thumbnail only. */
   heroMediaId: string | null;
   heroUrl: string | null;
+  allowSearchIndexing: boolean;
 }
 
 interface Props { pages: InfoPageRow[]; }
@@ -108,7 +109,7 @@ export const AdminInfoPagesPage: React.FC<Props> = ({ pages }) => {
   const [notice, setNotice] = useState<{ text: string; ok: boolean } | null>(null);
   const [editing, setEditing] = useState<string | null>(null);
   const [creating, setCreating] = useState(false);
-  const [form, setForm] = useState({ slug: '', title: '', body: '', seoTitle: '', metaDescription: '', heroMediaId: '' as string, heroUrl: '' as string });
+  const [form, setForm] = useState({ slug: '', title: '', body: '', seoTitle: '', metaDescription: '', heroMediaId: '' as string, heroUrl: '' as string, allowSearchIndexing: true });
   const [heroPicker, setHeroPicker] = useState(false);
   /** The version the editor loaded, sent back on save as the optimistic lock. */
   const [editingVersion, setEditingVersion] = useState<number | null>(null);
@@ -166,6 +167,7 @@ export const AdminInfoPagesPage: React.FC<Props> = ({ pages }) => {
       metaDescription: row.dbMetaDescription || row.defaultDescription || '',
       heroMediaId: row.heroMediaId || '',
       heroUrl: row.heroUrl || '',
+      allowSearchIndexing: row.allowSearchIndexing,
     });
   };
 
@@ -173,7 +175,7 @@ export const AdminInfoPagesPage: React.FC<Props> = ({ pages }) => {
     setEditing(null);
     setCreating(true);
     setEditingVersion(null);
-    setForm({ slug: '', title: '', body: '', seoTitle: '', metaDescription: '', heroMediaId: '', heroUrl: '' });
+    setForm({ slug: '', title: '', body: '', seoTitle: '', metaDescription: '', heroMediaId: '', heroUrl: '', allowSearchIndexing: true });
   };
 
   const saveDraft = () => {
@@ -186,6 +188,7 @@ export const AdminInfoPagesPage: React.FC<Props> = ({ pages }) => {
           slug, title: form.title, body: form.body,
           seoTitle: form.seoTitle || null, metaDescription: form.metaDescription || null,
           heroMediaId: form.heroMediaId || null,
+          noindex: !form.allowSearchIndexing,
         },
         // Omitted when creating: there is no prior version to quote.
         creating ? undefined : (editingVersion ?? undefined),
@@ -424,9 +427,14 @@ export const AdminInfoPagesPage: React.FC<Props> = ({ pages }) => {
           <div><label htmlFor={`${fid}-c-seotitle`} className={lbl}>SEO Title (optional override)</label><input id={`${fid}-c-seotitle`} value={form.seoTitle} onChange={(e) => setForm({ ...form, seoTitle: e.target.value })} className={inp} /></div>
           <div><label htmlFor={`${fid}-c-desc`} className={lbl}>Meta Description</label><textarea id={`${fid}-c-desc`} rows={2} value={form.metaDescription} onChange={(e) => setForm({ ...form, metaDescription: e.target.value })} className={inp} /></div>
           <div className="flex gap-2">
+            <label className="flex items-center gap-2 mr-auto text-xs text-stone-700">
+              <input type="checkbox" checked={form.allowSearchIndexing} onChange={(e) => setForm({ ...form, allowSearchIndexing: e.target.checked })} />
+              Allow Search Engine Indexing
+            </label>
             <button onClick={saveDraft} disabled={isPending || !form.slug || !form.title || !form.body} className={`${btn} bg-[#0F1115] text-[#D4A757]`}>Create Draft</button>
             <button onClick={() => setCreating(false)} className={`${btn} border border-stone-300 text-stone-700`}>Cancel</button>
           </div>
+          <p className="text-[10px] text-stone-500">Checked: eligible published pages may be indexed. Unchecked: published pages use <code>noindex, follow</code>.</p>
         </div>
       )}
 
@@ -476,9 +484,14 @@ export const AdminInfoPagesPage: React.FC<Props> = ({ pages }) => {
           <div><label htmlFor={`${fid}-e-seotitle`} className={lbl}>SEO Title (optional override)</label><input id={`${fid}-e-seotitle`} value={form.seoTitle} onChange={(e) => setForm({ ...form, seoTitle: e.target.value })} className={inp} /></div>
           <div><label htmlFor={`${fid}-e-desc`} className={lbl}>Meta Description</label><textarea id={`${fid}-e-desc`} rows={2} value={form.metaDescription} onChange={(e) => setForm({ ...form, metaDescription: e.target.value })} className={inp} /></div>
           <div className="flex gap-2">
+            <label className="flex items-center gap-2 mr-auto text-xs text-stone-700">
+              <input type="checkbox" checked={form.allowSearchIndexing} onChange={(e) => setForm({ ...form, allowSearchIndexing: e.target.checked })} />
+              Allow Search Engine Indexing
+            </label>
             <button onClick={saveDraft} disabled={isPending} className={`${btn} bg-[#0F1115] text-[#D4A757]`}>Save Draft</button>
             <button onClick={() => setEditing(null)} className={`${btn} border border-stone-300 text-stone-700`}>Cancel</button>
           </div>
+          <p className="text-[10px] text-stone-500">Checked: eligible published pages may be indexed. Unchecked: published pages use <code>noindex, follow</code>.</p>
         </div>
       )}
     </div>
