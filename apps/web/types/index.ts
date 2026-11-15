@@ -99,7 +99,7 @@ export type ContentBlock =
    * checklists existed is unchanged and renders as it always did.
    */
   | { type: 'list'; items: string[]; ordered?: boolean; checklist?: boolean; checked?: boolean[]; itemRuns?: (InlineRun[] | null)[] }
-  | { type: 'table'; headers: string[]; rows: string[][]; caption?: string }
+  | { type: 'table'; headers: string[]; rows: string[][]; caption?: string; columnAlign?: BlockAlignment[] }
   | { type: 'callout'; variant?: 'info' | 'takeaway' | 'warning' | 'curator'; title?: string; text: string; runs?: InlineRun[] }
   | { type: 'image'; src: string; alt: string; caption?: string; credit?: string }
   | { type: 'sourceLink'; title: string; url: string; publisher?: string; note?: string }

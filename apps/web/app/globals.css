@@ -84,6 +84,13 @@ body {
    heading, not that the editor is a pixel preview of the page.
    --------------------------------------------------------------------------- */
 .prose-editor > * + * { margin-top: 0.9rem; }
+.prose-editor {
+  max-height: min(36rem, 60vh);
+  overflow-y: auto;
+  overflow-x: hidden;
+  overscroll-behavior: contain;
+  padding-right: 0.5rem;
+}
 
 .prose-editor h2,
 .prose-editor h3,

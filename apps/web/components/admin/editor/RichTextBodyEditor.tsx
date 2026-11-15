@@ -2,11 +2,12 @@
 
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { EditorContent, useEditor, type Editor } from '@tiptap/react';
-import { Node, mergeAttributes } from '@tiptap/core';
+import { Extension, Node, mergeAttributes } from '@tiptap/core';
 import StarterKit from '@tiptap/starter-kit';
 import Link from '@tiptap/extension-link';
 import { TaskList, TaskItem } from '@tiptap/extension-list';
-import { NodeSelection } from '@tiptap/pm/state';
+import { Fragment, Slice } from '@tiptap/pm/model';
+import { NodeSelection, Plugin } from '@tiptap/pm/state';
 import { RichBlockEditor } from './RichBlockEditor';
 import { MediaPickerModal } from './MediaPickerModal';
 import {
@@ -22,6 +23,7 @@ import {
   findMatches, nextMatchIndex, replacementPlan, MAX_MATCHES,
   type MatchRange, type SearchableBlock,
 } from '../../../lib/content/articleFindReplace';
+import { pastedTables, sanitizePastedHtml } from '../../../lib/content/articlePaste';
 import {
   INSERTABLE_BLOCKS, insertableBlock, matchSlashCommand,
   type InsertableBlockDef, type InsertableBlockType,
@@ -84,27 +86,152 @@ const StructuredBlock = Node.create({
   },
   addNodeView() {
     return ({ node }) => {
-      const block = node.attrs.block as ContentBlock | null;
       const dom = document.createElement('div');
       dom.setAttribute('data-structured-block', '');
       dom.setAttribute('contenteditable', 'false');
       dom.className =
         'my-3 px-3 py-2 border border-dashed border-stone-300 bg-stone-50 rounded-xs text-[11px] font-mono text-stone-600 select-none';
-      const label = block?.type ?? 'unknown';
-      const detail =
-        block && 'text' in block && typeof (block as { text?: string }).text === 'string'
-          ? ` — ${(block as { text: string }).text.slice(0, 60)}`
-          : block && 'alt' in block && typeof (block as { alt?: string }).alt === 'string'
-            ? ` — ${(block as { alt: string }).alt.slice(0, 60)}`
-            : block && 'title' in block && typeof (block as { title?: string }).title === 'string'
-              ? ` — ${(block as { title: string }).title.slice(0, 60)}`
-              : '';
-      // "Click to edit" is the instruction, and it is true: selecting the card
-      // opens the structured panel above the writing surface. It used to say
-      // "edit below", which pointed at the Blocks view — a detour this surface
-      // no longer requires.
-      dom.textContent = `[${label}]${detail}  — click to edit`;
-      return { dom };
+      const render = (block: ContentBlock | null) => {
+        dom.replaceChildren();
+        if (block?.type === 'table') {
+          dom.className = 'my-4 overflow-x-auto rounded-xs border border-stone-300 bg-white';
+          const table = document.createElement('table');
+          table.className = 'min-w-full border-collapse text-sm';
+          if (block.caption) {
+            const caption = document.createElement('caption');
+            caption.className = 'px-3 py-2 text-left font-semibold text-stone-800';
+            caption.textContent = block.caption;
+            table.appendChild(caption);
+          }
+          const thead = document.createElement('thead');
+          const headerRow = document.createElement('tr');
+          block.headers.forEach((header, columnIndex) => {
+            const cell = document.createElement('th');
+            cell.className = 'border border-stone-200 bg-stone-100 px-3 py-2 font-semibold';
+            cell.style.textAlign = block.columnAlign?.[columnIndex] ?? 'left';
+            cell.textContent = header;
+            headerRow.appendChild(cell);
+          });
+          thead.appendChild(headerRow);
+          table.appendChild(thead);
+          const tbody = document.createElement('tbody');
+          block.rows.forEach((row) => {
+            const tr = document.createElement('tr');
+            row.forEach((value, columnIndex) => {
+              const cell = document.createElement('td');
+              cell.className = 'border border-stone-200 px-3 py-2 align-top';
+              cell.style.textAlign = block.columnAlign?.[columnIndex] ?? 'left';
+              cell.textContent = value;
+              tr.appendChild(cell);
+            });
+            tbody.appendChild(tr);
+          });
+          table.appendChild(tbody);
+          dom.appendChild(table);
+          return;
+        }
+        dom.className =
+          'my-3 px-3 py-2 border border-dashed border-stone-300 bg-stone-50 rounded-xs text-[11px] font-mono text-stone-600 select-none';
+        const label = block?.type ?? 'unknown';
+        const detail =
+          block && 'text' in block && typeof (block as { text?: string }).text === 'string'
+            ? ` — ${(block as { text: string }).text.slice(0, 60)}`
+            : block && 'alt' in block && typeof (block as { alt?: string }).alt === 'string'
+              ? ` — ${(block as { alt: string }).alt.slice(0, 60)}`
+              : block && 'title' in block && typeof (block as { title?: string }).title === 'string'
+                ? ` — ${(block as { title: string }).title.slice(0, 60)}`
+                : '';
+        dom.textContent = `[${label}]${detail}  — click to edit`;
+      };
+      render(node.attrs.block as ContentBlock | null);
+      return {
+        dom,
+        update: (updatedNode) => {
+          render(updatedNode.attrs.block as ContentBlock | null);
+          return true;
+        },
+      };
+    };
+  },
+});
+
+const ArticlePasteFormatting = Extension.create({
+  name: 'articlePasteFormatting',
+  addProseMirrorPlugins() {
+    return [
+      new Plugin({
+        props: {
+          transformPastedHTML: sanitizePastedHtml,
+          handlePaste: (view, event) => {
+            const html = event.clipboardData?.getData('text/html') ?? '';
+            const tables = pastedTables(html);
+            if (!tables.length) return false;
+            const nodes = tables.map((block) =>
+              view.state.schema.nodes[OPAQUE_BLOCK_NODE].create({ block }),
+            );
+            view.dispatch(view.state.tr.replaceSelection(new Slice(Fragment.fromArray(nodes), 0, 0)));
+            return true;
+          },
+        },
+      }),
+    ];
+  },
+});
+
+const PastedTable = Node.create({
+  name: 'pastedTable',
+  group: 'block',
+  atom: true,
+  selectable: true,
+  addAttributes() {
+    return { block: { default: null, rendered: false } };
+  },
+  parseHTML() {
+    return [{ tag: 'div[data-pasted-table]' }];
+  },
+  renderHTML({ HTMLAttributes }) {
+    return ['div', mergeAttributes(HTMLAttributes, { 'data-pasted-table': '' })];
+  },
+  addNodeView() {
+    return ({ node }) => {
+      const block = node.attrs.block as ContentBlock;
+      const wrapper = document.createElement('div');
+      wrapper.setAttribute('data-pasted-table', '');
+      wrapper.setAttribute('contenteditable', 'false');
+      wrapper.className = 'my-4 overflow-x-auto rounded-xs border border-stone-300 bg-white';
+      const table = document.createElement('table');
+      table.className = 'min-w-full border-collapse text-sm';
+      if (block.type !== 'table') return { dom: wrapper };
+      if (block.caption) {
+        const caption = document.createElement('caption');
+        caption.className = 'px-3 py-2 text-left font-semibold text-stone-800';
+        caption.textContent = block.caption;
+        table.appendChild(caption);
+      }
+      const thead = document.createElement('thead');
+      const headerRow = document.createElement('tr');
+      block.headers.forEach((header) => {
+        const cell = document.createElement('th');
+        cell.className = 'border border-stone-200 bg-stone-100 px-3 py-2 text-left font-semibold';
+        cell.textContent = header;
+        headerRow.appendChild(cell);
+      });
+      thead.appendChild(headerRow);
+      table.appendChild(thead);
+      const tbody = document.createElement('tbody');
+      block.rows.forEach((row) => {
+        const tr = document.createElement('tr');
+        row.forEach((value) => {
+          const cell = document.createElement('td');
+          cell.className = 'border border-stone-200 px-3 py-2 align-top';
+          cell.textContent = value;
+          tr.appendChild(cell);
+        });
+        tbody.appendChild(tr);
+      });
+      table.appendChild(tbody);
+      wrapper.appendChild(table);
+      return { dom: wrapper };
     };
   },
 });
@@ -596,6 +723,12 @@ export const RichTextBodyEditor: React.FC<RichTextBodyEditorProps> = ({
         isAllowedUri: (url) => isSafeHref(url),
         HTMLAttributes: { rel: 'noopener noreferrer nofollow', target: null },
       }),
+      /**
+       * Word and Google Docs put presentation-only XML, classes and inline
+       * font styles on the clipboard. Clean that markup before TipTap parses
+       * it, while retaining the semantic HTML that the article model supports.
+       */
+      ArticlePasteFormatting,
       /**
        * `Underline` is NOT imported separately: StarterKit v3 already bundles
        * it. Registering it again produced a runtime warning —
@@ -1529,6 +1662,10 @@ export const RichTextBodyEditor: React.FC<RichTextBodyEditorProps> = ({
       */}
       <div id="article-body-surface" data-rt-host className="relative px-3">
         <SelectionToolbar editor={editor} onLink={openLink} disabled={disabled} />
+        <p className="px-1 pb-2 text-[11px] text-stone-500">
+          Paste from Word, Google Docs, or a webpage to keep headings, paragraphs, lists, emphasis, links, and alignment.
+          Use Insert for images and other editorial blocks.
+        </p>
         <EditorContent editor={editor} />
 
         {/*

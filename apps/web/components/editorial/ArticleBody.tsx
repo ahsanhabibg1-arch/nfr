@@ -164,7 +164,7 @@ export const ArticleBody: React.FC<ArticleBodyProps> = ({ article, className = '
                   <thead>
                     <tr className="bg-stone-100 border-b border-stone-200">
                       {block.headers.map((h, i) => (
-                        <th key={i} className="py-2.5 px-4 font-bold text-stone-900 uppercase tracking-wider text-[11px]">
+                        <th key={i} style={{ textAlign: block.columnAlign?.[i] ?? 'left' }} className="py-2.5 px-4 font-bold text-stone-900 uppercase tracking-wider text-[11px]">
                           {h}
                         </th>
                       ))}
@@ -174,7 +174,7 @@ export const ArticleBody: React.FC<ArticleBodyProps> = ({ article, className = '
                     {block.rows.map((row, rIdx) => (
                       <tr key={rIdx} className="hover:bg-stone-50/80 transition-colors">
                         {row.map((cell, cIdx) => (
-                          <td key={cIdx} className="py-2.5 px-4 text-stone-700">
+                          <td key={cIdx} style={{ textAlign: block.columnAlign?.[cIdx] ?? 'left' }} className="py-2.5 px-4 text-stone-700">
                             {cell}
                           </td>
                         ))}
@@ -283,9 +283,23 @@ export const ArticleBody: React.FC<ArticleBodyProps> = ({ article, className = '
             return (
               <section key={index} className="my-8" aria-label={block.title || 'Questions and answers'}>
                 {block.title && (
-                  <h3 className="font-serif text-xl sm:text-2xl font-semibold text-[#0F1115] mb-3">
+                  /*
+                    h2, NOT h3.
+
+                    A question set is a top-level section of the article, a
+                    sibling of the body's own h2 headings — not something nested
+                    inside one. As an h3 it skipped a level on any article whose
+                    body has no h2 (h1 → h3), which is a real barrier: a screen
+                    reader user navigating by heading level is told there is a
+                    missing level of structure that does not exist.
+
+                    Caught by the accessibility suite's heading-order check, and
+                    only ever visible on an article that HAS a question set —
+                    which is why it took a run with one seeded in to surface.
+                  */
+                  <h2 className="font-serif text-xl sm:text-2xl font-semibold text-[#0F1115] mb-3">
                     {block.title}
-                  </h3>
+                  </h2>
                 )}
                 <dl className="divide-y divide-stone-200 border-y border-stone-200">
                   {faqItems.map((item, i) => (
@@ -311,9 +325,11 @@ export const ArticleBody: React.FC<ArticleBodyProps> = ({ article, className = '
             */
             return (
               <section key={index} className="my-8 pt-4 border-t border-stone-300" aria-label={block.title || 'Notes'}>
-                <h3 className="font-mono text-[11px] uppercase tracking-widest text-stone-500 mb-2">
+                {/* h2 for the same reason as the question set above: the notes
+                    are a section of the article, not a sub-part of one. */}
+                <h2 className="font-mono text-[11px] uppercase tracking-widest text-stone-600 mb-2">
                   {block.title || 'Notes'}
-                </h3>
+                </h2>
                 <ol className="list-decimal pl-5 space-y-1.5 text-sm text-stone-700">
                   {block.items.map((item, i) => (
                     <li key={i}>

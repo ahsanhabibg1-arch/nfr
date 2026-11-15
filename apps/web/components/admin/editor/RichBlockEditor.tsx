@@ -2,7 +2,7 @@
 
 import React, { useState } from 'react';
 import { ContentBlock } from '../../../types';
-import { toBodyHeadingLevel, type BodyHeadingLevel } from '../../../lib/content/articleBlockStyle';
+import { toBodyHeadingLevel, type BodyHeadingLevel, type BlockAlignment } from '../../../lib/content/articleBlockStyle';
 import { blockHasInlineFormatting } from '../../../lib/content/articleInline';
 import { InlineText } from '../../editorial/InlineText';
 import { MediaPickerModal } from './MediaPickerModal';
@@ -627,6 +627,26 @@ export const RichBlockEditor: React.FC<RichBlockEditorProps> = ({
                       className="text-xs font-semibold text-stone-800 bg-transparent border-b border-stone-200 focus:outline-none focus:border-[#D4A757] pb-1 w-1/2"
                     />
                     <div className="flex gap-2">
+                      <span className="self-center text-[10px] font-mono text-stone-500">Align columns:</span>
+                      <select
+                        aria-label="Set all table columns alignment"
+                        value=""
+                        onChange={(e) => {
+                          const align = e.target.value as BlockAlignment;
+                          if (!align) return;
+                          updateBlock(index, {
+                            ...block,
+                            columnAlign: block.headers.map(() => align),
+                          });
+                        }}
+                        className="text-[10px] font-mono px-1.5 py-1 bg-stone-100 border-0 rounded-xs text-stone-700"
+                      >
+                        <option value="">Choose</option>
+                        <option value="left">Left</option>
+                        <option value="center">Center</option>
+                        <option value="right">Right</option>
+                        <option value="justify">Justify</option>
+                      </select>
                       <button
                         type="button"
                         onClick={() => {
@@ -667,7 +687,24 @@ export const RichBlockEditor: React.FC<RichBlockEditorProps> = ({
                                     updateBlock(index, { ...block, headers: nextH });
                                   }}
                                   className="w-full text-xs font-bold text-stone-900 bg-transparent border-0 p-1 focus:bg-white"
+                                  style={{ textAlign: block.columnAlign?.[hIdx] ?? 'left' }}
                                 />
+                                <select
+                                  aria-label={`Align column ${hIdx + 1}`}
+                                  value={block.columnAlign?.[hIdx] ?? 'left'}
+                                  onChange={(e) => {
+                                    const nextAlign = [...(block.columnAlign ?? [])];
+                                    nextAlign[hIdx] = e.target.value as BlockAlignment;
+                                    updateBlock(index, { ...block, columnAlign: nextAlign });
+                                  }}
+                                  title={`Align column ${hIdx + 1}`}
+                                  className="w-16 text-[9px] font-mono bg-white border border-stone-200 rounded-xs p-1"
+                                >
+                                  <option value="left">Left</option>
+                                  <option value="center">Center</option>
+                                  <option value="right">Right</option>
+                                  <option value="justify">Justify</option>
+                                </select>
                                 {/*
                                   REMOVING A COLUMN MUST REMOVE IT FROM EVERY
                                   ROW. Dropping only the header would leave each
@@ -687,6 +724,9 @@ export const RichBlockEditor: React.FC<RichBlockEditorProps> = ({
                                     ...block,
                                     headers: block.headers.filter((_, i) => i !== hIdx),
                                     rows: block.rows.map((r) => r.filter((_, i) => i !== hIdx)),
+                                    ...(block.columnAlign
+                                      ? { columnAlign: block.columnAlign.filter((_, i) => i !== hIdx) }
+                                      : {}),
                                   })}
                                   className="text-ink-muted hover:text-rose-500 disabled:opacity-20 px-0.5"
                                 >
@@ -715,6 +755,7 @@ export const RichBlockEditor: React.FC<RichBlockEditorProps> = ({
                                     updateBlock(index, { ...block, rows: nextRows });
                                   }}
                                   className="w-full text-xs font-sans text-stone-700 bg-transparent border-0 p-1 focus:bg-stone-50"
+                                  style={{ textAlign: block.columnAlign?.[cIdx] ?? 'left' }}
                                 />
                               </td>
                             ))}
