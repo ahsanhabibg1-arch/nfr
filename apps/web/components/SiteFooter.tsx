@@ -145,15 +145,21 @@ export const SiteFooter: React.FC<SiteFooterProps> = ({ sections, academy, confi
           <p>
             {text(config.copyright, DEFAULT_COPYRIGHT)}
           </p>
-          <div className="flex items-center gap-6">
-            {config.statusText?.trim() && (
+          {/*
+            The hardcoded "Domain: nfrguide.com" line and the "Editorial CMS"
+            link were removed at the owner's request. The link in particular
+            advertised the admin URL to every visitor, which is not something a
+            public footer needs to do, and the domain line only repeated what the
+            address bar already said.
+
+            The row is now rendered only when there is something in it, so an
+            unset `statusText` leaves no empty flex container behind.
+          */}
+          {config.statusText?.trim() && (
+            <div className="flex items-center gap-6">
               <span className="font-mono text-[11px] text-stone-400">{config.statusText}</span>
-            )}
-            <span className="font-mono text-[11px] text-stone-400">Domain: nfrguide.com</span>
-            <Link href={ROUTES.ADMIN} className="font-mono text-[11px] text-[#D4A757] hover:text-white transition-colors flex items-center gap-1 font-semibold">
-              Editorial CMS →
-            </Link>
-          </div>
+            </div>
+          )}
         </div>
       </div>
     </footer>
