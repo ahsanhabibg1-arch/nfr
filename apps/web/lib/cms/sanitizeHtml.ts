@@ -23,7 +23,7 @@ const ALLOWED_ATTRIBUTES: Record<string, string[]> = {
   th: ['colspan', 'rowspan', 'scope'],
   td: ['colspan', 'rowspan'],
   img: ['src', 'alt', 'width', 'height', 'loading', 'decoding'],
-  '*': ['class', 'id'],
+  '*': ['class', 'id', 'style'],
 };
 
 /**
@@ -51,6 +51,11 @@ export function sanitizeLegalHtml(dirty: string): string {
     allowedTags: ALLOWED_TAGS,
     allowedAttributes: ALLOWED_ATTRIBUTES,
     allowedSchemes: ['https', 'http', 'mailto'],
+    allowedStyles: {
+      '*': {
+        'text-align': [/^(left|center|right|justify)$/],
+      },
+    },
     disallowedTagsMode: 'discard',
     selfClosing: ['br', 'hr', 'img'],
     transformTags: {

@@ -127,7 +127,7 @@ export async function LegalPageView({ slug }: { slug: string }) {
       )}
 
       {db ? (
-        <div className="prose prose-stone max-w-none" dangerouslySetInnerHTML={{ __html: sanitizeLegalHtml(db.body) }} />
+        <div className="legal-page-body prose prose-stone max-w-none" dangerouslySetInnerHTML={{ __html: sanitizeLegalHtml(db.body) }} />
       ) : page ? (
         <div className="space-y-8 text-stone-800 leading-relaxed">
           {page.sections.map((s) => (

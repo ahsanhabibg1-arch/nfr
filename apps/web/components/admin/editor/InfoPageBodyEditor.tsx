@@ -2,11 +2,27 @@
 
 import React, { useCallback, useEffect, useState } from 'react';
 import { useEditor, EditorContent, type Editor } from '@tiptap/react';
+import { Extension } from '@tiptap/core';
 import StarterKit from '@tiptap/starter-kit';
 import Link from '@tiptap/extension-link';
 import Image from '@tiptap/extension-image';
+import { TaskList, TaskItem } from '@tiptap/extension-list';
 import { MediaPickerModal } from './MediaPickerModal';
 import { isAllowedMediaSrc } from '../../../lib/cms/sanitizeHtml';
+import { Superscript, Subscript, BlockAlign, ALIGN_CHOICES } from './richTextExtensions';
+import { sanitizePastedHtml } from '../../../lib/content/articlePaste';
+import { Plugin } from '@tiptap/pm/state';
+
+const InfoPasteFormatting = Extension.create({
+  name: 'infoPasteFormatting',
+  addProseMirrorPlugins() {
+    return [
+      new Plugin({
+        props: { transformPastedHTML: sanitizePastedHtml },
+      }),
+    ];
+  },
+});
 
 /**
  * The information-page body editor (PM-02).
@@ -47,12 +63,16 @@ const GROUPS: { name: string; buttons: ToolButton[] }[] = [
       { label: 'I', title: 'Italic', isActive: (e) => e.isActive('italic'), run: (e) => e.chain().focus().toggleItalic().run() },
       { label: 'U', title: 'Underline', isActive: (e) => e.isActive('underline'), run: (e) => e.chain().focus().toggleUnderline().run() },
       { label: 'S', title: 'Strikethrough', isActive: (e) => e.isActive('strike'), run: (e) => e.chain().focus().toggleStrike().run() },
+      { label: 'x²', title: 'Superscript', isActive: (e) => e.isActive('superscript'), run: (e) => e.chain().focus().toggleMark('superscript').run() },
+      { label: 'x₂', title: 'Subscript', isActive: (e) => e.isActive('subscript'), run: (e) => e.chain().focus().toggleMark('subscript').run() },
+      { label: 'Tx', title: 'Clear formatting', run: (e) => e.chain().focus().unsetAllMarks().clearNodes().run() },
     ],
   },
   {
     name: 'Structure',
     buttons: [
       { label: 'P', title: 'Paragraph', isActive: (e) => e.isActive('paragraph'), run: (e) => e.chain().focus().setParagraph().run() },
+      { label: '¶', title: 'Paragraph', isActive: (e) => e.isActive('paragraph'), run: (e) => e.chain().focus().setParagraph().run() },
       { label: 'H2', title: 'H2 section heading', isActive: (e) => e.isActive('heading', { level: 2 }), run: (e) => e.chain().focus().toggleHeading({ level: 2 }).run() },
       { label: 'H3', title: 'H3 subheading', isActive: (e) => e.isActive('heading', { level: 3 }), run: (e) => e.chain().focus().toggleHeading({ level: 3 }).run() },
       { label: 'H4', title: 'H4 sub-section heading', isActive: (e) => e.isActive('heading', { level: 4 }), run: (e) => e.chain().focus().toggleHeading({ level: 4 }).run() },
@@ -63,9 +83,27 @@ const GROUPS: { name: string; buttons: ToolButton[] }[] = [
     buttons: [
       { label: '• List', title: 'Bullet list', isActive: (e) => e.isActive('bulletList'), run: (e) => e.chain().focus().toggleBulletList().run() },
       { label: '# List', title: 'Numbered list', isActive: (e) => e.isActive('orderedList'), run: (e) => e.chain().focus().toggleOrderedList().run() },
+      { label: '☑ List', title: 'Checklist', isActive: (e) => e.isActive('taskList'), run: (e) => e.chain().focus().toggleTaskList().run() },
+      { label: '⇥', title: 'Nest list item', run: (e) => e.chain().focus().sinkListItem('listItem').run() },
+      { label: '⇤', title: 'Outdent list item', run: (e) => e.chain().focus().liftListItem('listItem').run() },
       { label: 'Quote', title: 'Blockquote', isActive: (e) => e.isActive('blockquote'), run: (e) => e.chain().focus().toggleBlockquote().run() },
       { label: '—', title: 'Divider', run: (e) => e.chain().focus().setHorizontalRule().run() },
     ],
+  },
+  {
+    name: 'Alignment',
+    buttons: ALIGN_CHOICES.map((a) => ({
+      label: a.glyph,
+      title: a.title,
+      isActive: (e: Editor) =>
+        a.value === 'left'
+          ? !e.isActive({ textAlign: 'center' }) && !e.isActive({ textAlign: 'right' }) && !e.isActive({ textAlign: 'justify' })
+          : e.isActive({ textAlign: a.value }),
+      run: (e: Editor) =>
+        a.value === 'left'
+          ? e.chain().focus().unsetBlockAlign().run()
+          : e.chain().focus().setBlockAlign(a.value).run(),
+    })),
   },
   {
     name: 'History',
@@ -111,15 +149,22 @@ export const InfoPageBodyEditor: React.FC<InfoPageBodyEditorProps> = ({
      */
     immediatelyRender: false,
     extensions: [
-      StarterKit.configure({ link: false }),
+      StarterKit.configure({ link: false, heading: { levels: [2, 3, 4] } }),
       Link.configure({ openOnClick: false, autolink: false }),
       Image.configure({ inline: false, allowBase64: false }),
+      TaskList,
+      TaskItem.configure({ nested: true }),
+      Superscript,
+      Subscript,
+      BlockAlign,
+      InfoPasteFormatting,
     ],
+    shouldRerenderOnTransaction: true,
     content: value || '<p></p>',
     editable: !disabled,
     editorProps: {
       attributes: {
-        class: 'prose-editor block w-full max-w-none min-h-[18rem] py-3 outline-none text-stone-900 font-sans text-[15px] leading-[1.7] focus:outline-none',
+        class: 'prose-editor block w-full max-w-none min-h-[18rem] max-h-[34rem] overflow-y-auto py-3 outline-none text-stone-900 font-sans text-[15px] leading-[1.7] focus:outline-none',
         'aria-label': 'Page body',
       },
     },

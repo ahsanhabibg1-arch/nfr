@@ -60,4 +60,9 @@ describe('Batch 28 — legal HTML sanitization (XSS regression)', () => {
     const content = '<blockquote>Quote</blockquote><pre><code>code</code></pre>';
     expect(sanitizeLegalHtml(content)).toBe(content);
   });
+
+  it('keeps supported text alignment while rejecting other inline styles', () => {
+    expect(sanitizeLegalHtml('<p style="text-align:center">Centered</p><p style="color:red">Plain</p>'))
+      .toBe('<p style="text-align:center">Centered</p><p>Plain</p>');
+  });
 });

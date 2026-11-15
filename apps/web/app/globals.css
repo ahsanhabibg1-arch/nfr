@@ -159,3 +159,47 @@ body {
   box-shadow: 0 0 0 2px var(--color-gold-subtle);
 }
 .prose-editor [data-structured-block] { cursor: pointer; }
+
+/* Public Info & Legal bodies are stored as semantic HTML. Tailwind preflight
+   resets these elements, and the typography plugin is not part of this app,
+   so keep the published hierarchy and spacing explicit. */
+.legal-page-body > * + * { margin-top: 1rem; }
+.legal-page-body p { line-height: 1.7; }
+.legal-page-body h1,
+.legal-page-body h2,
+.legal-page-body h3,
+.legal-page-body h4,
+.legal-page-body h5,
+.legal-page-body h6 {
+  font-family: var(--font-serif);
+  color: var(--color-charcoal);
+  line-height: 1.25;
+  font-weight: 700;
+}
+.legal-page-body h1 { font-size: 2rem; }
+.legal-page-body h2 { font-size: 1.6rem; margin-top: 1.75rem; }
+.legal-page-body h3 { font-size: 1.3rem; margin-top: 1.4rem; }
+.legal-page-body h4 { font-size: 1.1rem; margin-top: 1.2rem; color: #8B5E3C; }
+.legal-page-body ul,
+.legal-page-body ol { padding-left: 1.6rem; }
+.legal-page-body ul { list-style: disc; }
+.legal-page-body ol { list-style: decimal; }
+.legal-page-body li { margin: 0.25rem 0; }
+.legal-page-body blockquote {
+  border-left: 3px solid var(--color-gold);
+  padding-left: 0.9rem;
+  font-style: italic;
+  color: #44403c;
+}
+.legal-page-body hr {
+  border: 0;
+  border-top: 1px solid #d6d3d1;
+  margin: 1.4rem 0;
+}
+.legal-page-body a { text-decoration: underline; text-underline-offset: 2px; }
+.legal-page-body sup,
+.legal-page-body sub { font-size: 0.72em; line-height: 0; }
+.legal-page-body table { width: 100%; border-collapse: collapse; }
+.legal-page-body th,
+.legal-page-body td { border: 1px solid #d6d3d1; padding: 0.5rem 0.75rem; text-align: left; }
+.legal-page-body th { background: #f5f5f4; font-weight: 700; }

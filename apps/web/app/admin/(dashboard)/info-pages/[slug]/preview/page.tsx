@@ -121,7 +121,7 @@ export default async function InfoPagePreview({ params }: Params) {
               )}
             </figure>
           )}
-          <div className="prose prose-stone max-w-none" dangerouslySetInnerHTML={{ __html: sanitizeLegalHtml(page.body) }} />
+          <div className="legal-page-body prose prose-stone max-w-none" dangerouslySetInnerHTML={{ __html: sanitizeLegalHtml(page.body) }} />
         </div>
       </PreviewViewport>
 
