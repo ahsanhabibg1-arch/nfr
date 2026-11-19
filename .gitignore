@@ -7,3 +7,12 @@ coverage/
 .env*
 !.env.example
 !.env.staging.example
+
+# Project documentation and per-stage reports live OUTSIDE this repository,
+# in ../NFRGUIDE Document, by the owner's decision: they are a record of how the
+# work was done, not part of what gets deployed, and they were making the
+# published repository mostly prose. README.md stays, because it is the first
+# thing anyone opening the repository reads.
+/docs/
+/*.md
+!/README.md
