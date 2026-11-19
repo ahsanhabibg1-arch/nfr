@@ -175,6 +175,33 @@ const surface = (page: Page) => page.locator('#article-body-surface [contentedit
  * Waiting for the condition the next keystroke depends on removes the race
  * instead of hiding it behind a sleep.
  */
+/**
+ * Puts the caret at the very end of the body, and waits until it is there.
+ *
+ * `Control+End` alone was not enough. Under the load of the full suite the key
+ * sometimes arrived before the editor had settled after a toolbar click, so the
+ * previous selection was still live — and the `Enter` that followed DELETED the
+ * selected text instead of starting a new line. The test then failed for a
+ * reason that had nothing to do with what it was testing.
+ *
+ * Clicking the last block puts the caret somewhere definite (the writing
+ * surface always ends in a paragraph, never in a table), and the poll waits for
+ * the selection to actually be collapsed before any key is sent.
+ */
+async function caretAtEnd(page: Page) {
+  await surface(page).locator('> *').last().click();
+  await page.keyboard.press('Control+End');
+  await expect
+    .poll(() => page.evaluate(() => {
+      const selection = window.getSelection();
+      const node = selection?.anchorNode as HTMLElement | null;
+      const host = node?.nodeType === 1 ? node : node?.parentElement ?? null;
+      return !!selection?.isCollapsed
+        && !!host?.closest('#article-body-surface [contenteditable="true"]');
+    }), { timeout: 5_000 })
+    .toBe(true);
+}
+
 async function caretInSurface(page: Page) {
   await expect
     .poll(() => page.evaluate(() => {
@@ -311,8 +338,7 @@ test.describe('rich-text article body', () => {
 
   test('a heading and a list survive save and reload', async ({ page }) => {
     const s = surface(page);
-    await s.click();
-    await page.keyboard.press('Control+End');
+    await caretAtEnd(page);
     await page.keyboard.press('Enter');
     const h = `Heading ${Date.now()}`;
     await page.keyboard.type(h);
@@ -320,8 +346,7 @@ test.describe('rich-text article body', () => {
     await toolbar(page).getByRole('button', { name: 'H2 section heading' }).click();
     await expect(s.locator('h2', { hasText: h })).toHaveCount(1);
 
-    await caretInSurface(page);
-    await page.keyboard.press('Control+End');
+    await caretAtEnd(page);
     await page.keyboard.press('Enter');
     await toolbar(page).getByRole('button', { name: 'Bulleted list' }).click();
     await caretInSurface(page);

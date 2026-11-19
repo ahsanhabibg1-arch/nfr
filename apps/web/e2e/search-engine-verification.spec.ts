@@ -69,6 +69,22 @@ async function servedMeta(page: Page, name: string): Promise<string | null> {
  */
 const PUBLIC_REFRESH = 90_000;
 
+/*
+ * THE TEST MUST BE ALLOWED TO WAIT AS LONG AS IT SAYS IT WILL.
+ *
+ * `PUBLIC_REFRESH` is 90 seconds, but Playwright's default budget for a whole
+ * test is 30 — the `timeout: 120_000` in playwright.config.ts is how long the
+ * SERVER gets to start, not the test. So a poll that was written to tolerate a
+ * slow revalidation could never use more than a third of its window, and the
+ * rotation test failed whenever the public page took longer than that under
+ * the load of the full suite. It passed on its own, which is exactly how this
+ * kind of mismatch hides.
+ *
+ * The budget here covers two full polling windows plus the ordinary page work
+ * around them, so a failure now means the tag really did not appear.
+ */
+test.describe.configure({ timeout: PUBLIC_REFRESH * 2 + 60_000 });
+
 async function openSearchEngineTab(page: Page) {
   await page.goto(SETTINGS);
   // `AdminTabs` renders plain buttons, not an ARIA tab set.

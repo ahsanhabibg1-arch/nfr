@@ -104,8 +104,23 @@ test.describe('Rodeo Coverage lifecycle admin', () => {
   }
 
   test('the filter controls are keyboard reachable', async ({ page }) => {
-    await page.locator('#rodeo-search').focus();
-    await expect(page.locator('#rodeo-search')).toBeFocused();
+    /*
+      FOCUS ONLY AFTER THE CLIENT HAS TAKEN OVER.
+
+      The filter row is server-rendered, so `.focus()` can land on markup React
+      has not hydrated yet; the hydration pass then replaces it and the focus
+      goes with it. That made this test fail roughly one run in four, long
+      before anything here changed — a flake that reads as a real keyboard
+      regression every time it appears.
+
+      Retrying the focus until it sticks waits for the condition the rest of the
+      test depends on, instead of hoping the page is ready.
+    */
+    const search = page.locator('#rodeo-search');
+    await expect(async () => {
+      await search.focus();
+      await expect(search).toBeFocused({ timeout: 1_000 });
+    }).toPass({ timeout: 15_000 });
     await page.keyboard.press('Tab');
     const focused = await page.evaluate(() => document.activeElement?.textContent?.trim() ?? '');
     expect(focused.toLowerCase()).toBe('active');

@@ -324,7 +324,15 @@ test.describe('pasting a document that contains a table', () => {
    * their work should have been.
    */
   async function pasteHtml(page: Page, html: string) {
-    await surface(page).click();
+    /*
+      The caret is placed by clicking the last block rather than by
+      `Control+End` alone: under the full suite the key could arrive before the
+      editor had settled, and a paste aimed at a cell of the EXISTING table
+      silently did nothing — the test then read the fixture's table and
+      reported the wrong headings.
+    */
+    const before = await surface(page).locator('table').count();
+    await surface(page).locator('> *').last().click();
     await page.keyboard.press('Control+End');
     await page.evaluate((payload) => {
       const host = document.querySelector('#article-body-surface [contenteditable="true"]');
@@ -333,6 +341,10 @@ test.describe('pasting a document that contains a table', () => {
       data.setData('text/html', payload);
       host.dispatchEvent(new ClipboardEvent('paste', { clipboardData: data, bubbles: true, cancelable: true }));
     }, html);
+
+    // Wait for the paste to have actually landed. Without this the save could
+    // run first and the assertions would describe the body before the paste.
+    await expect(surface(page).locator('table')).toHaveCount(before + 1);
   }
 
   test('keeps the prose around the table', async ({ page }) => {
