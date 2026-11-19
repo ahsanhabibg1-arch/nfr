@@ -141,7 +141,9 @@ describe('Stage 09 Task K — no security control was weakened', () => {
     // Stage 09 Task E touched this service, so the sanitizer must still run on
     // the write path it changed.
     const svc = read('lib/cms/infoPageService.ts');
-    expect(svc).toContain('body: sanitizeLegalHtml(raw.body)');
+    // Name-independent: a rename of the input must not read as a missing
+    // sanitiser. See the same change in batch-g-info-pages.
+    expect(svc).toContain('body: sanitizeLegalHtml(');
   });
 
   it('no Stage 09 deliverable or test embeds a credential', () => {

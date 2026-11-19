@@ -312,7 +312,16 @@ describe('Phase G — Service workflow preserved', () => {
   });
 
   it('saveInfoPageDraft sanitizes body before saving', () => {
-    expect(src).toContain('sanitizeLegalHtml(raw.body)');
+    /*
+      Asserted WITHOUT the variable name.
+
+      This checked for `sanitizeLegalHtml(raw.body)` and began failing when the
+      parameter was renamed — while the sanitising call it exists to protect was
+      still there, untouched. A test that fails on a rename and passes on a
+      removal is watching the wrong thing; what matters is that the body
+      written to the database is the sanitised one.
+    */
+    expect(src).toContain('body: sanitizeLegalHtml(');
   });
 
   it('has full workflow: draft → review → approve → publish', () => {
@@ -329,7 +338,9 @@ describe('Phase G — Service workflow preserved', () => {
   it('saveInfoPageDraft creates or updates, with a version guard on update', () => {
     // `upsert` was replaced by an explicit create/update split so the update
     // branch can carry the optimistic-lock guard on `version`.
-    expect(src).toContain('prisma.infoPage.create');
+    // Not `prisma.infoPage.create`: the create moved inside a transaction and
+    // is reached through `tx`. The split itself is what this asserts.
+    expect(src).toContain('infoPage.create');
     expect(src).toContain('version: existing.version');
   });
 
@@ -528,7 +539,7 @@ describe('Phase G — Security contracts', () => {
 
   it('body is sanitized before storage', () => {
     const src = read('lib/cms/infoPageService.ts');
-    expect(src).toContain('sanitizeLegalHtml(raw.body)');
+    expect(src).toContain('body: sanitizeLegalHtml(');
   });
 
   it('published content is sanitized on render', () => {
