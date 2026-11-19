@@ -113,6 +113,37 @@ test.afterAll(async () => {
 });
 
 test.describe('the FAQ panel below the body', () => {
+  /**
+   * Each test starts from a body with no question set.
+   *
+   * WHY THIS WAS NEEDED. The tests below say "if there is no Question 1, add
+   * one" — which silently assumes the draft carries AT MOST one question. They
+   * share a draft and save to it, so once an earlier test left a second
+   * question behind, removing "question 1" simply renumbered the survivor into
+   * its place, and the assertion that no Question 1 remains failed. It read as
+   * "removing the last question does not remove the set", which is not what was
+   * happening: the set still had a question in it.
+   *
+   * Resetting the body makes each test's starting state the one it describes,
+   * so a failure here means the panel really is keeping an empty set.
+   */
+  test.beforeEach(async () => {
+    const db = testDb();
+    try {
+      await db.articleBlock.deleteMany({ where: { articleId: draftId } });
+      await db.articleBlock.create({
+        data: {
+          articleId: draftId,
+          sortOrder: 0,
+          blockType: 'paragraph',
+          data: { type: 'paragraph', text: 'An opening paragraph that already exists in this draft body.' },
+        },
+      });
+    } finally {
+      await db.$disconnect();
+    }
+  });
+
   test('adds questions, reports what is publishable, and PERSISTS them', async ({ page }) => {
     const token = Date.now();
     const question = `When does entry close for ${token}?`;
@@ -185,11 +216,12 @@ test.describe('the FAQ panel below the body', () => {
       previous test. Chained tests fail for the wrong reason when an earlier
       one breaks, and cannot be run alone at all.
     */
-    if (await panel.getByRole('textbox', { name: 'Question 1' }).count() === 0) {
-      await panel.getByTestId('article-faq-add').click();
-      await panel.getByRole('textbox', { name: 'Question 1' }).fill('A question to remove?');
-      await panel.getByRole('textbox', { name: 'Answer 1' }).fill('An answer.');
-    }
+    // The body is reset before each test, so this is the ONLY question in it —
+    // which is what makes "removing the last one" mean what it says.
+    await expect(panel.getByRole('textbox', { name: 'Question 1' })).toHaveCount(0);
+    await panel.getByTestId('article-faq-add').click();
+    await panel.getByRole('textbox', { name: 'Question 1' }).fill('A question to remove?');
+    await panel.getByRole('textbox', { name: 'Answer 1' }).fill('An answer.');
     await expect(panel.getByRole('textbox', { name: 'Question 1' })).toBeVisible();
     await panel.getByRole('button', { name: 'Remove question 1' }).click();
 
@@ -217,11 +249,10 @@ test.describe('the FAQ panel below the body', () => {
     const panel = page.getByTestId('article-faq-panel');
     await expect(panel).toBeVisible();
 
-    if (await panel.getByRole('textbox', { name: 'Question 1' }).count() === 0) {
-      await panel.getByTestId('article-faq-add').click();
-      await panel.getByRole('textbox', { name: 'Question 1' }).fill('Will this come back?');
-      await panel.getByRole('textbox', { name: 'Answer 1' }).fill('It must not.');
-    }
+    await expect(panel.getByRole('textbox', { name: 'Question 1' })).toHaveCount(0);
+    await panel.getByTestId('article-faq-add').click();
+    await panel.getByRole('textbox', { name: 'Question 1' }).fill('Will this come back?');
+    await panel.getByRole('textbox', { name: 'Answer 1' }).fill('It must not.');
 
     await panel.getByRole('button', { name: 'Remove question 1' }).click();
     await expect(panel.getByRole('textbox', { name: 'Question 1' })).toHaveCount(0);
