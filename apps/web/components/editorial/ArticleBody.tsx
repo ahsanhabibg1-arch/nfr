@@ -165,7 +165,7 @@ export const ArticleBody: React.FC<ArticleBodyProps> = ({ article, className = '
                     <tr className="bg-stone-100 border-b border-stone-200">
                       {block.headers.map((h, i) => (
                         <th key={i} style={{ textAlign: block.columnAlign?.[i] ?? 'left' }} className="py-2.5 px-4 font-bold text-stone-900 uppercase tracking-wider text-[11px]">
-                          {h}
+                          <InlineText text={h} runs={block.headerRuns?.[i] ?? null} />
                         </th>
                       ))}
                     </tr>
@@ -175,7 +175,7 @@ export const ArticleBody: React.FC<ArticleBodyProps> = ({ article, className = '
                       <tr key={rIdx} className="hover:bg-stone-50/80 transition-colors">
                         {row.map((cell, cIdx) => (
                           <td key={cIdx} style={{ textAlign: block.columnAlign?.[cIdx] ?? 'left' }} className="py-2.5 px-4 text-stone-700">
-                            {cell}
+                            <InlineText text={cell} runs={block.cellRuns?.[rIdx]?.[cIdx] ?? null} />
                           </td>
                         ))}
                       </tr>

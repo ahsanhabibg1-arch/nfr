@@ -116,6 +116,25 @@ const table = z.object({
   headers: z.array(z.string().max(500)).max(50),
   rows: z.array(z.array(z.string().max(2000)).max(50)).max(500),
   caption: z.string().max(500).optional(),
+  /**
+   * One alignment per column, positional with `headers`.
+   *
+   * It was already being stored and already drawn by the renderer, carried
+   * only by `.passthrough()`. Declaring it means a bad value is now rejected
+   * at the write boundary instead of reaching a `style` attribute.
+   */
+  columnAlign: z.array(z.enum(BLOCK_ALIGNMENTS)).max(50).optional(),
+  /**
+   * Inline formatting inside cells, positional and sparse, exactly like
+   * `itemRuns` on a list: `null` means "this cell has no formatting".
+   *
+   * A data table is where a footnote marker, an em-dashed caveat or a link to
+   * the source belongs, and until now a cell could hold only flat text. The
+   * arrays are optional, so every table written before this is still valid and
+   * unchanged — and a table with nothing formatted never grows the key.
+   */
+  headerRuns: z.array(z.array(runSchema).nullable()).max(50).optional(),
+  cellRuns: z.array(z.array(z.array(runSchema).nullable()).max(50)).max(500).optional(),
 }).passthrough();
 
 const callout = z.object({
@@ -302,6 +321,30 @@ export function reconcileBlockInline(block: ValidatedArticleBlock): ValidatedArt
     case 'quote': {
       const r = fix(block.quote, block.quoteRuns);
       return { ...block, quote: r.text, ...(r.runs ? { quoteRuns: r.runs } : { quoteRuns: undefined }) };
+    }
+    case 'table': {
+      /**
+       * Each cell's runs are reconciled against that cell's own text, so a cell
+       * edited as plain text in the Blocks grid loses only its own formatting
+       * rather than the table's. The arrays are dropped entirely when nothing
+       * is formatted, keeping a plain table byte-identical to what earlier
+       * editors wrote.
+       */
+      const headerRuns = block.headerRuns
+        ? block.headers.map((h, i) => fix(h, block.headerRuns?.[i] ?? null).runs ?? null)
+        : null;
+      const cellRuns = block.cellRuns
+        ? block.rows.map((row, r) =>
+          row.map((cell, c) => fix(cell, block.cellRuns?.[r]?.[c] ?? null).runs ?? null))
+        : null;
+      return {
+        ...block,
+        columnAlign: block.columnAlign?.length ? block.columnAlign : undefined,
+        headerRuns: headerRuns && headerRuns.some(Boolean) ? (headerRuns as (InlineRun[] | null)[]) : undefined,
+        cellRuns: cellRuns && cellRuns.some((row) => row.some(Boolean))
+          ? (cellRuns as (InlineRun[] | null)[][])
+          : undefined,
+      };
     }
     case 'list': {
       const itemRuns = block.itemRuns

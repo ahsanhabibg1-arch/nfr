@@ -1,6 +1,7 @@
 'use client';
 
 import React, { useState, useEffect, useMemo, useRef } from 'react';
+import { Spinner, useBusy } from '../../components/ui/GlobalBusy';
 import Link from 'next/link';
 import { useParams, useRouter, useSearchParams } from 'next/navigation';
 import { Article, ArticleWorkflowStatus, PrimarySection, ContentBlock, SourceReference, DisclosureType, ArticleRevision } from '../../types';
@@ -202,6 +203,21 @@ export const AdminArticleEditorShell: React.FC<AdminArticleEditorShellProps> = (
   }, [categories, existingArticle?.category]);
   const [version, setVersion] = useState<number | undefined>(initialVersion);
   const [saving, setSaving] = useState(false);
+
+  /**
+   * Every save and workflow transition raises the application-wide indicator.
+   *
+   * `saving` already guards the buttons, but a disabled button is a weak
+   * signal: it dims, and on a slow connection the author is left looking at a
+   * page that appears to have swallowed the click. Tying the indicator to this
+   * one flag covers Save Draft, Submit, Approve, Publish and Delete without
+   * each of them having to remember to report anything.
+   */
+  const { begin: beginBusy } = useBusy();
+  useEffect(() => {
+    if (!saving) return undefined;
+    return beginBusy();
+  }, [saving, beginBusy]);
 
   // Exact 8 primary fields state
   const [title, setTitle] = useState(existingArticle?.title || '');
@@ -957,7 +973,7 @@ export const AdminArticleEditorShell: React.FC<AdminArticleEditorShellProps> = (
             disabled={saving}
             className="px-3.5 py-1.5 bg-stone-100 hover:bg-stone-200 border border-stone-300 text-stone-900 text-xs font-bold rounded-xs transition-colors disabled:opacity-50"
           >
-            {saving ? 'Saving…' : isNew ? 'Create Draft' : 'Save Draft'}
+            {saving ? <><Spinner />Saving…</> : isNew ? 'Create Draft' : 'Save Draft'}
           </button>
 
           {/* Primary State-Driven Action (gated by real server-enforced permissions) */}
@@ -968,6 +984,7 @@ export const AdminArticleEditorShell: React.FC<AdminArticleEditorShellProps> = (
               disabled={!permissions.canSubmit || saving || isNew}
               className="px-4 py-1.5 bg-[#0F1115] text-[#D4A757] hover:bg-stone-800 text-xs font-bold uppercase tracking-wider rounded-xs transition-colors shadow-xs disabled:opacity-50"
             >
+              {saving ? <Spinner label="Working" /> : null}
               Submit for Review
             </button>
           )}

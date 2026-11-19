@@ -126,7 +126,64 @@ async function saveDraft(page: Page) {
   await expect(dirty, 'the save must clear the dirty state').toHaveCount(0, { timeout: 25_000 });
 }
 
+
+/**
+ * The body every test in this file starts from.
+ *
+ * These tests share one draft AND save to it, so each left its content behind
+ * for the next: a find-and-replace count came out double because an earlier
+ * test's paragraphs were still in the body, and a save found nothing to do
+ * because the previous test had already saved the same thing. The coupling was
+ * always there; it only became visible when the body an earlier test leaves
+ * behind changed shape. Restoring the body before each test makes every count
+ * in this file mean what it says.
+ */
+async function resetDraftBody(blocks: { blockType: string; data: unknown }[]) {
+  const db = testDb();
+  try {
+    await db.articleBlock.deleteMany({ where: { articleId: draftId } });
+    await db.articleBlock.createMany({
+      data: blocks.map((b, i) => ({
+        articleId: draftId,
+        sortOrder: i,
+        blockType: b.blockType,
+        data: b.data as object,
+      })),
+    });
+  } finally {
+    await db.$disconnect();
+  }
+}
+
+const STARTING_BODY = [
+  { blockType: 'paragraph', data: { type: 'paragraph', text: 'An opening paragraph that already exists in this draft body.' } },
+  { blockType: 'callout', data: { type: 'callout', variant: 'takeaway', title: 'Preserved', text: 'This structured block must survive the rich-text editor.' } },
+];
+
 const surface = (page: Page) => page.locator('#article-body-surface [contenteditable="true"]');
+
+/**
+ * Waits until the caret is genuinely back inside the writing surface.
+ *
+ * A toolbar button keeps the selection by cancelling its own `mousedown`, but
+ * the click still causes a React render of the admin shell, and a test can send
+ * its next keystroke before the browser has settled focus back on the editor.
+ * When that happened here, `Control+End` went nowhere, the heading stayed
+ * selected, and the following `Enter` DELETED it — the test then failed for a
+ * reason that had nothing to do with what it was testing.
+ *
+ * Waiting for the condition the next keystroke depends on removes the race
+ * instead of hiding it behind a sleep.
+ */
+async function caretInSurface(page: Page) {
+  await expect
+    .poll(() => page.evaluate(() => {
+      const active = document.activeElement;
+      return !!active?.closest('#article-body-surface [contenteditable="true"]');
+    }), { timeout: 5_000 })
+    .toBe(true);
+}
+
 const toolbar = (page: Page) => page.getByRole('toolbar', { name: 'Article body formatting' });
 
 /**
@@ -174,8 +231,10 @@ async function dragSelect(page: Page, word: string) {
 
 test.describe('rich-text article body', () => {
   test.beforeEach(async ({ page }) => {
+    await resetDraftBody(STARTING_BODY);
     await login(page);
     await page.goto(await fixtureEditPath());
+    await expect(surface(page)).toBeVisible();
   });
 
   test('the Write surface is the default, with a grouped toolbar', async ({ page }) => {
@@ -261,9 +320,11 @@ test.describe('rich-text article body', () => {
     await toolbar(page).getByRole('button', { name: 'H2 section heading' }).click();
     await expect(s.locator('h2', { hasText: h })).toHaveCount(1);
 
+    await caretInSurface(page);
     await page.keyboard.press('Control+End');
     await page.keyboard.press('Enter');
     await toolbar(page).getByRole('button', { name: 'Bulleted list' }).click();
+    await caretInSurface(page);
     await page.keyboard.type('Bullet one');
     await expect(s.locator('ul li', { hasText: 'Bullet one' })).toHaveCount(1);
 
@@ -368,8 +429,10 @@ test.describe('rich-text article body', () => {
 
 test.describe('mouse selection and linking', () => {
   test.beforeEach(async ({ page }) => {
+    await resetDraftBody(STARTING_BODY);
     await login(page);
     await page.goto(await fixtureEditPath());
+    await expect(surface(page)).toBeVisible();
   });
 
   test('a MOUSE selection raises the floating toolbar', async ({ page }) => {
@@ -485,8 +548,10 @@ test.describe('mouse selection and linking', () => {
 
 test.describe('SEO link analysis over editor-inserted links', () => {
   test.beforeEach(async ({ page }) => {
+    await resetDraftBody(STARTING_BODY);
     await login(page);
     await page.goto(await fixtureEditPath());
+    await expect(surface(page)).toBeVisible();
   });
 
   /** Links the current selection to `href` via the toolbar dialog. */

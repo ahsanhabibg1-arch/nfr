@@ -1,4 +1,7 @@
 import { Extension, Mark, mergeAttributes } from '@tiptap/core';
+import { Table, TableCell, TableHeader, TableRow } from '@tiptap/extension-table';
+import { selectedRect } from '@tiptap/pm/tables';
+import type { EditorState } from '@tiptap/pm/state';
 import {
   BLOCK_ALIGNMENTS, isBlockAlignment, storableAlignment, type BlockAlignment,
 } from '../../../lib/content/articleBlockStyle';
@@ -167,3 +170,177 @@ export const ALIGN_CHOICES: { value: BlockAlignment; glyph: string; title: strin
           : value === 'right' ? 'Align right'
             : 'Justify',
   }));
+
+// ---------------------------------------------------------------------------
+// Tables
+// ---------------------------------------------------------------------------
+
+/**
+ * The table, as a real part of the document rather than a card.
+ *
+ * WHAT THIS REPLACES. A table used to travel through the writing surface as an
+ * opaque atom: it was drawn, but the cursor could not enter it, so editing one
+ * meant clicking it and filling a grid of single-line inputs in a panel. That
+ * is the step authors described as slow, and it is also why pasting a document
+ * that contained a table was lossy — the paste handler pulled the tables out
+ * and dropped everything around them.
+ *
+ * With the official table nodes registered, TipTap parses `<table>` from the
+ * clipboard itself: header cells, merged cells and the prose around the table
+ * all arrive the way the author copied them, and the cursor goes into the
+ * cells. The stored shape has not changed at all — `articleRichTextAdapter`
+ * converts between these nodes and the same `table` block the schema, the
+ * renderer and every stored revision already use.
+ *
+ * TWO ATTRIBUTES ARE OURS, AND BOTH EXIST BECAUSE THE STORED MODEL HAS THEM:
+ *
+ *   `caption`     — the table's editorial title. It is an attribute rather than
+ *                   a node inside the table because prosemirror-tables builds
+ *                   its grid map from the table's children: a caption child
+ *                   would have to be excluded from every row calculation, and
+ *                   getting that wrong corrupts tables rather than just looking
+ *                   wrong. The toolbar edits it when the cursor is in a table.
+ *
+ *   `cellAlign`   — alignment per cell, which the adapter reads from the header
+ *                   row to produce the stored per-column `columnAlign`. It
+ *                   renders as `text-align` so the author sees in the editor
+ *                   what a reader will see, and it PARSES from a pasted cell's
+ *                   own `style`/`align`, so alignment copied from Word or Docs
+ *                   is kept rather than flattened to the left.
+ */
+const alignedCellAttributes = {
+  cellAlign: {
+    default: null as BlockAlignment | null,
+    parseHTML: (element: HTMLElement) => {
+      const inline = storableAlignment(element.style.textAlign);
+      if (inline) return inline;
+      const attr = element.getAttribute('align');
+      return storableAlignment(attr) ?? null;
+    },
+    renderHTML: (attributes: Record<string, unknown>) => {
+      const align = storableAlignment(attributes.cellAlign);
+      return align ? { style: `text-align: ${align}` } : {};
+    },
+  },
+};
+
+export const articleTableExtensions = [
+  Table.extend({
+    addAttributes() {
+      return {
+        ...this.parent?.(),
+        caption: {
+          default: null,
+          parseHTML: (element: HTMLElement) =>
+            element.querySelector(':scope > caption')?.textContent?.trim() || null,
+          // Kept out of the editor DOM: the caption is shown and edited in the
+          // toolbar, and rendering it inside the table element would put text
+          // in the grid that prosemirror-tables does not know about.
+          rendered: false,
+        },
+      };
+    },
+  }).configure({
+    // A table pasted or inserted here is editorial content, not a layout tool:
+    // the public renderer sizes the columns, so stored column widths would be
+    // a promise the published page does not keep.
+    resizable: false,
+    allowTableNodeSelection: true,
+  }),
+  TableRow,
+  TableHeader.extend({ addAttributes() { return { ...this.parent?.(), ...alignedCellAttributes }; } }),
+  TableCell.extend({ addAttributes() { return { ...this.parent?.(), ...alignedCellAttributes }; } }),
+];
+
+declare module '@tiptap/core' {
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars
+  interface Commands<ReturnType> {
+    tableColumnAlign: {
+      /** Aligns every cell of the column(s) the selection touches. */
+      setTableColumnAlign: (align: BlockAlignment) => ReturnType;
+    };
+  }
+}
+
+/**
+ * Column alignment, applied to the whole column.
+ *
+ * WHY NOT JUST ALIGN THE CELL. The stored model holds ONE alignment per column
+ * (`columnAlign`), because that is what a published data table needs — a
+ * currency column reads right-aligned all the way down or it reads as a
+ * mistake. If the editor aligned single cells, an author could produce a state
+ * the save could not keep, and the alignment would appear to be discarded.
+ * Aligning the column is both what they want and what can be stored.
+ *
+ * Merged cells appear at several positions in the table map, so a cell may be
+ * visited more than once; writing the same attribute twice is harmless and
+ * costs nothing, which is cheaper than deduplicating positions.
+ */
+export const TableColumnAlign = Extension.create({
+  name: 'tableColumnAlign',
+  addCommands() {
+    return {
+      setTableColumnAlign: (align: BlockAlignment) => ({ state, tr, dispatch }) => {
+        if (!isBlockAlignment(align)) return false;
+        let rect: ReturnType<typeof selectedRect>;
+        try {
+          rect = selectedRect(state);
+        } catch {
+          return false; // the selection is not inside a table
+        }
+        const stored = align === 'left' ? null : align;
+        let changed = false;
+        for (let col = rect.left; col < rect.right; col += 1) {
+          for (let row = 0; row < rect.map.height; row += 1) {
+            const pos = rect.map.map[row * rect.map.width + col] + rect.tableStart;
+            const cell = tr.doc.nodeAt(pos);
+            if (!cell) continue;
+            if ((cell.attrs.cellAlign ?? null) === stored) continue;
+            // Positions are stable: `setNodeMarkup` changes attributes only,
+            // so the document size does not shift under the loop.
+            tr.setNodeMarkup(pos, undefined, { ...cell.attrs, cellAlign: stored });
+            changed = true;
+          }
+        }
+        if (changed && dispatch) dispatch(tr);
+        return changed;
+      },
+    };
+  },
+});
+
+/**
+ * Puts the cursor in the cell that was just created.
+ *
+ * WHY THIS IS NOT OPTIONAL POLISH. prosemirror-tables inserts a row or column
+ * and leaves the selection exactly where it was, so an author who pressed
+ * "Insert row below" and started typing filled in the row they came FROM. In
+ * the browser run that looked like the button had silently done nothing —
+ * the row existed but the text went somewhere else.
+ *
+ * It is run AFTER the insert command, as a separate step rather than a link in
+ * the same chain, because a chain shares one transaction: a command inside it
+ * would read the table map from before the insert and aim at the wrong cell.
+ */
+export function focusInsertedCell(
+  editor: { state: EditorState; chain: () => { focus: () => { setTextSelection: (p: number) => { run: () => boolean } } } },
+  where: 'rowAbove' | 'rowBelow' | 'columnLeft' | 'columnRight',
+): void {
+  let rect: ReturnType<typeof selectedRect>;
+  try {
+    rect = selectedRect(editor.state as EditorState);
+  } catch {
+    return;
+  }
+  const row = where === 'rowBelow' ? rect.bottom
+    : where === 'rowAbove' ? rect.top - 1
+      : rect.top;
+  const column = where === 'columnRight' ? rect.right
+    : where === 'columnLeft' ? rect.left - 1
+      : rect.left;
+  if (row < 0 || column < 0 || row >= rect.map.height || column >= rect.map.width) return;
+  const cell = rect.map.map[row * rect.map.width + column];
+  if (cell === undefined) return;
+  // +1 steps inside the cell, onto the first position of its paragraph.
+  editor.chain().focus().setTextSelection(rect.tableStart + cell + 1).run();
+}

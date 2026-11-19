@@ -99,7 +99,17 @@ export type ContentBlock =
    * checklists existed is unchanged and renders as it always did.
    */
   | { type: 'list'; items: string[]; ordered?: boolean; checklist?: boolean; checked?: boolean[]; itemRuns?: (InlineRun[] | null)[] }
-  | { type: 'table'; headers: string[]; rows: string[][]; caption?: string; columnAlign?: BlockAlignment[] }
+  /**
+   * A data table. `headerRuns`/`cellRuns` are positional and sparse — `null`
+   * for a cell with no formatting — exactly like `itemRuns` on a list, and
+   * absent entirely on a table where nothing is formatted.
+   */
+  | {
+    type: 'table'; headers: string[]; rows: string[][]; caption?: string;
+    columnAlign?: BlockAlignment[];
+    headerRuns?: (InlineRun[] | null)[];
+    cellRuns?: (InlineRun[] | null)[][];
+  }
   | { type: 'callout'; variant?: 'info' | 'takeaway' | 'warning' | 'curator'; title?: string; text: string; runs?: InlineRun[] }
   | { type: 'image'; src: string; alt: string; caption?: string; credit?: string }
   | { type: 'sourceLink'; title: string; url: string; publisher?: string; note?: string }

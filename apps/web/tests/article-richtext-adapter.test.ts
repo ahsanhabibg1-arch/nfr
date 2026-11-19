@@ -18,8 +18,10 @@ import type { ContentBlock } from '../types';
  * prove nothing, so each test states the property it actually depends on.
  */
 
-const { blocksToDoc, docToBlocks, OPAQUE_BLOCK_NODE, isProseBlock } =
-  await import('../lib/content/articleRichTextAdapter');
+const {
+  blocksToDoc, docToBlocks, OPAQUE_BLOCK_NODE, isProseBlock,
+  TABLE_NODE, TABLE_ROW_NODE, TABLE_HEADER_NODE, TABLE_CELL_NODE,
+} = await import('../lib/content/articleRichTextAdapter');
 
 const roundTrip = (blocks: ContentBlock[]) => docToBlocks(blocksToDoc(blocks));
 
@@ -117,8 +119,16 @@ describe('prose round trip', () => {
 // ---------------------------------------------------------------------------
 
 describe('structured editorial blocks pass through losslessly', () => {
+  /*
+    `table` USED TO BE IN THIS LIST AND IS NOT ANY MORE.
+
+    A table is now a real document node so that an author can type into its
+    cells, which is the whole point of the change. Its lossless guarantee did
+    not go away — it moved: the table round-trip tests below assert it directly,
+    and a table carrying anything the document cannot model still travels the
+    opaque path, which the "stays opaque" tests assert.
+  */
   const structured: ContentBlock[] = [
-    { type: 'table', headers: ['A', 'B'], rows: [['1', '2'], ['3', '4']], caption: 'A table' },
     { type: 'callout', variant: 'takeaway', title: 'Key point', text: 'The takeaway.' },
     { type: 'image', src: '/media/x.jpg', alt: 'Alt text', caption: 'Cap', credit: 'Photographer' },
     { type: 'sourceLink', title: 'Source', url: 'https://example.com/', publisher: 'Pub', note: 'n' },
@@ -210,6 +220,12 @@ describe('unknown and legacy content is never flattened', () => {
         itemRuns: [[{ text: 'Ticked', marks: ['sup'] }], null],
       },
       { type: 'quote', quote: 'Unattributed.', attribution: '' },
+      {
+        type: 'table', caption: 'Every modelled table field',
+        headers: ['Left', 'Centred', 'Right'],
+        rows: [['a', 'b', 'c'], ['d', 'e', 'f']],
+        columnAlign: ['left', 'center', 'right'],
+      },
       { type: 'divider' },
     ];
 
@@ -296,5 +312,244 @@ dbSuite('every stored article survives an editor round trip', () => {
     } finally {
       await prisma.$disconnect();
     }
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Tables as real document nodes
+// ---------------------------------------------------------------------------
+
+/**
+ * A table is the one structured element an author types into, so it is the one
+ * that became a document node rather than a card. These tests hold the two
+ * promises that change rests on:
+ *
+ *   1. a table that the document CAN model round-trips exactly;
+ *   2. a table it CANNOT model is still carried opaquely, untouched.
+ *
+ * The second is what makes the change safe for articles written before it.
+ */
+describe('tables round trip through the document', () => {
+  const cell = (kind: string, text: string, attrs: Record<string, unknown> = {}) => ({
+    type: kind,
+    attrs: { colspan: 1, rowspan: 1, colwidth: null, cellAlign: null, ...attrs },
+    content: [{ type: 'paragraph', content: text ? [{ type: 'text', text }] : undefined }],
+  });
+
+  it('a plain table survives unchanged', () => {
+    const blocks: ContentBlock[] = [
+      { type: 'table', headers: ['Event', 'Round'], rows: [['Bull riding', '1'], ['Tie-down', '2']] },
+    ];
+    expect(isProseBlock(blocks[0])).toBe(true);
+    expect(roundTrip(blocks)).toEqual(blocks);
+  });
+
+  it('caption and per-column alignment survive', () => {
+    const blocks: ContentBlock[] = [{
+      type: 'table',
+      caption: 'Payouts by round',
+      headers: ['Round', 'Payout'],
+      rows: [['1', '$30,000']],
+      columnAlign: ['left', 'right'],
+    }];
+    expect(roundTrip(blocks)).toEqual(blocks);
+  });
+
+  it('becomes a real table node, not an opaque card', () => {
+    const doc = blocksToDoc([
+      { type: 'table', headers: ['A'], rows: [['1']] },
+    ]);
+    expect(doc.content[0].type).toBe(TABLE_NODE);
+    expect(doc.content[0].type).not.toBe(OPAQUE_BLOCK_NODE);
+    const [headerRow, bodyRow] = doc.content[0].content ?? [];
+    expect(headerRow.type).toBe(TABLE_ROW_NODE);
+    expect(headerRow.content?.[0].type).toBe(TABLE_HEADER_NODE);
+    expect(bodyRow.content?.[0].type).toBe(TABLE_CELL_NODE);
+  });
+
+  it('a ragged stored table is squared to the header width', () => {
+    // A short row would otherwise produce a document the table machinery
+    // cannot operate on, and a long one would publish data with no heading.
+    const ragged = {
+      type: 'table', headers: ['A', 'B', 'C'], rows: [['1'], ['1', '2', '3', '4']],
+    } as unknown as ContentBlock;
+    expect(roundTrip([ragged])).toEqual([
+      { type: 'table', headers: ['A', 'B', 'C'], rows: [['1', '', ''], ['1', '2', '3']] },
+    ]);
+  });
+
+  it('merged cells are expanded into the right columns, never shifted left', () => {
+    /*
+      THE DEFECT THIS LOCKS OUT. The old paste path read cells in source order
+      and ignored colspan/rowspan, so every value after a merged cell moved one
+      column left and was published under the wrong heading, silently.
+
+      Here `Vegas` spans two columns and `Dec` spans two rows. The reserved
+      positions become empty cells and nothing moves.
+    */
+    const doc = { type: 'doc' as const, content: [{
+      type: TABLE_NODE,
+      attrs: { caption: null },
+      content: [
+        { type: TABLE_ROW_NODE, content: [
+          cell(TABLE_HEADER_NODE, 'Month'),
+          cell(TABLE_HEADER_NODE, 'Vegas', { colspan: 2 }),
+        ] },
+        { type: TABLE_ROW_NODE, content: [
+          cell(TABLE_CELL_NODE, 'Dec', { rowspan: 2 }),
+          cell(TABLE_CELL_NODE, 'Thomas & Mack'),
+          cell(TABLE_CELL_NODE, '10 rounds'),
+        ] },
+        { type: TABLE_ROW_NODE, content: [
+          cell(TABLE_CELL_NODE, 'South Point'),
+          cell(TABLE_CELL_NODE, 'Cowboy Christmas'),
+        ] },
+      ],
+    }] };
+    expect(docToBlocks(doc)).toEqual([{
+      type: 'table',
+      headers: ['Month', 'Vegas', ''],
+      rows: [
+        ['Dec', 'Thomas & Mack', '10 rounds'],
+        ['', 'South Point', 'Cowboy Christmas'],
+      ],
+    }]);
+  });
+
+  it('an alignment set on the paragraph inside a cell is not lost', () => {
+    // The ordinary align button acts on textblocks, so it lands on the
+    // paragraph inside the cell rather than on the cell itself.
+    const doc = { type: 'doc' as const, content: [{
+      type: TABLE_NODE,
+      attrs: { caption: null },
+      content: [
+        { type: TABLE_ROW_NODE, content: [
+          { type: TABLE_HEADER_NODE, attrs: { colspan: 1, rowspan: 1, colwidth: null, cellAlign: null },
+            content: [{ type: 'paragraph', attrs: { textAlign: 'right' }, content: [{ type: 'text', text: 'Payout' }] }] },
+        ] },
+        { type: TABLE_ROW_NODE, content: [cell(TABLE_CELL_NODE, '$30,000')] },
+      ],
+    }] };
+    expect(docToBlocks(doc)).toEqual([{
+      type: 'table', headers: ['Payout'], rows: [['$30,000']], columnAlign: ['right'],
+    }]);
+  });
+
+  it('an empty table is dropped rather than published as a blank grid', () => {
+    const doc = { type: 'doc' as const, content: [{
+      type: TABLE_NODE,
+      attrs: { caption: null },
+      content: [
+        { type: TABLE_ROW_NODE, content: [cell(TABLE_HEADER_NODE, ''), cell(TABLE_HEADER_NODE, '')] },
+        { type: TABLE_ROW_NODE, content: [cell(TABLE_CELL_NODE, ''), cell(TABLE_CELL_NODE, '')] },
+      ],
+    }] };
+    expect(docToBlocks(doc)).toEqual([]);
+  });
+});
+
+describe('a table the document cannot model stays opaque', () => {
+  const cases: { why: string; block: unknown }[] = [
+    { why: 'carries a field this adapter does not model', block: { type: 'table', headers: ['A'], rows: [['1']], sourceNote: 'keep me' } },
+    { why: 'has no columns', block: { type: 'table', headers: [], rows: [] } },
+    { why: 'holds a cell that is not a string', block: { type: 'table', headers: ['A'], rows: [[42]] } },
+    { why: 'has an alignment outside the storable vocabulary', block: { type: 'table', headers: ['A'], rows: [['1']], columnAlign: ['diagonal'] } },
+  ];
+
+  for (const { why, block } of cases) {
+    it(`a table that ${why} is returned byte-for-byte`, () => {
+      expect(isProseBlock(block as ContentBlock)).toBe(false);
+      expect(blocksToDoc([block as ContentBlock]).content[0].type).toBe(OPAQUE_BLOCK_NODE);
+      expect(roundTrip([block as ContentBlock])).toEqual([block]);
+    });
+  }
+});
+
+describe('inline formatting inside table cells', () => {
+  const bold = (text: string) => [{ text, marks: ['bold'] as const }];
+
+  it('a formatted header and a formatted cell both survive', () => {
+    const blocks: ContentBlock[] = [{
+      type: 'table',
+      headers: ['Round', 'Payout'],
+      rows: [['1', '$30,000'], ['2', '$30,000']],
+      headerRuns: [null, bold('Payout')],
+      cellRuns: [[null, bold('$30,000')], [null, null]],
+    } as unknown as ContentBlock];
+    expect(isProseBlock(blocks[0])).toBe(true);
+    expect(roundTrip(blocks)).toEqual(blocks);
+  });
+
+  it('a link in a cell survives with its href', () => {
+    const blocks: ContentBlock[] = [{
+      type: 'table',
+      headers: ['Source'],
+      rows: [['PRCA']],
+      cellRuns: [[[{ text: 'PRCA', href: 'https://example.com/' }]]],
+    } as unknown as ContentBlock];
+    expect(roundTrip(blocks)).toEqual(blocks);
+  });
+
+  it('a table with no formatting never grows the runs keys', () => {
+    // A plain table must serialise exactly as every earlier editor wrote it,
+    // or every untouched article would show a diff on its next save.
+    const plain: ContentBlock[] = [{ type: 'table', headers: ['A'], rows: [['1']] }];
+    const out = roundTrip(plain);
+    expect(out).toEqual(plain);
+    expect(Object.keys(out[0])).toEqual(['type', 'headers', 'rows']);
+  });
+
+  it('the Blocks view reports a formatted table as formatted, so it protects it', async () => {
+    const { blockHasInlineFormatting } = await import('../lib/content/articleInline');
+    expect(blockHasInlineFormatting({ type: 'table', headers: ['A'], rows: [['1']] })).toBe(false);
+    expect(blockHasInlineFormatting({
+      type: 'table', headers: ['A'], rows: [['1']], cellRuns: [[bold('1')]],
+    })).toBe(true);
+    expect(blockHasInlineFormatting({
+      type: 'table', headers: ['A'], rows: [['1']], headerRuns: [bold('A')],
+    })).toBe(true);
+  });
+
+  it('the write boundary keeps the words when a cell is edited as plain text', async () => {
+    /*
+      The Blocks grid writes a cell back as a plain string. If the runs for that
+      cell were left in place they would no longer match, and a mismatch must
+      lose the FORMATTING, never the words — the rule the rest of the model
+      already follows.
+    */
+    const { articleBlockSchema, reconcileBlockInline } = await import('../lib/content/articleBlockSchema');
+    const parsed = articleBlockSchema.parse({
+      type: 'table',
+      headers: ['Round'],
+      rows: [['edited in the grid']],
+      cellRuns: [[bold('the original text')]],
+    });
+    const fixed = reconcileBlockInline(parsed) as { rows: string[][]; cellRuns?: unknown };
+    expect(fixed.rows[0][0]).toBe('edited in the grid');
+    expect(fixed.cellRuns).toBeUndefined();
+  });
+});
+
+describe('a body that ends with a table', () => {
+  it('gets a trailing paragraph to type into, and does not store it', () => {
+    const blocks: ContentBlock[] = [
+      { type: 'paragraph', text: 'Before the table.' },
+      { type: 'table', headers: ['A'], rows: [['1']] },
+    ];
+    const doc = blocksToDoc(blocks);
+    // Without this the caret has nowhere to go after the table, and the next
+    // thing typed lands inside its last cell.
+    expect(doc.content[doc.content.length - 1].type).toBe('paragraph');
+    expect(roundTrip(blocks)).toEqual(blocks);
+  });
+
+  it('does not add one when the body already ends in prose', () => {
+    const blocks: ContentBlock[] = [
+      { type: 'table', headers: ['A'], rows: [['1']] },
+      { type: 'paragraph', text: 'After the table.' },
+    ];
+    const doc = blocksToDoc(blocks);
+    expect(doc.content).toHaveLength(2);
+    expect(roundTrip(blocks)).toEqual(blocks);
   });
 });

@@ -6,12 +6,11 @@ import { Extension, Node, mergeAttributes } from '@tiptap/core';
 import StarterKit from '@tiptap/starter-kit';
 import Link from '@tiptap/extension-link';
 import { TaskList, TaskItem } from '@tiptap/extension-list';
-import { Fragment, Slice } from '@tiptap/pm/model';
 import { NodeSelection, Plugin } from '@tiptap/pm/state';
 import { RichBlockEditor } from './RichBlockEditor';
 import { MediaPickerModal } from './MediaPickerModal';
 import {
-  Superscript, Subscript, BlockAlign, ALIGN_CHOICES,
+  Superscript, Subscript, BlockAlign, ALIGN_CHOICES, articleTableExtensions, TableColumnAlign, focusInsertedCell,
 } from './richTextExtensions';
 import type { ContentBlock } from '../../../types';
 import {
@@ -23,7 +22,7 @@ import {
   findMatches, nextMatchIndex, replacementPlan, MAX_MATCHES,
   type MatchRange, type SearchableBlock,
 } from '../../../lib/content/articleFindReplace';
-import { pastedTables, sanitizePastedHtml } from '../../../lib/content/articlePaste';
+import { sanitizePastedHtml } from '../../../lib/content/articlePaste';
 import {
   INSERTABLE_BLOCKS, insertableBlock, matchSlashCommand,
   type InsertableBlockDef, type InsertableBlockType,
@@ -155,84 +154,27 @@ const StructuredBlock = Node.create({
   },
 });
 
+/**
+ * Clipboard clean-up before TipTap parses what was pasted.
+ *
+ * WHAT WAS HERE BEFORE, AND WHY IT IS GONE. This plugin used to also carry a
+ * `handlePaste` that scanned the clipboard for `<table>`, inserted the tables
+ * it found as cards and returned `true` — which told ProseMirror the paste was
+ * fully handled. EVERYTHING ELSE ON THE CLIPBOARD WAS DISCARDED. Copying a
+ * section of a document that happened to contain a table therefore lost its
+ * headings, paragraphs and lists, with no error and no undo prompt; the author
+ * saw a lone table appear where their work should have been.
+ *
+ * Now that tables are real document nodes, nothing needs to intercept the
+ * paste: TipTap parses the table along with the prose around it, keeps header
+ * cells as header cells, and keeps merged cells merged. The only thing left to
+ * do is what this plugin was named for — stripping the presentational markup
+ * Word and Google Docs put on the clipboard.
+ */
 const ArticlePasteFormatting = Extension.create({
   name: 'articlePasteFormatting',
   addProseMirrorPlugins() {
-    return [
-      new Plugin({
-        props: {
-          transformPastedHTML: sanitizePastedHtml,
-          handlePaste: (view, event) => {
-            const html = event.clipboardData?.getData('text/html') ?? '';
-            const tables = pastedTables(html);
-            if (!tables.length) return false;
-            const nodes = tables.map((block) =>
-              view.state.schema.nodes[OPAQUE_BLOCK_NODE].create({ block }),
-            );
-            view.dispatch(view.state.tr.replaceSelection(new Slice(Fragment.fromArray(nodes), 0, 0)));
-            return true;
-          },
-        },
-      }),
-    ];
-  },
-});
-
-const PastedTable = Node.create({
-  name: 'pastedTable',
-  group: 'block',
-  atom: true,
-  selectable: true,
-  addAttributes() {
-    return { block: { default: null, rendered: false } };
-  },
-  parseHTML() {
-    return [{ tag: 'div[data-pasted-table]' }];
-  },
-  renderHTML({ HTMLAttributes }) {
-    return ['div', mergeAttributes(HTMLAttributes, { 'data-pasted-table': '' })];
-  },
-  addNodeView() {
-    return ({ node }) => {
-      const block = node.attrs.block as ContentBlock;
-      const wrapper = document.createElement('div');
-      wrapper.setAttribute('data-pasted-table', '');
-      wrapper.setAttribute('contenteditable', 'false');
-      wrapper.className = 'my-4 overflow-x-auto rounded-xs border border-stone-300 bg-white';
-      const table = document.createElement('table');
-      table.className = 'min-w-full border-collapse text-sm';
-      if (block.type !== 'table') return { dom: wrapper };
-      if (block.caption) {
-        const caption = document.createElement('caption');
-        caption.className = 'px-3 py-2 text-left font-semibold text-stone-800';
-        caption.textContent = block.caption;
-        table.appendChild(caption);
-      }
-      const thead = document.createElement('thead');
-      const headerRow = document.createElement('tr');
-      block.headers.forEach((header) => {
-        const cell = document.createElement('th');
-        cell.className = 'border border-stone-200 bg-stone-100 px-3 py-2 text-left font-semibold';
-        cell.textContent = header;
-        headerRow.appendChild(cell);
-      });
-      thead.appendChild(headerRow);
-      table.appendChild(thead);
-      const tbody = document.createElement('tbody');
-      block.rows.forEach((row) => {
-        const tr = document.createElement('tr');
-        row.forEach((value) => {
-          const cell = document.createElement('td');
-          cell.className = 'border border-stone-200 px-3 py-2 align-top';
-          cell.textContent = value;
-          tr.appendChild(cell);
-        });
-        tbody.appendChild(tr);
-      });
-      table.appendChild(tbody);
-      wrapper.appendChild(table);
-      return { dom: wrapper };
-    };
+    return [new Plugin({ props: { transformPastedHTML: sanitizePastedHtml } })];
   },
 });
 
@@ -458,6 +400,116 @@ const SelectionToolbar: React.FC<{
 };
 
 /**
+ * The table bar: the controls an author needs WHILE the cursor is in a table.
+ *
+ * WHY CONTEXTUAL RATHER THAN IN THE MAIN TOOLBAR. These eleven controls are
+ * meaningless anywhere else, and the main toolbar is already dense. Showing
+ * them only inside a table keeps the common case uncluttered and puts the
+ * table controls next to the table.
+ *
+ * WHAT IS DELIBERATELY ABSENT: merge and split cells. prosemirror-tables can do
+ * both, but the stored model is a rectangular grid of strings with no concept
+ * of a span, so a merged cell could be made and then could not be saved. An
+ * author would do the work twice. A table PASTED with merged cells is a
+ * different matter — it is flattened into the right columns on the way in,
+ * which is better than refusing the paste.
+ */
+const TableToolbar: React.FC<{ editor: Editor; disabled?: boolean }> = ({ editor, disabled }) => {
+  if (!editor.isActive('table')) return null;
+
+  const caption = (editor.getAttributes('table').caption as string | null) ?? '';
+  const act = (fn: () => boolean) => (ev: React.MouseEvent) => { ev.preventDefault(); fn(); };
+  const can = (fn: () => boolean) => { try { return fn(); } catch { return false; } };
+
+  const Btn: React.FC<{ title: string; onClick: (ev: React.MouseEvent) => void; children: React.ReactNode; enabled?: boolean }> =
+    ({ title, onClick, children, enabled = true }) => (
+      <button
+        type="button"
+        title={title}
+        aria-label={title}
+        disabled={disabled || !enabled}
+        onMouseDown={(ev) => ev.preventDefault()}
+        onClick={onClick}
+        className={`${BTN} bg-white text-stone-700`}
+      >
+        <span aria-hidden="true">{children}</span>
+      </button>
+    );
+
+  return (
+    <div
+      role="toolbar"
+      aria-label="Table"
+      data-testid="rt-table-toolbar"
+      className="flex flex-wrap items-center gap-1.5 mb-2 px-2 py-2 rounded-xs border border-[#D4A757]/50 bg-[#FBF7EE]"
+    >
+      <label className="flex items-center gap-1.5 text-[11px] font-mono text-stone-600">
+        Caption
+        <input
+          type="text"
+          value={caption}
+          disabled={disabled}
+          data-testid="rt-table-caption"
+          placeholder="Optional table title"
+          onChange={(e) => editor.chain().focus().updateAttributes('table', { caption: e.target.value || null }).run()}
+          className="w-48 text-xs font-sans px-2 py-1 bg-white border border-stone-200 rounded-xs focus:outline-none focus:border-[#D4A757]"
+        />
+      </label>
+
+      <span aria-hidden className="mx-0.5 h-6 w-px bg-stone-300" />
+      <span className="sr-only">Rows</span>
+      {/*
+        Each insert moves the cursor into the cell it created, so the author can
+        simply start typing. Without it the caret stayed in the cell they came
+        from and the first thing they typed went into the wrong row or column —
+        found in the browser run, not by a unit test.
+      */}
+      <Btn title="Insert row above" onClick={act(() => {
+        const ok = editor.chain().focus().addRowBefore().run();
+        if (ok) focusInsertedCell(editor, 'rowAbove');
+        return ok;
+      })}>↑ Row</Btn>
+      <Btn title="Insert row below" onClick={act(() => {
+        const ok = editor.chain().focus().addRowAfter().run();
+        if (ok) focusInsertedCell(editor, 'rowBelow');
+        return ok;
+      })}>↓ Row</Btn>
+      <Btn title="Delete this row" onClick={act(() => editor.chain().focus().deleteRow().run())} enabled={can(() => editor.can().deleteRow())}>× Row</Btn>
+
+      <span aria-hidden className="mx-0.5 h-6 w-px bg-stone-300" />
+      <span className="sr-only">Columns</span>
+      <Btn title="Insert column to the left" onClick={act(() => {
+        const ok = editor.chain().focus().addColumnBefore().run();
+        if (ok) focusInsertedCell(editor, 'columnLeft');
+        return ok;
+      })}>← Col</Btn>
+      <Btn title="Insert column to the right" onClick={act(() => {
+        const ok = editor.chain().focus().addColumnAfter().run();
+        if (ok) focusInsertedCell(editor, 'columnRight');
+        return ok;
+      })}>→ Col</Btn>
+      <Btn title="Delete this column" onClick={act(() => editor.chain().focus().deleteColumn().run())} enabled={can(() => editor.can().deleteColumn())}>× Col</Btn>
+
+      <span aria-hidden className="mx-0.5 h-6 w-px bg-stone-300" />
+      <span className="sr-only">Column alignment</span>
+      {ALIGN_CHOICES.map((a) => (
+        <Btn key={a.value} title={`${a.title} (whole column)`} onClick={act(() => editor.chain().focus().setTableColumnAlign(a.value).run())}>
+          {a.glyph}
+        </Btn>
+      ))}
+
+      <span aria-hidden className="mx-0.5 h-6 w-px bg-stone-300" />
+      <Btn title="Delete the whole table" onClick={act(() => editor.chain().focus().deleteTable().run())}>× Table</Btn>
+
+      <span className="ml-auto text-[10px] font-mono text-stone-500">
+        Tab moves to the next cell
+      </span>
+    </div>
+  );
+};
+
+
+/**
  * Inserts a structured editorial block at the cursor as an opaque atom.
  *
  * THIS IS THE WHOLE REASON INSERTING IS SAFE. The block travels through the
@@ -493,15 +545,40 @@ function insertStructuredBlock(editor: Editor, def: InsertableBlockDef): void {
  * quote that carries an attribution) goes in as a card, which is the only way
  * its metadata survives.
  */
-const PROSE_INSERTERS: Partial<Record<InsertableBlockType, (e: Editor) => void>> = {
+const PROSE_INSERTERS: Partial<Record<InsertableBlockType, (e: Editor, def: InsertableBlockDef) => void>> = {
   divider: (e) => e.chain().focus().setHorizontalRule().run(),
   list: (e) => e.chain().focus().toggleBulletList().run(),
+  /**
+   * A table and a comparison table are inserted as REAL TABLE NODES, built
+   * from the same template the Blocks composer uses.
+   *
+   * Going through `blocksToDoc` rather than hand-writing a node here means the
+   * inserted table is shaped exactly like one loaded from the database — the
+   * same header row, the same cell attributes — so an author cannot tell the
+   * two apart, and the template stays the single source of what a new table
+   * contains. Inserted as a card, as it used to be, the author would get a
+   * read-only grid that only became typeable after a save and reload.
+   */
+  table: (e, def) => insertTableTemplate(e, def),
+  comparisonTable: (e, def) => insertTableTemplate(e, def),
 };
+
+function insertTableTemplate(editor: Editor, def: InsertableBlockDef): void {
+  const [node] = blocksToDoc([def.build()]).content;
+  if (!node) return;
+  editor.chain().focus().insertContent(node).run();
+  const { state } = editor;
+  // A table at the very end of the document leaves the caret nowhere to go, so
+  // the author cannot type after it. Same reason as `insertStructuredBlock`.
+  if (state.selection.$to.pos >= state.doc.content.size - 1) {
+    editor.chain().focus().insertContent({ type: 'paragraph' }).run();
+  }
+}
 
 /** One entry point for both the Insert menu and the slash menu. */
 function insertByDefinition(editor: Editor, def: InsertableBlockDef): void {
   const prose = PROSE_INSERTERS[def.key];
-  if (prose) prose(editor);
+  if (prose) prose(editor, def);
   else insertStructuredBlock(editor, def);
 }
 
@@ -668,6 +745,22 @@ export const RichTextBodyEditor: React.FC<RichTextBodyEditorProps> = ({
   emit.current = onChange;
 
   /**
+   * The body is reported upward on EVERY change, deliberately.
+   *
+   * A coalescing timer was tried here, to stop a long article re-serialising
+   * on every keystroke. It was removed because it broke saving: the parent
+   * stores the body in React state, and a save button's handler is created by
+   * the render BEFORE the one a deferred report would cause. Flushing on blur
+   * was not enough, and neither was flushing synchronously — the browser suite
+   * showed a heading typed and immediately saved coming back missing after a
+   * reload. Losing an author's last sentences to save a few milliseconds of
+   * typing cost is not a trade worth making.
+   *
+   * If the per-keystroke cost needs to come down, the way to do it is to make
+   * the conversion cheaper, or to let the parent read the body through a ref at
+   * save time — not to delay telling the parent what the body is.
+   */
+  /**
    * The last body this component reported upward, as canonical JSON.
    *
    * WHY THIS EXISTS. TipTap emits `onUpdate` while normalising the document it
@@ -749,6 +842,15 @@ export const RichTextBodyEditor: React.FC<RichTextBodyEditorProps> = ({
        */
       TaskList,
       TaskItem.configure({ nested: false }),
+      /**
+       * Tables are part of the document now, not cards. This is what lets the
+       * cursor into the cells, lets Tab walk them, and lets a table pasted
+       * from Word or Docs arrive WITH the prose around it — TipTap parses the
+       * clipboard's `<table>` itself, so the editor no longer has to pull
+       * tables out of a paste and discard the rest.
+       */
+      ...articleTableExtensions,
+      TableColumnAlign,
       StructuredBlock,
     ],
     content: initialDoc,
@@ -775,6 +877,7 @@ export const RichTextBodyEditor: React.FC<RichTextBodyEditorProps> = ({
       // it says and the editor does not fight its own save.
       if (serialized === lastEmitted.current) return;
       lastEmitted.current = serialized;
+
       emit.current(next);
     },
   });
@@ -1662,6 +1765,11 @@ export const RichTextBodyEditor: React.FC<RichTextBodyEditorProps> = ({
       */}
       <div id="article-body-surface" data-rt-host className="relative px-3">
         <SelectionToolbar editor={editor} onLink={openLink} disabled={disabled} />
+        {/*
+          Shown only while the cursor is inside a table, directly above the
+          writing surface so the controls are next to what they act on.
+        */}
+        <TableToolbar editor={editor} disabled={disabled} />
         <p className="px-1 pb-2 text-[11px] text-stone-500">
           Paste from Word, Google Docs, or a webpage to keep headings, paragraphs, lists, emphasis, links, and alignment.
           Use Insert for images and other editorial blocks.

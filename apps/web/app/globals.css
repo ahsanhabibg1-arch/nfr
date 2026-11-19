@@ -160,6 +160,48 @@ body {
 }
 .prose-editor [data-structured-block] { cursor: pointer; }
 
+/* Tables are edited in place, so they must LOOK like the published table while
+   being typed into: visible cell boundaries, a shaded header row, and a clear
+   indication of which cells are selected. Without borders an author cannot see
+   the grid they are filling, and an empty cell becomes invisible.
+
+   `table-layout: fixed` keeps a column from jumping width as characters are
+   typed into it, which otherwise makes the whole table flinch on every
+   keystroke. */
+.prose-editor table {
+  width: 100%;
+  border-collapse: collapse;
+  table-layout: fixed;
+  margin: 1.1rem 0;
+  font-size: 0.9rem;
+}
+.prose-editor th,
+.prose-editor td {
+  border: 1px solid var(--color-stone-300, #d6d3d1);
+  padding: 0.45rem 0.6rem;
+  vertical-align: top;
+  /* A cell is a container for paragraphs; without this it can collapse to zero
+     height when empty and become impossible to click into. */
+  min-width: 3rem;
+  position: relative;
+}
+.prose-editor th {
+  background: #f5f5f4;
+  font-weight: 700;
+  text-align: inherit;
+}
+.prose-editor th > p,
+.prose-editor td > p { margin: 0; }
+/* ProseMirror marks selected cells with this class; without a visible cue the
+   column-alignment buttons appear to act on nothing. */
+.prose-editor .selectedCell::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background: var(--color-gold-subtle, rgba(212, 167, 87, 0.25));
+  pointer-events: none;
+}
+
 /* Public Info & Legal bodies are stored as semantic HTML. Tailwind preflight
    resets these elements, and the typography plugin is not part of this app,
    so keep the published hierarchy and spacing explicit. */
@@ -203,3 +245,86 @@ body {
 .legal-page-body th,
 .legal-page-body td { border: 1px solid #d6d3d1; padding: 0.5rem 0.75rem; text-align: left; }
 .legal-page-body th { background: #f5f5f4; font-weight: 700; }
+
+/* ---------------------------------------------------------------------------
+   BUSY INDICATOR
+
+   The visual half of `components/ui/GlobalBusy.tsx`: a hairline bar across the
+   top of the viewport while the application is waiting on the server, and a
+   small spinner for the button that was pressed.
+
+   Written as CSS rather than Tailwind utilities because both need keyframes,
+   and because the bar must sit above every stacking context in the admin shell
+   without a utility class on the element that owns the scroll.
+   --------------------------------------------------------------------------- */
+.nfr-busy-bar {
+  position: fixed;
+  inset-inline: 0;
+  top: 0;
+  height: 3px;
+  z-index: 2147483000;        /* above the admin topbar, modals and the editor */
+  pointer-events: none;        /* purely ambient: it must never swallow a click */
+  overflow: hidden;
+  opacity: 0;
+  transition: opacity 180ms ease-out;
+  background: rgba(212, 167, 87, 0.14);
+}
+.nfr-busy-bar.is-visible { opacity: 1; }
+
+/* The beam travels, stretches and contracts, which reads as progress without
+   claiming a percentage the application does not know. */
+.nfr-busy-bar__beam {
+  position: absolute;
+  inset-block: 0;
+  width: 42%;
+  border-radius: 999px;
+  background: linear-gradient(
+    90deg,
+    rgba(212, 167, 87, 0) 0%,
+    var(--color-gold) 38%,
+    #F3DFB4 55%,
+    var(--color-gold) 72%,
+    rgba(212, 167, 87, 0) 100%
+  );
+  box-shadow: 0 0 10px rgba(212, 167, 87, 0.65);
+  animation: nfr-busy-sweep 1.15s cubic-bezier(0.45, 0, 0.25, 1) infinite;
+}
+
+@keyframes nfr-busy-sweep {
+  0%   { transform: translateX(-100%) scaleX(0.6); }
+  55%  { transform: translateX(60%) scaleX(1.15); }
+  100% { transform: translateX(240%) scaleX(0.6); }
+}
+
+.nfr-spinner {
+  display: inline-block;
+  width: 0.9em;
+  height: 0.9em;
+  margin-inline-end: 0.45em;
+  vertical-align: -0.1em;
+  border-radius: 50%;
+  /* `currentColor` means one spinner works on the dark gold primary button and
+     on the pale secondary ones without a variant for each. */
+  border: 2px solid currentColor;
+  border-top-color: transparent;
+  opacity: 0.85;
+  animation: nfr-spin 0.7s linear infinite;
+}
+
+@keyframes nfr-spin { to { transform: rotate(360deg); } }
+
+/* Motion is a preference, not a given. Someone who has asked for less of it
+   still gets the information — the bar glows and the spinner holds — without
+   anything travelling across their screen. */
+@media (prefers-reduced-motion: reduce) {
+  .nfr-busy-bar__beam {
+    position: static;
+    width: 100%;
+    animation: nfr-busy-pulse 1.6s ease-in-out infinite;
+  }
+  .nfr-spinner { animation: nfr-busy-pulse 1.6s ease-in-out infinite; }
+  @keyframes nfr-busy-pulse {
+    0%, 100% { opacity: 0.35; }
+    50%      { opacity: 1; }
+  }
+}

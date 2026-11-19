@@ -48,10 +48,39 @@ function boundedDatabaseUrl(): string | undefined {
 
 const boundedUrl = boundedDatabaseUrl();
 
+/**
+ * Interactive-transaction budget sized for a REMOTE database.
+ *
+ * WHY. Prisma's defaults are `maxWait: 2s` / `timeout: 5s`, and the editorial
+ * writes are interactive transactions that issue dozens of sequential queries:
+ * `saveArticle` alone resolves the category, author and relationships, rebuilds
+ * every child collection, inserts one row per body block and per tag, then adds
+ * a revision and an audit entry. Against a local PostgreSQL a round trip costs
+ * a fraction of a millisecond, so the whole thing lands well inside 5 seconds.
+ * Against the managed cloud database each round trip costs tens of milliseconds
+ * and the same save takes longer than the budget, so Prisma closes the
+ * transaction mid-flight and the next statement fails with:
+ *
+ *     P2028  Transaction API error: Transaction not found. Transaction ID is
+ *            invalid, refers to an old closed transaction ...
+ *
+ * The editor surfaced that as "Unexpected server error", and because the
+ * transaction rolls back, nothing was written: a long article could be composed
+ * and never saved, leaving only its recovery snapshot behind. The failure was
+ * invisible locally and reproducible only against the cloud database.
+ *
+ * WHAT THIS DOES. Raises the ceiling for every interactive transaction in the
+ * app — the article writer is simply the longest one, and the info-page, media
+ * and taxonomy writers have the same shape. It is a ceiling, not a delay: a
+ * transaction still commits as soon as its work is done.
+ */
+const TRANSACTION_OPTIONS = { maxWait: 15_000, timeout: 30_000 } as const;
+
 export const prisma =
   globalForPrisma.prisma ??
   new PrismaClient({
     log: process.env.NODE_ENV === 'development' ? ['warn', 'error'] : ['error'],
+    transactionOptions: { ...TRANSACTION_OPTIONS },
     ...(boundedUrl ? { datasources: { db: { url: boundedUrl } } } : {}),
   });
 

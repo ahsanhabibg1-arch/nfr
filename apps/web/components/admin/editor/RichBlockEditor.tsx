@@ -36,6 +36,48 @@ const InlineBlockPreview: React.FC<{ block: ContentBlock }> = ({ block }) => {
           ))}
         </ul>
       );
+    case 'table':
+      /*
+        A formatted table is read-only here, so this preview is the ONLY way an
+        author sees what it holds while in the Blocks view. Falling through to
+        the "[table]" placeholder would hide the entire table behind a label and
+        make the protection feel like a loss.
+      */
+      return (
+        <div className="overflow-x-auto">
+          {block.caption && <div className="mb-1 text-xs font-semibold text-stone-800">{block.caption}</div>}
+          <table className="min-w-full border-collapse text-xs">
+            <thead>
+              <tr>
+                {block.headers.map((h, i) => (
+                  <th
+                    key={i}
+                    style={{ textAlign: block.columnAlign?.[i] ?? 'left' }}
+                    className="border border-stone-200 bg-stone-100 px-2 py-1 font-semibold"
+                  >
+                    <InlineText text={h} runs={block.headerRuns?.[i] ?? null} />
+                  </th>
+                ))}
+              </tr>
+            </thead>
+            <tbody>
+              {block.rows.map((row, r) => (
+                <tr key={r}>
+                  {row.map((cellValue, c) => (
+                    <td
+                      key={c}
+                      style={{ textAlign: block.columnAlign?.[c] ?? 'left' }}
+                      className="border border-stone-200 px-2 py-1 align-top"
+                    >
+                      <InlineText text={cellValue} runs={block.cellRuns?.[r]?.[c] ?? null} />
+                    </td>
+                  ))}
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      );
     default:
       return <span className="font-mono text-[11px] text-stone-500">[{block.type}]</span>;
   }

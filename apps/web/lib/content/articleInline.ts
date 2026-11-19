@@ -190,6 +190,22 @@ export function blockHasInlineFormatting(block: unknown): boolean {
       if (Array.isArray(entry) && runsCarryFormatting(normalizeRuns(entry))) return true;
     }
   }
+  // A table's cells carry formatting the same way a list's items do. Reporting
+  // it here is what makes the Blocks grid protect a formatted table instead of
+  // letting a plain-text edit discard its marks.
+  if (Array.isArray(b.headerRuns)) {
+    for (const entry of b.headerRuns) {
+      if (Array.isArray(entry) && runsCarryFormatting(normalizeRuns(entry))) return true;
+    }
+  }
+  if (Array.isArray(b.cellRuns)) {
+    for (const row of b.cellRuns) {
+      if (!Array.isArray(row)) continue;
+      for (const entry of row) {
+        if (Array.isArray(entry) && runsCarryFormatting(normalizeRuns(entry))) return true;
+      }
+    }
+  }
   return false;
 }
 

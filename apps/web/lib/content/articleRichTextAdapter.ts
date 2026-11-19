@@ -4,7 +4,8 @@ import {
   isSafeHref, type InlineMark, type InlineRun,
 } from './articleInline';
 import {
-  BODY_HEADING_LEVELS, storableAlignment, toBodyHeadingLevel,
+  BODY_HEADING_LEVELS, isBlockAlignment, storableAlignment, toBodyHeadingLevel,
+  type BlockAlignment,
 } from './articleBlockStyle';
 
 /**
@@ -72,8 +73,23 @@ export interface PmDoc {
 /** The node type that carries a non-prose block through the editor untouched. */
 export const OPAQUE_BLOCK_NODE = 'structuredBlock';
 
-/** Block types this adapter represents as editable rich text. */
-const PROSE_TYPES = new Set(['paragraph', 'heading', 'list', 'quote', 'divider']);
+/**
+ * Block types this adapter represents as editable rich text.
+ *
+ * `table` JOINED THIS SET DELIBERATELY. It used to travel opaquely, which kept
+ * its payload safe but made a table the one thing an author could see in the
+ * writing surface and not type into: editing meant clicking the card and
+ * filling a grid of single-line inputs, and pasting a document that contained a
+ * table dropped everything around it. A table is now a real document node, so
+ * the cursor goes into the cells, Tab moves along them, and a pasted table
+ * arrives with the prose that surrounded it.
+ *
+ * The safety that opacity used to provide is not lost: it comes from
+ * `carriesUnmodelledKeys` instead. A stored table carrying a field this adapter
+ * does not model still travels opaquely and is still edited in the grid, so no
+ * existing article can lose data by being opened in the new surface.
+ */
+const PROSE_TYPES = new Set(['paragraph', 'heading', 'list', 'quote', 'divider', 'table']);
 
 /**
  * Whether a block can be represented as editable rich text WITHOUT losing
@@ -101,6 +117,33 @@ export function isProseBlock(block: ContentBlock): boolean {
   if (block.type === 'heading' && !BODY_HEADING_LEVELS.includes(block.level)) return false;
   if (block.type === 'paragraph' && block.isDropCap) return false;
   if (block.type === 'quote' && (block.attribution || block.role)) return false;
+  if (block.type === 'table' && !isRepresentableTable(block)) return false;
+  return true;
+}
+
+/**
+ * Whether a stored table can become a document node without losing anything.
+ *
+ * The document models a rectangular grid of plain-text cells with an optional
+ * caption and one alignment per column. Anything else — a table with no
+ * columns, a cell holding something other than a string, an alignment outside
+ * the storable vocabulary — goes down the opaque path, where it keeps its exact
+ * payload and stays editable in the Blocks grid. This is the check that lets
+ * `table` join the modelled types without putting existing articles at risk.
+ */
+function isRepresentableTable(block: ContentBlock & { type: 'table' }): boolean {
+  if (!Array.isArray(block.headers) || block.headers.length === 0) return false;
+  if (!block.headers.every((h) => typeof h === 'string')) return false;
+  if (!Array.isArray(block.rows)) return false;
+  if (!block.rows.every((row) => Array.isArray(row) && row.every((c) => typeof c === 'string'))) {
+    return false;
+  }
+  if (block.caption !== undefined && typeof block.caption !== 'string') return false;
+  const align = (block as { columnAlign?: unknown }).columnAlign;
+  if (align !== undefined) {
+    if (!Array.isArray(align)) return false;
+    if (!align.every((a) => a === undefined || a === null || isBlockAlignment(a))) return false;
+  }
   return true;
 }
 
@@ -115,6 +158,7 @@ const MODELLED_KEYS: Record<string, readonly string[]> = {
   list: ['type', 'items', 'ordered', 'checklist', 'checked', 'itemRuns'],
   quote: ['type', 'quote', 'attribution', 'role', 'quoteRuns'],
   divider: ['type'],
+  table: ['type', 'headers', 'rows', 'caption', 'columnAlign', 'headerRuns', 'cellRuns'],
 };
 
 /**
@@ -158,6 +202,72 @@ function runsToPmText(text: string, runs?: InlineRun[] | null): PmNode[] {
       if (r.href && isSafeHref(r.href)) marks.push({ type: 'link', attrs: { href: r.href } });
       return marks.length ? { type: 'text', text: r.text, marks } : { type: 'text', text: r.text };
     });
+}
+
+/**
+ * The document node names for a table, kept in one place.
+ *
+ * These are the names TipTap's table extension registers. The adapter is
+ * deliberately free of editor imports (that is what makes it testable without
+ * mounting an editor), so the names are stated here rather than read from the
+ * extension — and asserted by the round-trip tests.
+ */
+export const TABLE_NODE = 'table';
+export const TABLE_ROW_NODE = 'tableRow';
+export const TABLE_HEADER_NODE = 'tableHeader';
+export const TABLE_CELL_NODE = 'tableCell';
+
+/** One cell of a document table, with whatever inline formatting it carries. */
+function tableCellNode(
+  kind: string,
+  text: string,
+  align: BlockAlignment | null,
+  runs?: InlineRun[] | null,
+): PmNode {
+  const inline = runsToPmText(text, runs);
+  return {
+    type: kind,
+    attrs: { colspan: 1, rowspan: 1, colwidth: null, cellAlign: align },
+    content: [inline.length ? { type: 'paragraph', content: inline } : { type: 'paragraph' }],
+  };
+}
+
+function tableToNode(block: ContentBlock & { type: 'table' }): PmNode {
+  const columnAlign = (block as { columnAlign?: unknown[] }).columnAlign ?? [];
+  const alignAt = (i: number): BlockAlignment | null => {
+    const raw = columnAlign[i];
+    return isBlockAlignment(raw) ? raw : null;
+  };
+  const width = block.headers.length;
+  const headerRuns = (block as { headerRuns?: (InlineRun[] | null)[] }).headerRuns;
+  const cellRuns = (block as { cellRuns?: (InlineRun[] | null)[][] }).cellRuns;
+  const rows: PmNode[] = [
+    {
+      type: TABLE_ROW_NODE,
+      content: block.headers.map((h, i) =>
+        tableCellNode(TABLE_HEADER_NODE, h, alignAt(i), headerRuns?.[i] ?? null)),
+    },
+  ];
+  block.rows.forEach((row, r) => {
+    rows.push({
+      type: TABLE_ROW_NODE,
+      // Every row is drawn to the header's width. A stored row that is short or
+      // long would otherwise produce a ragged document, which ProseMirror's
+      // table machinery cannot operate on.
+      content: Array.from({ length: width }, (_, i) =>
+        tableCellNode(
+          TABLE_CELL_NODE,
+          typeof row[i] === 'string' ? row[i] : '',
+          alignAt(i),
+          cellRuns?.[r]?.[i] ?? null,
+        )),
+    });
+  });
+  return {
+    type: TABLE_NODE,
+    attrs: { caption: typeof block.caption === 'string' ? block.caption : null },
+    content: rows,
+  };
 }
 
 function opaque(block: ContentBlock): PmNode {
@@ -229,12 +339,33 @@ export function blocksToDoc(blocks: readonly ContentBlock[]): PmDoc {
         });
         break;
       }
+      case 'table':
+        content.push(tableToNode(block));
+        break;
       case 'divider':
         content.push({ type: 'horizontalRule' });
         break;
       default:
         content.push(opaque(block));
     }
+  }
+
+  /**
+   * A document must never END with a table.
+   *
+   * A table is the last thing in the body of plenty of articles, and without a
+   * paragraph after it there is nowhere for the caret to go: pressing
+   * Ctrl+End, or clicking past the end, lands INSIDE the last cell, and
+   * everything typed next — including a new heading — goes into that cell
+   * instead of into the article. Found in the browser suite, where a test that
+   * followed one ending in a table silently wrote its paragraph into a cell.
+   *
+   * The trailing paragraph is a document-only affordance, not content: it is
+   * empty, and `docToBlocks` drops empty paragraphs, so nothing is added to
+   * what gets stored or published.
+   */
+  if (content.length && content[content.length - 1].type === TABLE_NODE) {
+    content.push({ type: 'paragraph' });
   }
 
   return { type: 'doc', content };
@@ -269,6 +400,134 @@ function pmTextToRuns(nodes: readonly PmNode[] | undefined): { text: string; run
   const runs = normalizeRuns(raw);
   const text = runsToPlainText(runs);
   return runsCarryFormatting(runs) ? { text, runs } : { text };
+}
+
+/**
+ * One table cell's text and inline formatting.
+ *
+ * A cell holds paragraphs. Only a single-paragraph cell can keep its runs,
+ * because joining two paragraphs inserts a space that the run offsets know
+ * nothing about — and a runs array that disagrees with the text is discarded
+ * at the write boundary anyway. Losing the marks on a two-paragraph cell is
+ * the honest outcome; losing the words would not be.
+ */
+function cellContent(cell: PmNode): { text: string; runs?: InlineRun[] } {
+  const paragraphs = (cell.content ?? []).filter((c) => c.type === 'paragraph');
+  if (paragraphs.length === 1) {
+    const { text, runs } = pmTextToRuns(paragraphs[0].content);
+    return { text: text.trim(), ...(runs && text.trim() === text ? { runs } : {}) };
+  }
+  const parts: string[] = [];
+  for (const p of paragraphs) {
+    const { text } = pmTextToRuns(p.content);
+    if (text) parts.push(text);
+  }
+  return { text: parts.join(' ').trim() };
+}
+
+/**
+ * The alignment a cell carries, from its own attribute or, failing that, from
+ * the paragraph inside it.
+ *
+ * The fallback is not redundant. The column-alignment control writes
+ * `cellAlign`, but the ordinary block-alignment command acts on textblocks and
+ * would land on the paragraph inside the cell. Reading both means an author who
+ * reaches for the familiar align button does not silently lose the alignment on
+ * save.
+ */
+function cellAlignment(cell: PmNode): BlockAlignment | null {
+  const own = cell.attrs?.cellAlign;
+  if (isBlockAlignment(own)) return own;
+  for (const child of cell.content ?? []) {
+    if (child.type === 'paragraph' && isBlockAlignment(child.attrs?.textAlign)) {
+      return child.attrs.textAlign as BlockAlignment;
+    }
+  }
+  return null;
+}
+
+/**
+ * A document table, flattened to the stored rectangular model.
+ *
+ * MERGED CELLS ARE EXPANDED, NOT DROPPED. The stored model has no concept of a
+ * cell spanning rows or columns, and a pasted table frequently has them. The
+ * old paste path read cells in source order and ignored the spans, so the data
+ * after a merged cell shifted left and was published under the wrong heading —
+ * silently. Here the spans are walked properly: the spanned area is reserved,
+ * the text stays in the cell's true first column, and the covered positions
+ * become empty cells. Nothing is misfiled; what cannot be represented (the
+ * merge itself) is visibly absent rather than quietly corrupting the row.
+ *
+ * The first row supplies the headers, which is what the stored model and the
+ * public renderer both require. A table whose first row is `<td>` rather than
+ * `<th>` is still read this way: a table has to have headings, and the author
+ * can see and edit them in the first row.
+ */
+function nodeToTable(node: PmNode): ContentBlock | null {
+  const rowNodes = (node.content ?? []).filter((r) => r.type === TABLE_ROW_NODE);
+  if (!rowNodes.length) return null;
+
+  const grid: string[][] = [];
+  const runGrid: (InlineRun[] | null)[][] = [];
+  const alignGrid: (BlockAlignment | null)[][] = [];
+  const taken: boolean[][] = [];
+  const at = <T,>(g: T[][], r: number): T[] => (g[r] ??= []);
+
+  rowNodes.forEach((row, r) => {
+    let c = 0;
+    for (const cell of row.content ?? []) {
+      if (cell.type !== TABLE_CELL_NODE && cell.type !== TABLE_HEADER_NODE) continue;
+      while (at(taken, r)[c]) c += 1;
+      const colspan = Math.max(1, Number(cell.attrs?.colspan) || 1);
+      const rowspan = Math.max(1, Number(cell.attrs?.rowspan) || 1);
+      const { text, runs } = cellContent(cell);
+      const align = cellAlignment(cell);
+      for (let dr = 0; dr < rowspan; dr += 1) {
+        for (let dc = 0; dc < colspan; dc += 1) {
+          const origin = dr === 0 && dc === 0;
+          at(taken, r + dr)[c + dc] = true;
+          at(grid, r + dr)[c + dc] = origin ? text : '';
+          at(runGrid, r + dr)[c + dc] = origin ? runs ?? null : null;
+          at(alignGrid, r + dr)[c + dc] = align;
+        }
+      }
+      c += colspan;
+    }
+  });
+
+  const width = grid.reduce((max, row) => Math.max(max, row.length), 0);
+  if (!width) return null;
+  const rect = grid.map((row) => Array.from({ length: width }, (_, i) => row[i] ?? ''));
+
+  const runRect = grid.map((_, r) => Array.from({ length: width }, (_, i) => runGrid[r]?.[i] ?? null));
+
+  const [headers, ...rows] = rect;
+  const [headerRuns, ...cellRuns] = runRect;
+  // A table that is nothing but an empty header row is an empty table: the
+  // author inserted one and typed nothing. Storing it would publish a blank
+  // grid, so it is dropped the way an empty paragraph is.
+  if (!headers.some((h) => h.trim()) && !rows.some((row) => row.some((cell) => cell.trim()))) {
+    return null;
+  }
+
+  const columnAlign = Array.from({ length: width }, (_, i) => alignGrid[0]?.[i] ?? null);
+  const caption = typeof node.attrs?.caption === 'string' ? node.attrs.caption.trim() : '';
+
+  return {
+    type: 'table',
+    headers,
+    rows,
+    ...(caption ? { caption } : {}),
+    // Sparse arrays are written only when something is actually formatted, so
+    // a plain table serialises exactly as it always has.
+    ...(headerRuns.some(Boolean) ? { headerRuns } : {}),
+    ...(cellRuns.some((row) => row.some(Boolean)) ? { cellRuns } : {}),
+    // Written only when at least one column is not the default, so a plain
+    // table does not grow an attribute it never had.
+    ...(columnAlign.some((a) => a && a !== 'left')
+      ? { columnAlign: columnAlign.map((a) => a ?? 'left') }
+      : {}),
+  } as ContentBlock;
 }
 
 export function docToBlocks(doc: PmDoc | null | undefined): ContentBlock[] {
@@ -346,6 +605,11 @@ export function docToBlocks(doc: PmDoc | null | undefined): ContentBlock[] {
         const { text, runs } = pmTextToRuns(inline);
         if (!text.trim()) break;
         out.push({ type: 'quote', quote: text, attribution: '', ...(runs ? { quoteRuns: runs } : {}) });
+        break;
+      }
+      case TABLE_NODE: {
+        const table = nodeToTable(node);
+        if (table) out.push(table);
         break;
       }
       case 'horizontalRule':

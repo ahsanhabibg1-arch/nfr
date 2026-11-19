@@ -1,24 +1,4 @@
 import { isSafeHref } from './articleInline';
-import type { ContentBlock } from '../../types';
-
-export function pastedTables(html: string): ContentBlock[] {
-  if (!html.trim() || typeof DOMParser === 'undefined') return [];
-  const document = new DOMParser().parseFromString(html, 'text/html');
-  return Array.from(document.querySelectorAll('table')).map((table) => {
-    const rows = Array.from(table.rows).map((row) =>
-      Array.from(row.cells).map((cell) => (cell.textContent ?? '').replace(/\s+/g, ' ').trim()),
-    );
-    const [headers = [], ...body] = rows;
-    return {
-      type: 'table',
-      headers,
-      rows: body,
-      ...(table.caption?.textContent?.trim()
-        ? { caption: table.caption.textContent.replace(/\s+/g, ' ').trim() }
-        : {}),
-    };
-  }).filter((block) => block.headers.length > 0) as ContentBlock[];
-}
 
 /**
  * Keeps the semantic part of Word/Google Docs/website HTML while removing

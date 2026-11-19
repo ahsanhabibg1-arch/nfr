@@ -90,6 +90,39 @@ test.afterAll(async () => {
 });
 
 const editPath = () => `/admin/articles/${draftId}/edit/`;
+
+/**
+ * The body every test in this file starts from.
+ *
+ * These tests share one draft AND save to it, so each left its content behind
+ * for the next: a find-and-replace count came out double because an earlier
+ * test's paragraphs were still in the body, and a save found nothing to do
+ * because the previous test had already saved the same thing. The coupling was
+ * always there; it only became visible when the body an earlier test leaves
+ * behind changed shape. Restoring the body before each test makes every count
+ * in this file mean what it says.
+ */
+async function resetDraftBody(blocks: { blockType: string; data: unknown }[]) {
+  const db = testDb();
+  try {
+    await db.articleBlock.deleteMany({ where: { articleId: draftId } });
+    await db.articleBlock.createMany({
+      data: blocks.map((b, i) => ({
+        articleId: draftId,
+        sortOrder: i,
+        blockType: b.blockType,
+        data: b.data as object,
+      })),
+    });
+  } finally {
+    await db.$disconnect();
+  }
+}
+
+const STARTING_BODY = [
+  { blockType: 'paragraph', data: { type: 'paragraph', text: 'An opening paragraph that already exists in this draft body.' } },
+];
+
 const surface = (page: Page) => page.locator('#article-body-surface [contenteditable="true"]');
 const toolbar = (page: Page) => page.getByRole('toolbar', { name: 'Article body formatting' });
 const cards = (page: Page) => page.locator('#article-body-surface [data-structured-block]');
@@ -133,8 +166,12 @@ async function storedBlocks<T = Record<string, unknown>>(): Promise<T[]> {
 
 test.describe('inserting and editing structured elements from Write', () => {
   test.beforeEach(async ({ page }) => {
+    await resetDraftBody(STARTING_BODY);
     await login(page);
     await page.goto(editPath());
+    // The surface only exists once the client has taken over, so waiting for it
+    // keeps a keypress from landing on server-rendered markup.
+    await expect(surface(page)).toBeVisible();
   });
 
   test('the toolbar exposes every new control, each with an accessible name', async ({ page }) => {
@@ -191,53 +228,72 @@ test.describe('inserting and editing structured elements from Write', () => {
       await expect(item, `${key} label`).toContainText(label);
     }
 
-    const before = await cards(page).count();
+    /*
+      A TABLE IS NO LONGER INSERTED AS A CARD.
+
+      It arrives as a real document table, which is what lets the author type
+      into it immediately instead of opening a panel of inputs. The other
+      elements in this menu are unchanged and still insert cards, so the card
+      count is asserted NOT to grow — that is what distinguishes "inserted as a
+      table" from "inserted as a card that happens to draw a table".
+    */
+    const cardsBefore = await cards(page).count();
+    const tablesBefore = await surface(page).locator('table').count();
     await page.getByTestId('rt-insert-table').click();
-    await expect(cards(page)).toHaveCount(before + 1);
-    await expect(cards(page).last()).toContainText('[table]');
+    await expect(surface(page).locator('table')).toHaveCount(tablesBefore + 1);
+    await expect(cards(page)).toHaveCount(cardsBefore);
   });
 
-  test('an inserted table is EDITED in Write and its cell survives save and reload', async ({ page }) => {
+  test('an inserted table is TYPED INTO directly and its cell survives save and reload', async ({ page }) => {
+    /*
+      This used to assert the opposite shape: the table was a card, clicking it
+      opened a panel, and the cell was a form input. Typing where the table is
+      seen is the change — the panel detour is what authors described as slow.
+    */
     await newLine(page);
     await toolbar(page).getByRole('button', { name: 'Insert an editorial element' }).click();
     await page.getByTestId('rt-insert-table').click();
 
-    await cards(page).last().click();
-
-    // The structured panel is the whole point: no trip to the Blocks view.
-    const panel = page.getByTestId('rt-block-panel');
-    await expect(panel).toBeVisible();
-    await expect(panel).toContainText('Editing table block');
+    const inserted = surface(page).locator('table').last();
+    const cell = inserted.locator('tr').filter({ has: page.locator('td') }).first().locator('td').first();
 
     const value = `cell-${Date.now()}`;
-    await panel.locator('tbody input').first().fill(value);
+    // Triple-click selects the paragraph inside the cell; `Control+a` would
+    // select the whole document, because ProseMirror has no cell-scoped
+    // select-all.
+    await cell.click({ clickCount: 3 });
+    await page.keyboard.type(value);
 
     await saveDraft(page);
     await page.reload();
 
-    await cards(page).last().click();
-    await expect(page.getByTestId('rt-block-panel').locator('tbody input').first()).toHaveValue(value);
+    await expect(
+      surface(page).locator('table').last().locator('tr').filter({ has: page.locator('td') })
+        .first().locator('td').first(),
+    ).toContainText(value);
   });
 
   test('a table row and column can be REMOVED, keeping every row the same width', async ({ page }) => {
     await newLine(page);
     await toolbar(page).getByRole('button', { name: 'Insert an editorial element' }).click();
     await page.getByTestId('rt-insert-table').click();
-    await cards(page).last().click();
 
-    const panel = page.getByTestId('rt-block-panel');
-    await expect(panel).toBeVisible();
-    await expect(panel.locator('thead input')).toHaveCount(2);
-    await expect(panel.locator('tbody tr')).toHaveCount(2);
+    const inserted = surface(page).locator('table').last();
+    const dataRows = inserted.locator('tr').filter({ has: page.locator('td') });
+    await expect(inserted.locator('th')).toHaveCount(2);
+    await expect(dataRows).toHaveCount(2);
 
-    await panel.getByRole('button', { name: 'Remove row 2' }).click();
-    await expect(panel.locator('tbody tr')).toHaveCount(1);
+    const bar = page.getByTestId('rt-table-toolbar');
+    await dataRows.last().locator('td').first().click();
+    await bar.getByRole('button', { name: 'Delete this row' }).click();
+    await expect(dataRows).toHaveCount(1);
 
-    await panel.getByRole('button', { name: 'Remove column 2' }).click();
-    await expect(panel.locator('thead input')).toHaveCount(1);
+    await dataRows.first().locator('td').nth(1).click();
+    await bar.getByRole('button', { name: 'Delete this column' }).click();
+    await expect(inserted.locator('th')).toHaveCount(1);
     // Every remaining row must be exactly as wide as the header list, or the
     // renderer would draw cells under the wrong columns.
-    await expect(panel.locator('tbody tr').first().locator('input')).toHaveCount(1);
+    await expect(dataRows.first().locator('td')).toHaveCount(1);
   });
 
   test('an inserted citation is SAVEABLE immediately, unfilled', async ({ page }) => {
@@ -297,8 +353,12 @@ test.describe('inserting and editing structured elements from Write', () => {
 
 test.describe('typography, alignment and checklists', () => {
   test.beforeEach(async ({ page }) => {
+    await resetDraftBody(STARTING_BODY);
     await login(page);
     await page.goto(editPath());
+    // The surface only exists once the client has taken over, so waiting for it
+    // keeps a keypress from landing on server-rendered markup.
+    await expect(surface(page)).toBeVisible();
   });
 
   test('H4 persists as a real h4 through save and reload', async ({ page }) => {
@@ -413,8 +473,12 @@ test.describe('typography, alignment and checklists', () => {
 
 test.describe('document tools', () => {
   test.beforeEach(async ({ page }) => {
+    await resetDraftBody(STARTING_BODY);
     await login(page);
     await page.goto(editPath());
+    // The surface only exists once the client has taken over, so waiting for it
+    // keeps a keypress from landing on server-rendered markup.
+    await expect(surface(page)).toBeVisible();
   });
 
   test('FIND moves the selection to a match and reports where it is', async ({ page }) => {

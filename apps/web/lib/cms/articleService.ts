@@ -425,15 +425,23 @@ async function writeChildren(
     );
   }
 
-  for (let i = 0; i < decision.value.blocks.length; i++) {
-    const block = decision.value.blocks[i];
-    await tx.articleBlock.create({
-      data: {
+  /**
+   * One insert for the whole body, not one per block.
+   *
+   * The body is the only child collection whose size follows the article: a
+   * long feature carries dozens of blocks, and a round trip each kept the
+   * transaction open far longer than the work needed — which is what pushed
+   * saves against the remote database past the transaction budget (see
+   * `lib/db.ts`). `createMany` preserves `sortOrder`, so ordering is unchanged.
+   */
+  if (decision.value.blocks.length > 0) {
+    await tx.articleBlock.createMany({
+      data: decision.value.blocks.map((block, i) => ({
         articleId,
         sortOrder: i,
         blockType: String((block as { type: string }).type),
         data: cleanJson(block),
-      },
+      })),
     });
   }
   /**

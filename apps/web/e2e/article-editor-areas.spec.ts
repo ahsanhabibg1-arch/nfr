@@ -95,6 +95,20 @@ test.describe('the four editor areas', () => {
   test.beforeEach(async ({ page }) => {
     await login(page);
     await page.goto(editPath());
+    /*
+      WAIT FOR HYDRATION BEFORE TOUCHING THE PAGE.
+
+      The server-rendered tabs are in the DOM long before React has attached
+      their key handlers, so a test that focused a tab and pressed a key
+      straight away could have the keypress land on dead markup — and a lost
+      keypress is not retried by `expect`, so the failure looked like the tab
+      set was broken. The arrow-key test failed this way the moment the editor
+      bundle grew; the race had been there all along.
+
+      The writing surface is created by the editor on mount, so its presence
+      means the client has taken over.
+    */
+    await expect(page.locator('#article-body-surface [contenteditable="true"]')).toBeVisible();
   });
 
   test('are a real tab set, opening on Writing', async ({ page }) => {

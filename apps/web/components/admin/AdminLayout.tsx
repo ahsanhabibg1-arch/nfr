@@ -6,6 +6,7 @@ import { AdminSidebar } from './AdminSidebar';
 import { AdminTopbar } from './AdminTopbar';
 import { AdminNotificationPanel } from './AdminNotificationPanel';
 import { AdminBreadcrumbItem } from './AdminBreadcrumbs';
+import { BusyAnnouncer, BusyProvider, RouteBusy } from '../ui/GlobalBusy';
 
 export interface AdminUserInfo {
   name: string;
@@ -43,6 +44,18 @@ export const AdminLayout: React.FC<{ children: React.ReactNode; user: AdminUserI
   };
 
   return (
+    /*
+      THE WHOLE CMS IS INSIDE THE BUSY PROVIDER.
+
+      Every admin screen runs server actions, and a click with no visible
+      response reads as a click that did nothing — which is how a save gets
+      pressed twice. The provider renders the hairline progress bar itself;
+      `RouteBusy` raises it for navigations, and any screen can raise it for its
+      own work through `useBusy()`.
+    */
+    <BusyProvider>
+    <RouteBusy />
+    <BusyAnnouncer />
     <div className="min-h-screen bg-[#F4F6F8] text-stone-900 flex font-sans antialiased">
       {/* Sidebar Navigation */}
       <AdminSidebar
@@ -84,5 +97,6 @@ export const AdminLayout: React.FC<{ children: React.ReactNode; user: AdminUserI
         onClose={() => setNotificationsOpen(false)}
       />
     </div>
+    </BusyProvider>
   );
 };
