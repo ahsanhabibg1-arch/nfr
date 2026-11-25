@@ -222,12 +222,33 @@ describe('the question-and-answer block', () => {
     expect(JSON.parse(JSON.stringify(parsed))).toEqual(faq);
   });
 
-  it('publishes as a description list, so the pairing is announced', () => {
+  it('publishes as a disclosure per question, so the pairing is announced', () => {
+    /*
+      THE PAIRING, STILL MACHINE-CHECKABLE — BY A DIFFERENT MECHANISM.
+
+      This block used to publish as `dl`/`dt`/`dd`, where the pairing was
+      carried by the description-list structure. It is now a collapsed
+      accordion (the answers were making article pages scroll for a screen and
+      a half of text nobody had asked to read), so the pairing is carried by
+      the disclosure relationship instead: each question is a `summary` whose
+      `aria-controls` names exactly the panel holding ITS answer.
+
+      So this asserts the relationship rather than the element names: the
+      question's control points at a panel, and the answer is what is inside
+      that panel. Checking `aria-controls` resolves to the right content is a
+      stronger statement about the pairing than the presence of a `<dl>` tag
+      ever was — it would catch two questions wired to one answer, which the
+      old assertion would not.
+    */
     const html = publish([faq]);
-    expect(html).toContain('<dl');
-    expect(html).toContain('<dt');
+    expect(html).toContain('<details');
+    expect(html).toContain('<summary');
+
+    const rows = [...html.matchAll(/<summary[^>]*aria-controls="([^"]+)"[\s\S]*?<\/summary>\s*<div id="\1"[^>]*>([\s\S]*?)<\/div>/g)];
+    expect(rows, 'each question must control the panel that holds its own answer').toHaveLength(2);
     expect(html).toContain('When do entries close?');
-    expect(html).toContain('Thirty days before the first performance.');
+    expect(rows[0][2]).toContain('Thirty days before the first performance.');
+    expect(rows[1][2]).toContain('rule book');
   });
 
   it('does NOT publish its questions as headings', () => {

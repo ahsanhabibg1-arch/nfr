@@ -134,7 +134,7 @@ describe('deploy config — the declared value, fed to the real middleware', () 
     const declared = byKey('STAGING_NOINDEX')?.value ?? '';
     vi.stubEnv('STAGING_NOINDEX', declared);
     vi.resetModules();
-    const { middleware } = await import('../middleware');
+    const { proxy: middleware } = await import('../proxy');
 
     expect(
       middleware(req('nfrguide.com')).headers.get('X-Robots-Tag'),

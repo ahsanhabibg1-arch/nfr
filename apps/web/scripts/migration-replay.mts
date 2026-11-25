@@ -22,6 +22,8 @@ import { fileURLToPath } from 'node:url';
 import path from 'node:path';
 import fs from 'node:fs';
 
+/** Newline, by code point, so no layer of escaping can mangle it. */
+const NL = String.fromCharCode(10);
 const here = path.dirname(fileURLToPath(import.meta.url));
 const envPath = path.resolve(here, '..', '.env');
 if (fs.existsSync(envPath)) {
@@ -102,6 +104,74 @@ function adminUrlFor(databaseName: string): string {
   return u.toString();
 }
 
+/**
+ * Batch 02 Task F2 — a clean-from-zero replay that needs NO elevated privilege.
+ *
+ * The original gate could only replay into a brand-new DATABASE, which requires
+ * CREATEDB. On this machine only `postgres` and one unrelated project's role
+ * hold that attribute, so the gate always degraded to "verify the artifacts on
+ * the already-migrated test database" — which proves the schema is right today
+ * but proves nothing about replaying the migration history, and the assignment
+ * is explicit that the fallback must not be counted as a full pass.
+ *
+ * A fresh SCHEMA is the same experiment at a lower privilege: `CREATE SCHEMA`
+ * needs only CREATE on the database, which the test role already has.
+ * `prisma migrate deploy` against `?schema=<fresh>` creates `_prisma_migrations`
+ * and every table from nothing, so the history really is replayed from zero —
+ * including the generated `tsvector` column and its GIN index, which are what
+ * this gate exists to protect. The schema is dropped afterwards.
+ *
+ * Returns true when it ran (pass or fail); false when the privilege is missing,
+ * so the caller can fall back and say so.
+ */
+async function schemaReplay(testUrl: string): Promise<boolean> {
+  const schema = `replay_${Date.now().toString(36)}`;
+  const probe = new Client({ connectionString: testUrl });
+  try {
+    await probe.connect();
+    await probe.query(`CREATE SCHEMA "${schema}"`);
+  } catch (e) {
+    console.log(`  • cannot create a disposable schema either: ${(e as Error).message.split(NL)[0]}`);
+    await probe.end().catch(() => {});
+    return false;
+  }
+
+  const replayUrl = (() => {
+    const u = new URL(testUrl);
+    u.searchParams.set('schema', schema);
+    return u.toString();
+  })();
+
+  console.log(`  • created disposable schema "${schema}" (no CREATEDB needed)`);
+  console.log('  • running `prisma migrate deploy` into it from zero…');
+  try {
+    const res = spawnSync('npx', ['prisma', 'migrate', 'deploy'], {
+      cwd: path.resolve(here, '..'),
+      env: { ...process.env, DATABASE_URL: replayUrl },
+      encoding: 'utf8',
+      shell: process.platform === 'win32',
+    });
+    const out = (res.stdout ?? '') + (res.stderr ?? '');
+    check('clean replay (fresh schema): all migrations applied', res.status === 0 && /All migrations have been successfully applied|No pending migrations/i.test(out), `exit ${res.status}: ${out.slice(-300)}`);
+    check('clean replay (fresh schema): no DROP COLUMN/INDEX in applied SQL output', !/drop column|drop index/i.test(out));
+
+    const client = new Client({ connectionString: testUrl });
+    try {
+      await client.connect();
+      // Resolve names inside the replayed schema only.
+      await client.query(`SET search_path TO "${schema}"`);
+      await assertFts(client, 'fresh-schema-replay', true);
+    } finally {
+      await client.end().catch(() => {});
+    }
+  } finally {
+    try { await probe.query(`DROP SCHEMA "${schema}" CASCADE`); console.log(`  • dropped schema "${schema}"`); }
+    catch (e) { console.log(`  • WARNING: could not drop schema "${schema}": ${(e as Error).message.split(NL)[0]}`); }
+    await probe.end().catch(() => {});
+  }
+  return true;
+}
+
 async function main() {
   console.log('\nMigration replay & FTS preservation gate\n');
   const base = new URL(DATABASE_URL!);
@@ -147,9 +217,12 @@ async function main() {
     try { await maint2.connect(); await maint2.query(`DROP DATABASE IF EXISTS "${replayDb}"`); console.log(`  • dropped "${replayDb}"`); }
     catch { /* leave it; harmless disposable */ }
     finally { await maint2.end().catch(() => {}); }
+  } else if (TEST_DATABASE_URL && await schemaReplay(TEST_DATABASE_URL)) {
+    // Handled inside schemaReplay(): a real clean-from-zero replay that needs no
+    // elevated privilege. Nothing to do here.
   } else if (TEST_DATABASE_URL) {
     console.log('  • FALLBACK: verifying FTS artifacts on the test database (already fully migrated).');
-    console.log('    (This is NOT a clean-from-zero replay — grant CREATEDB to run the full gate.)');
+    console.log('    (This is NOT a clean-from-zero replay — see the message above for why.)');
     const client = new Client({ connectionString: TEST_DATABASE_URL });
     try { await client.connect(); await assertFts(client, 'test-db', false); }
     finally { await client.end().catch(() => {}); }

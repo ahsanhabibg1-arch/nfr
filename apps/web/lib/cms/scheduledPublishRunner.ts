@@ -56,8 +56,77 @@ export async function runDuePublications(): Promise<number> {
   return published;
 }
 
+export interface SchedulerAuthorization {
+  enabled: boolean;
+  /** Secret-free explanation, safe to log. */
+  reason: string;
+}
+
+/**
+ * Who may run the publishing WRITER.
+ *
+ * WHY THIS GATE EXISTS. `startScheduler` installs a 60-second timer that calls
+ * `executeScheduledPublish`, which WRITES to whatever database the process is
+ * pointed at — it publishes page layouts, bumps versions and appends audit
+ * rows. That was unconditional, so once local development was pointed at the
+ * managed (production) database, a developer's `next dev` could publish to
+ * production. Nothing fired, but the capability was live. Diagnostics and local
+ * verification must never be able to mutate production, so the writer now has
+ * to be authorized rather than merely reached.
+ *
+ * WHY NOT `NODE_ENV`. `NODE_ENV` is `production` for ANY production build —
+ * including `next build` + `next start` run on a laptop to verify a release.
+ * Keying off it would re-open the exact hole this closes. The decision
+ * therefore needs two independent, deliberate signals:
+ *
+ *   1. `APP_ENV=production` — the deployment's own LABEL, read directly rather
+ *      than through `appEnv()`. `appEnv()` falls back to `NODE_ENV` when the
+ *      label is absent, which is right for validation but wrong here: an
+ *      unlabelled process must not inherit production authority. An absent or
+ *      unrecognised label is ambiguous, and ambiguity fails CLOSED.
+ *   2. `SCHEDULED_PUBLISHING=on` — per-deployment authorization, so staging and
+ *      preview services built from the same image stay read-only by default and
+ *      exactly one deployment owns the writer.
+ *
+ * Everything else — development, test, staging, preview, an unlabelled process,
+ * and local production-mode verification — is disabled, and says why.
+ *
+ * This gates only the AUTOMATIC timer. An editor publishing from the CMS, and
+ * `runDuePublications()` called deliberately by an external scheduler, are
+ * unaffected: those are authenticated, intentional actions, not a side effect of
+ * starting a server.
+ */
+export function schedulerAuthorization(
+  env: Record<string, string | undefined> = process.env,
+): SchedulerAuthorization {
+  const label = (env.APP_ENV || '').trim().toLowerCase();
+  if (label !== 'production') {
+    return {
+      enabled: false,
+      reason: label
+        ? `APP_ENV="${label}" is not a production deployment`
+        : 'APP_ENV is not set, so this process is not a declared production deployment',
+    };
+  }
+  if ((env.SCHEDULED_PUBLISHING || '').trim().toLowerCase() !== 'on') {
+    return {
+      enabled: false,
+      reason: 'SCHEDULED_PUBLISHING is not "on" — the publishing writer must be authorized explicitly, per deployment',
+    };
+  }
+  return { enabled: true, reason: 'APP_ENV=production and SCHEDULED_PUBLISHING=on' };
+}
+
 export function startScheduler(): void {
   if (started) return;
+
+  // Ambiguity fails closed: see `schedulerAuthorization`.
+  const authorization = schedulerAuthorization();
+  if (!authorization.enabled) {
+    log.info('page layout scheduler disabled', { reason: authorization.reason });
+    return;
+  }
+
   started = true;
   log.info('page layout scheduler started', { intervalMs: INTERVAL_MS });
   runDuePublications().catch(() => {});

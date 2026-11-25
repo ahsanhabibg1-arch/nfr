@@ -17,13 +17,30 @@ const globalForPrisma = globalThis as unknown as { prisma?: PrismaClient };
  * WHY. Prisma's default pool is `physical_cpus * 2 + 1`, decided from the
  * machine Prisma happens to run on. A managed host advertises every core of the
  * underlying box, so on the deployment platform's build machine (~47 cores) one
- * client would try to open ~95 sockets. The deployment database allows 20
- * connections in total, of which 3 are reserved for superusers and ~13 are held
- * by the provider's own agents (failover slots, pg_cron, monitoring) — leaving
- * roughly 3 for the application. The result was a build that died part-way
- * through static generation:
+ * client would try to open ~95 sockets against a database that allows 20
+ * connections in total. The result was a build that died part-way through
+ * static generation:
  *
  *     FATAL: sorry, too many clients already   (Prisma P2037)
+ *
+ * HOW MUCH ROOM THERE ACTUALLY IS. An earlier version of this comment said the
+ * provider's own agents held about thirteen of the twenty, leaving roughly
+ * three for the application. That was a misreading of `pg_stat_activity`:
+ * measured against the deployed database, those rows are almost all
+ * BACKGROUND WORKERS — checkpointer, walwriter, archiver, autovacuum and
+ * replication launchers, the pg_cron launcher, io workers — and a background
+ * worker does not occupy a `max_connections` slot. Counting only
+ * `backend_type = 'client backend'`, the database carried THREE client
+ * connections, one of which was the session doing the counting and one the
+ * provider's management agent.
+ *
+ * So the real budget is `max_connections` (20) less
+ * `superuser_reserved_connections` (3) less a provider agent or two: on the
+ * order of fifteen, not three. The small pool below is still right — ninety-five
+ * sockets overruns twenty however the remainder is divided, and a bounded pool
+ * is what makes the ceiling predictable — but anyone sizing it from this
+ * comment should size it against that number, and should re-measure with
+ * `backend_type` in the query rather than trusting a row count.
  *
  * `/sitemap.xml` made it worst: it runs thirteen queries in one `Promise.all`,
  * so the pool opens sockets as fast as it can.

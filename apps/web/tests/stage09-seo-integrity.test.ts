@@ -145,9 +145,20 @@ describe('Stage 09 Task A — SEO Intelligence is the single owner of SEO metada
      * point every article at a host search engines cannot reach.
      */
     const service = read('lib/cms/articleService.ts');
-    expect(service).toContain('productionCanonicalUrl(`/articles/${v.slug}/`)');
+    /**
+     * Batch 02 Task E: still the shared production-origin helper — that is this
+     * case's point — but the PATH it is given is now the article's resolved
+     * public path rather than a hardcoded `/articles/<slug>/`. Writing the flat
+     * path for an article that lives at `/<subcategory>/<slug>/` stored a
+     * canonical the app itself redirects, which dropped every such article from
+     * the sitemap as `canonical-away`.
+     */
+    expect(service).toContain('productionCanonicalUrl(articlePath(v.slug, subcategorySlug))');
+    expect(service, 'the hardcoded flat path must not come back').not.toContain('productionCanonicalUrl(`/articles/${v.slug}/`)');
     const { productionCanonicalUrl, PRODUCTION_SITE_URL } = await import('../lib/seo/canonical');
     expect(productionCanonicalUrl('/articles/x/')).toBe(`${PRODUCTION_SITE_URL}/articles/x/`);
+    // The resolved path is what gets stored for a subcategorised article.
+    expect(productionCanonicalUrl('/rules-scoring/x/')).toBe(`${PRODUCTION_SITE_URL}/rules-scoring/x/`);
   });
 
   it('the editor shell and preview use the shared canonical rule, and the server ignores the client copy', () => {

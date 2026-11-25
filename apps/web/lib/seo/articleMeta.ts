@@ -17,7 +17,7 @@ import { SITE_URL, buildMetadata } from '../seo';
 import { ROUTES, articleUrl } from '../../config/routes';
 import type { Article } from '../../types';
 import { parseRobotsDirective, UNAVAILABLE_ARTICLE_ROBOTS } from './robots';
-import { normalizeSameSiteCanonical as normalizeCanonical } from './canonical';
+import { normalizeSameSiteCanonical as normalizeCanonical, resolveArticleCanonical } from './canonical';
 
 // Re-exported for existing S1 callers/tests; the single implementation lives in ./robots.
 export { parseRobotsDirective, type RobotsPolicy } from './robots';
@@ -63,7 +63,10 @@ export function articleMetadataInput(
     type: 'article',
     publishedTime: article.publishedAt,
     authorName: article.author.name,
-    canonical: normalizeSameSiteCanonical(seo?.canonicalUrl, siteUrl) ?? undefined,
+    // Batch 02 Task E: a stored canonical that is this article's own legacy
+    // flat path is stale (the app 308s it here), so it resolves to
+    // self-canonical instead of advertising a redirecting URL.
+    canonical: resolveArticleCanonical(seo?.canonicalUrl, articleUrl(article), article.slug, siteUrl) ?? undefined,
     // Batch S3: independent index/follow from the stored directive (blank → index, follow).
     robots: parseRobotsDirective(seo?.robots),
   };

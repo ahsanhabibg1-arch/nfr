@@ -11,6 +11,9 @@
   },
   "scripts": {
     "dev": "next dev",
+    "dev:status": "node scripts/dev-server.mjs status",
+    "dev:stop": "node scripts/dev-server.mjs stop",
+    "dev:restart": "node scripts/dev-server.mjs restart",
     "build": "next build",
     "start": "next start",
     "typecheck": "tsc --noEmit",
@@ -28,7 +31,8 @@
     "bootstrap:admin": "tsx prisma/bootstrap-admin.ts",
     "bootstrap:article-types": "tsx scripts/bootstrap-article-types.ts",
     "bootstrap:classifications": "tsx scripts/bootstrap-discipline-classifications.ts",
-    "test:e2e": "playwright test"
+    "test:e2e": "tsx scripts/e2e.mts",
+    "test:e2e:playwright-only": "playwright test"
   },
   "dependencies": {
     "@aws-sdk/client-s3": "^3.1161.0",
@@ -44,7 +48,7 @@
     "bcryptjs": "^3.0.3",
     "lucide-react": "^0.546.0",
     "motion": "^12.23.24",
-    "next": "16.4.3",
+    "next": "16.4.5",
     "react": "19.2.0",
     "react-dom": "19.2.0",
     "sanitize-html": "^2.18.1",
@@ -66,6 +70,6 @@
     "tailwindcss": "^4.3.3",
     "tsx": "^4.21.0",
     "typescript": "^7.0.2",
-    "vitest": "^3.2.4"
+    "vitest": "5.1.1"
   }
 }

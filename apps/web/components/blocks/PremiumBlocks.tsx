@@ -1,6 +1,7 @@
 import React from 'react';
 import type { BlockProps } from './blockProps';
 import { slotStr } from './blockProps';
+import { FaqAccordionRows } from '../FaqAccordion';
 
 export function RichTextBlock({ slot }: BlockProps) {
   const p = (k: string, f = '') => slotStr(slot, k, f);
@@ -77,23 +78,37 @@ export function CtaBanner({ slot }: BlockProps) {
   );
 }
 
+/**
+ * The Visual Builder's FAQ region.
+ *
+ * It draws through `FaqAccordionRows`, the same accordion the article body and
+ * the entity pages use, so a question set looks and behaves the same wherever
+ * an editor places one. It previously had its own rotating-triangle `details`,
+ * which is how the site came to have three accordions that agreed on nothing.
+ *
+ * The slot id names the accordion group, because the builder allows up to
+ * three FAQ regions on one page and each has to keep its own open row.
+ */
 export function FaqBlock({ slot }: BlockProps) {
   const p = (k: string, f = '') => slotStr(slot, k, f);
-  const faqs = [1, 2, 3, 4, 5].map((n) => ({ q: p(`q${n}`), a: p(`a${n}`) })).filter((f) => f.q && f.a);
+  const faqs = [1, 2, 3, 4, 5]
+    .map((n) => ({ n, q: p(`q${n}`), a: p(`a${n}`) }))
+    .filter((f) => f.q && f.a);
   if (faqs.length === 0) return null;
   return (
     <section className="w-full max-w-screen-xl mx-auto px-4 py-12">
       {p('title') && <h2 className="text-2xl font-bold text-[#0F1115] mb-6 text-center">{p('title')}</h2>}
-      <div className="max-w-3xl mx-auto divide-y divide-stone-200">
-        {faqs.map((f) => (
-          <details key={f.q} className="py-4 group">
-            <summary className="font-semibold text-stone-900 cursor-pointer list-none flex items-center justify-between">
-              {f.q}
-              <span className="text-stone-400 group-open:rotate-180 transition-transform">&#x25BC;</span>
-            </summary>
-            <p className="mt-3 text-stone-600 leading-relaxed">{f.a}</p>
-          </details>
-        ))}
+      <div className="max-w-3xl mx-auto">
+        <FaqAccordionRows
+          group={`slot-${slot.id}`}
+          /*
+            Keyed by the SLOT NUMBER, not the question text. Keying by the text
+            meant two regions that happened to ask the same question collided
+            on one React key, and an editor who typed the same question twice
+            lost the second one.
+          */
+          rows={faqs.map((f) => ({ key: `q${f.n}`, question: f.q, answer: f.a }))}
+        />
       </div>
     </section>
   );

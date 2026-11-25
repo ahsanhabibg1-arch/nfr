@@ -36,6 +36,14 @@ const PAGE_SIZE_DEFAULT = 10;
 const PAGE_SIZE_MAX = 50;
 const SIDE_LIMIT = 6; // max discipline/section results shown alongside articles
 
+/**
+ * The public path of an article from raw SQL columns. Mirrors `ROUTES.ARTICLE`
+ * (and `articlePath` in articleService) for the same reason that one does: this
+ * module works on raw rows, where only the subcategory's slug is in hand.
+ */
+const articlePublicPath = (slug: string, subcategorySlug: string | null): string =>
+  subcategorySlug ? `/${subcategorySlug}/${slug}/` : `/articles/${slug}/`;
+
 interface ArticleRow {
   id: string;
   slug: string;
@@ -47,6 +55,12 @@ interface ArticleRow {
   updatedAt: Date | null;
   categoryName: string;
   categorySlug: string;
+  /**
+   * The managed subcategory's slug, or null. Needed because a search result's
+   * link is the article's PUBLIC path, which is (subcategory, slug) — linking
+   * `/articles/<slug>/` sent every searcher through a 308.
+   */
+  subcategorySlug: string | null;
   rank: number;
 }
 
@@ -124,8 +138,10 @@ export async function runPublicSearch(input: Partial<SearchFilters> & { q?: stri
         SELECT a.id, a.slug, a.title, a.deck, a.excerpt,
                a."heroImageUrl" AS "heroImageUrl", a."publishedAt" AS "publishedAt",
                a."updatedAt" AS "updatedAt", c.name AS "categoryName", c.slug AS "categorySlug",
+               s.slug AS "subcategorySlug",
                ts_rank_cd('{0.1,0.2,0.4,1.0}', a."searchVector", ${tsq}) AS rank
         FROM "Article" a JOIN "Category" c ON c.id = a."categoryId"
+        LEFT JOIN "Subcategory" s ON s."categoryId" = a."categoryId" AND s.id = a."subcategoryId"
         WHERE ${where}
         ${orderBy}
         LIMIT ${pageSize} OFFSET ${skip}
@@ -142,7 +158,7 @@ export async function runPublicSearch(input: Partial<SearchFilters> & { q?: stri
         type: 'article' as const,
         id: r.id,
         title: r.title,
-        url: `/articles/${r.slug}/`,
+        url: articlePublicPath(r.slug, r.subcategorySlug),
         excerpt: buildExcerpt(r.excerpt || r.deck || '', tokens),
         contentType: 'Article',
         category: r.categoryName,

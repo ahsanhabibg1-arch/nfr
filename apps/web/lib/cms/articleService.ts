@@ -388,6 +388,12 @@ async function writeChildren(
   articleId: string,
   v: ParsedInput,
   rel: ResolvedRelations,
+  /**
+   * The slug of the article's managed subcategory, or null. Required because the
+   * stored canonical is the article's PUBLIC path, and that path is
+   * (subcategory, slug) — not the slug alone.
+   */
+  subcategorySlug: string | null,
 ): Promise<void> {
   /**
    * Read the current body BEFORE deleting it: the grandfathering rule below
@@ -491,7 +497,19 @@ async function writeChildren(
   // SEO 1:1. Batch S5: the system canonical is stored as the article's PRODUCTION URL via
   // the shared constant (environment-independent; never the dev/staging host). Rendering
   // re-bases it onto the current SITE_URL (lib/seo/canonical.ts). Same value as before.
-  const canonicalUrl = productionCanonicalUrl(`/articles/${v.slug}/`);
+  /**
+   * Batch 02 Task E — the canonical is the article's RESOLVED public path.
+   *
+   * This line used to hardcode `/articles/<slug>/`, so every save wrote the
+   * LEGACY flat path even for an article that lives at `/<subcategory>/<slug>/`
+   * and whose flat URL the app 308s away. A stored same-site canonical outranks
+   * the page's own path, so the rendered canonical pointed at a redirect and
+   * `lib/seo/policy.ts` dropped the article from the sitemap as `canonical-away`.
+   * `lib/seo/canonical.ts` heals the rows already written; this stops a save
+   * from recreating the problem, including when an editor assigns, changes or
+   * clears a subcategory (which MOVES the article).
+   */
+  const canonicalUrl = productionCanonicalUrl(articlePath(v.slug, subcategorySlug));
   await tx.articleSeo.upsert({
     where: { articleId },
     update: { seoTitle: v.seoTitle || v.title, metaDescription: v.metaDescription || v.excerpt, canonicalUrl, ogImage: v.heroImage || null },
@@ -720,7 +738,16 @@ async function persistArticle(
       version = after.version;
     }
 
-    await writeChildren(tx, articleId, v, rel);
+    /**
+     * Resolved BEFORE `writeChildren`, which needs it for the stored canonical;
+     * the URL-move bookkeeping below reuses the same lookup rather than
+     * repeating the query. `v.subcategoryId` was validated against the
+     * article's section by `assertSubcategoryInCategory` above.
+     */
+    const nextSub = v.subcategoryId
+      ? await tx.subcategory.findUnique({ where: { id: v.subcategoryId }, select: { slug: true } })
+      : null;
+    await writeChildren(tx, articleId, v, rel, nextSub?.slug ?? null);
     await reconcileHeroMedia(tx, articleId, v.heroImage || null);
     await reconcileInlineMedia(tx, articleId, v.blocks);
     const slugChanged = !!existing && existing.slug !== v.slug;
@@ -730,9 +757,6 @@ async function persistArticle(
      * `assertSubcategoryInCategory`, so this lookup cannot pick up a row from
      * another section.
      */
-    const nextSub = v.subcategoryId
-      ? await tx.subcategory.findUnique({ where: { id: v.subcategoryId }, select: { slug: true } })
-      : null;
     const fromPath = existing ? articlePath(existing.slug, existing.subcategoryTaxon?.slug) : '';
     const toPath = articlePath(v.slug, nextSub?.slug);
     const redirectCreated = isLive && !!existing ? await syncUrlRedirect(tx, fromPath, toPath) : false;

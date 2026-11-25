@@ -73,6 +73,63 @@ export function normalizeSameSiteCanonical(value: string | null | undefined, sit
 }
 
 /**
+ * Batch 02 Task E — an ARTICLE's effective canonical, with a stale legacy value healed.
+ *
+ * THE DEFECT THIS FIXES. An article's public path moved when the flat
+ * subcategory route shipped: an article with a subcategory now lives at
+ * `/<subcategory>/<slug>/`, and `/articles/<slug>/` permanently redirects to it
+ * (see `app/(public)/articles/[slug]/page.tsx`). The system-generated
+ * `ArticleSeo.canonicalUrl` rows were written BEFORE that move and still say
+ * `/articles/<slug>/`. A stored same-site canonical outranks the page's own
+ * path, so every such article:
+ *
+ *   - rendered `<link rel="canonical">` pointing at a URL that 308s away, and
+ *   - was dropped from the sitemap as `canonical-away`, because
+ *     `lib/seo/policy.ts` lists a page only when it is SELF-canonical.
+ *
+ * Measured before this fix: 7 of 7 published articles, and 0 articles in a
+ * 35-URL sitemap.
+ *
+ * WHY HEAL IT HERE RATHER THAN IN THE DATA. The rows live in the production
+ * database, and rewriting published editorial records is both outside this
+ * assignment's authority and the wrong shape of fix: the same staleness recurs
+ * the moment an editor assigns, changes or clears a subcategory, because that
+ * MOVES the article (`config/routes.ts`). Resolving it in the one place every
+ * canonical decision already passes through fixes the existing rows and every
+ * future move, and it is the layer the renderer and the sitemap share — so what
+ * is rendered and what is listed cannot disagree again.
+ *
+ * WHAT IS DELIBERATELY PRESERVED. A canonical that points at a DIFFERENT page is
+ * an editorial decision (duplicate or syndicated content) and is returned
+ * untouched. Only one narrow case is treated as stale: the stored value is this
+ * article's own LEGACY flat path while its resolved path is elsewhere — a URL
+ * the application itself redirects, so it can never be the indexable target.
+ *
+ * Returning `null` means "self-canonical", which is what both callers already
+ * do with an absent stored value.
+ */
+export function resolveArticleCanonical(
+  stored: string | null | undefined,
+  selfPath: string,
+  slug: string,
+  siteUrl: string,
+): string | null {
+  const normalized = normalizeSameSiteCanonical(stored, siteUrl);
+  if (!normalized) return null;
+
+  const base = trimBase(siteUrl);
+  const self = `${base}${normalizedPath(selfPath)}`;
+  if (normalized === self) return null;
+
+  // The legacy flat path for THIS article: stale by construction, since the app
+  // permanently redirects it to `selfPath`.
+  const legacy = `${base}${normalizedPath(`/articles/${slug}/`)}`;
+  if (normalized === legacy) return null;
+
+  return normalized;
+}
+
+/**
  * Comparison key for any URL (same-site or not): scheme://host(lower, no www)/path/ —
  * query and fragment removed. Two URLs with the same key are the same canonical target.
  */

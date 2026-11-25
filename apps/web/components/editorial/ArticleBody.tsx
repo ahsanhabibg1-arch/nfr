@@ -7,6 +7,7 @@ import { InlineText } from './InlineText';
 import { alignmentClass } from '../../lib/content/articleBlockStyle';
 import { videoEmbedUrl, videoWatchUrl, VIDEO_PROVIDER_LABEL } from '../../lib/content/articleEmbeds';
 import { completeFaqItems } from '../../lib/content/articleFaq';
+import { FaqAccordionRows } from '../FaqAccordion';
 
 interface ArticleBodyProps {
   article: Article;
@@ -263,13 +264,23 @@ export const ArticleBody: React.FC<ArticleBodyProps> = ({ article, className = '
 
           case 'faq': {
             /*
-              A DESCRIPTION LIST, NOT A STACK OF DIVS.
+              COLLAPSED BY DEFAULT, SHARED WITH EVERY OTHER QUESTION SET.
 
-              `dl`/`dt`/`dd` is what a question-and-answer set is: assistive
-              technology announces the pairing and lets a reader move between
-              questions, which a styled div cannot. Each question is `dt`, so
-              it is also not a heading — headings would appear in the article's
-              outline and in the contents list beside real sections.
+              This used to be a `dl` with every question and answer permanently
+              open. It was the correct markup for a published pairing and the
+              wrong reading experience: an article with eight questions ended
+              with a screen and a half of answers nobody had asked to read, and
+              the questions themselves — the part a reader scans — were buried
+              among them.
+
+              `FaqAccordionRows` is now the one accordion the site has, shared
+              with the entity pages and the Visual Builder's FAQ region. It
+              keeps the browser's own disclosure semantics (so the pairing is
+              still announced, and still not a heading that would appear in the
+              article outline beside real sections) while collapsing the
+              answers. Every answer stays in the server-rendered HTML, which is
+              what lets the FAQPage markup keep describing content that is
+              really there.
             */
             /*
               ONLY COMPLETE PAIRS ARE DRAWN, and `completeFaqItems` is the same
@@ -301,16 +312,20 @@ export const ArticleBody: React.FC<ArticleBodyProps> = ({ article, className = '
                     {block.title}
                   </h2>
                 )}
-                <dl className="divide-y divide-stone-200 border-y border-stone-200">
-                  {faqItems.map((item, i) => (
-                    <div key={i} className="py-3.5">
-                      <dt className="font-sans font-semibold text-base text-[#0F1115]">{item.question}</dt>
-                      <dd className="mt-1.5 text-stone-800">
-                        <InlineText text={item.answer} runs={item.answerRuns} />
-                      </dd>
-                    </div>
-                  ))}
-                </dl>
+                {/*
+                  The group is named by the block's position in the body, so an
+                  article carrying two question sets gets two independent
+                  accordions — opening a question in the second does not close
+                  one in the first — and the panel ids stay unique across both.
+                */}
+                <FaqAccordionRows
+                  group={`article-${index}`}
+                  rows={faqItems.map((item, i) => ({
+                    key: `${i}`,
+                    question: item.question,
+                    answer: <InlineText text={item.answer} runs={item.answerRuns} />,
+                  }))}
+                />
               </section>
             );
           }

@@ -11,7 +11,7 @@ import { publicRodeoWhere, publicEditionWhere, ACTIVE_ONLY } from '../cms/lifecy
 import { resolveCanonical } from '../cms/entitySeoService';
 import { getContentEligibleVenues, getContentEligibleCompetitors } from '../batch12Content';
 import { listPublicCoverageEditions } from '../cms/competitionService';
-import { normalizeSameSiteCanonical } from './articleMeta';
+import { resolveArticleCanonical } from './canonical';
 import { type SeoSubject, type SitemapExclusionReason, sitemapExclusionReason, newestDate } from './policy';
 
 /**
@@ -242,7 +242,15 @@ export async function loadSitemapCandidates(): Promise<SitemapCandidate[]> {
         */
         path: a.subcategoryTaxon ? `/${a.subcategoryTaxon.slug}/${a.slug}/` : `/articles/${a.slug}/`, published: true,
         storedRobots: a.seo ? a.seo.robots : undefined,
-        canonical: normalizeSameSiteCanonical(a.seo?.canonicalUrl),
+        // Batch 02 Task E: the same resolver the renderer uses, so a stale
+        // legacy canonical can no longer drop an article from the sitemap
+        // while the page itself renders as self-canonical.
+        canonical: resolveArticleCanonical(
+          a.seo?.canonicalUrl,
+          a.subcategoryTaxon ? `/${a.subcategoryTaxon.slug}/${a.slug}/` : `/articles/${a.slug}/`,
+          a.slug,
+          SITE_URL,
+        ),
       },
       lastModified: a.updatedAt, changeFrequency: 'weekly', priority: 0.7,
     });

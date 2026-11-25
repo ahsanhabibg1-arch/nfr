@@ -1,7 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import {
   normalizeSameSiteCanonical, canonicalUrlKey, classifyStoredCanonical, productionCanonicalUrl,
-  sameSiteHosts, PRODUCTION_SITE_URL,
+  sameSiteHosts, PRODUCTION_SITE_URL, resolveArticleCanonical,
 } from '../lib/seo/canonical';
 import { resolveCanonical } from '../lib/cms/entitySeoService';
 import { articleMetadataInput } from '../lib/seo/articleMeta';
@@ -123,12 +123,23 @@ describe('S5 — rendered canonical ↔ sitemap eligibility agree, per environme
       [undefined, true],
     ] as const) {
       const rendered = buildMetadata(articleMetadataInput(art(stored), site)).alternates?.canonical as string;
-      const resolved = normalizeSameSiteCanonical(stored, site);
+      /**
+       * Batch 02 Task E: the EFFECTIVE canonical, through the resolver the
+       * renderer and the sitemap now share. A stored value that is the
+       * article's own path resolves to null (self-canonical) instead of being
+       * restated as an override — which is the whole point of the fix, and is
+       * why this is no longer `normalizeSameSiteCanonical`.
+       */
+      const resolved = resolveArticleCanonical(stored, '/articles/a/', 'a', site);
       const subject = { path: '/articles/a/', published: true, canonical: resolved };
       expect(isCanonicalSelf(subject, site)).toBe(expectedSelf);
       expect(isInSitemap(subject, site)).toBe(expectedSelf);
-      // what the page renders is exactly what the sitemap evaluated
+      // What the page renders is exactly what the sitemap evaluated. When the
+      // page is self-canonical, `buildMetadata` derives the URL from the
+      // RENDERING origin (SITE_URL); in a real deployment that is the same
+      // origin this case passes as `site`.
       if (resolved) expect(rendered).toBe(resolved);
+      else expect(rendered).toBe(`${SITE_URL}/articles/a/`);
       const listed = evaluateSitemap([{ subject, family: 'article', changeFrequency: 'weekly', priority: 0.7 }], site).entries.map((e) => e.url);
       expect(listed).toEqual(expectedSelf ? [`${site}/articles/a/`] : []);
     }

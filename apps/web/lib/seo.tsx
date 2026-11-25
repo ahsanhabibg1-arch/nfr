@@ -14,6 +14,7 @@ import type { Metadata } from 'next';
 import { Article, Discipline } from '../types';
 import { INDEX_FOLLOW, LEGACY_NOINDEX, type RobotsPolicy } from './seo/robots';
 import { PRODUCTION_SITE_URL } from './seo/canonical';
+import { articleUrl } from '../config/routes';
 import { ARTICLE_TYPES, isNewsType } from './content/articleTypes';
 
 export const SITE_URL = (
@@ -197,7 +198,11 @@ export function articleJsonLd(article: Article, opts?: ArticleJsonLdOptions): Re
       url: SITE_URL,
     },
     articleSection: article.category,
-    mainEntityOfPage: `${SITE_URL}/articles/${article.slug}/`,
+    // Batch 02 Task E: the article's RESOLVED public path, via the one shared
+    // builder. Hardcoding `/articles/<slug>/` here made the structured data
+    // point at a URL the app 308s away from, disagreeing with the rendered
+    // canonical for every article that has a subcategory.
+    mainEntityOfPage: `${SITE_URL}${articleUrl(article)}`,
   };
 }
 

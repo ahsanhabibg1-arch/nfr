@@ -23,8 +23,8 @@ const NOINDEX = 'noindex, nofollow';
 async function loadMiddleware(stagingNoindex = ''): Promise<(r: NextRequest) => NextResponseLike> {
   vi.stubEnv('STAGING_NOINDEX', stagingNoindex);
   vi.resetModules();
-  const mod = await import('../middleware');
-  return mod.middleware as unknown as (r: NextRequest) => NextResponseLike;
+  const mod = await import('../proxy');
+  return mod.proxy as unknown as (r: NextRequest) => NextResponseLike;
 }
 
 type NextResponseLike = { headers: Headers };
@@ -375,7 +375,7 @@ describe('IDX-02 (15) cache and CDN variation cannot leak the wrong header', () 
   });
 
   it('the asset and API exclusions are unchanged, so asset caching is unaffected', async () => {
-    const { config } = await import('../middleware');
+    const { config } = await import('../proxy');
     expect(config.matcher).toEqual(['/((?!_next/static|_next/image|favicon\\.ico|api/).*)']);
   });
 });

@@ -70,6 +70,22 @@ services:
       # fires while the instance is awake (owner decision D-12 — scheduler host).
       - key: INTERNAL_REVALIDATE_SECRET
         sync: false
+      # Batch 02 Task A — explicit authorization for the in-process publishing
+      # WRITER (lib/cms/scheduledPublishRunner.ts). The scheduler now starts only
+      # when APP_ENV=production AND this value is exactly "on"; anything else,
+      # including an unlabelled process and a production build verified on a
+      # laptop, leaves it disabled. That is what stops a cloud-connected local
+      # server from publishing to the managed database.
+      #
+      # Declared as "off" here, and asserted rather than omitted, for the same
+      # reason as STAGING_NOINDEX below: a Blueprint sync must restore the safe
+      # value instead of inheriting whatever a dashboard edit left behind. This
+      # service is STAGING, so it must not own the writer.
+      #
+      # Exactly ONE deployment may set "on". Until an owner sets it on the
+      # production service, scheduled page-layout publishing does not run there.
+      - key: SCHEDULED_PUBLISHING
+        value: "off"
       # --- site-wide SEO kill switch (Batch 29; made safe in IDX-02) ---
       #
       # MUST NOT be "true" on this service. nfrguide.com and the Render hostname
@@ -77,8 +93,10 @@ services:
       # staging site" — it means "noindex EVERY hostname, production included".
       # Setting it true here would remove nfrguide.com from search results.
       #
-      # Staging protection no longer depends on it. middleware.ts decides per
-      # request from the Host header (lib/seo/productionHosts.ts): the Render
+      # Staging protection no longer depends on it. proxy.ts (renamed from
+      # middleware.ts in Batch 02's predecessor, when Next 16 deprecated the
+      # `middleware` convention) decides per request from the Host header
+      # (lib/seo/productionHosts.ts): the Render
       # hostname and any unknown host get X-Robots-Tag: noindex, nofollow, while
       # the official domain does not — with no configuration at all.
       #

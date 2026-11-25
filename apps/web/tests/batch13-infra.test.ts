@@ -56,6 +56,35 @@ describe('Batch 13 — env validation', () => {
     expect(JSON.stringify(s)).not.toMatch(/SECRETPW/);
     expect(redactUrl('postgresql://user:SECRETPW@h:5432/db')).not.toMatch(/SECRETPW/);
   });
+
+  /**
+   * Batch 02 Task D — the loggable summary must never carry STORAGE secrets.
+   *
+   * `startup environment` is logged on every boot, so whatever `summary`
+   * contains ends up in Render's logs and in any local terminal. The object is
+   * a whitelist today, which is why no secret reaches it; this case pins that
+   * property so adding a key cannot quietly start printing the R2 token. It
+   * also covers the error strings, which are logged on the same path.
+   */
+  it('neither the summary nor the errors can carry the R2 credentials', () => {
+    set({
+      APP_ENV: 'production',
+      DATABASE_URL: 'postgresql://u:DBSECRET@pg-x.aivencloud.com:20376/db',
+      NEXT_PUBLIC_SITE_URL: 'https://nfrguide.com',
+      MEDIA_STORAGE_PROVIDER: 'r2',
+      MEDIA_S3_BUCKET: 'nfr',
+      MEDIA_S3_ENDPOINT: 'https://ACCOUNTID.r2.cloudflarestorage.com',
+      MEDIA_S3_ACCESS_KEY_ID: 'AKIASENTINELKEYID',
+      MEDIA_S3_SECRET_ACCESS_KEY: 'SENTINELSECRETVALUE',
+    });
+    const r = validateEnv();
+    const printed = JSON.stringify(r.summary) + ' ' + r.errors.join(' ');
+    for (const secret of ['AKIASENTINELKEYID', 'SENTINELSECRETVALUE', 'DBSECRET', 'ACCOUNTID']) {
+      expect(printed).not.toContain(secret);
+    }
+    // The non-secret fact — which provider is active — must still be reported.
+    expect(r.summary.MEDIA_STORAGE_PROVIDER).toBe('r2');
+  });
 });
 
 describe('Batch 13 — isolation guard', () => {
@@ -68,6 +97,12 @@ describe('Batch 13 — isolation guard', () => {
     expect(classifyStorage('local')).toBe('local');
     expect(classifyStorage('r2')).toBe('cloud');
     expect(classifyStorage('s3')).toBe('cloud');
+    // `classifyStorage` defaults its argument to MEDIA_STORAGE_PROVIDER, so the
+    // no-argument case reads the AMBIENT environment. `set({})` clears that key
+    // first, otherwise this case asserts the developer's own .env rather than
+    // the documented default -- and it failed exactly that way once local
+    // development moved to cloud (R2) media.
+    set({});
     expect(classifyStorage(undefined)).toBe('local');
   });
   it('blocks unsafe combinations', () => {

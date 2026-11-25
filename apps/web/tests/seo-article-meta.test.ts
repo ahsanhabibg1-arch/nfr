@@ -5,7 +5,7 @@ import {
   parseRobotsDirective,
   ARTICLE_DESCRIPTION_FALLBACK,
 } from '../lib/seo/articleMeta';
-import { buildMetadata } from '../lib/seo';
+import { buildMetadata, SITE_URL } from '../lib/seo';
 import type { Article } from '../types';
 
 /** Batch S / S1 — ArticleSeo → public article metadata. Pure: no DB, no Next runtime. */
@@ -161,7 +161,16 @@ describe('S1 — end-to-end through buildMetadata', () => {
     })), SITE));
     expect(meta.title).toEqual({ absolute: 'Custom SEO Title — NFRGuide' });
     expect(meta.description).toBe('Stored meta description.');
-    expect(meta.alternates?.canonical).toBe('https://nfrguide.com/articles/bull-riding-guide/');
+    /**
+     * Batch 02 Task E: this stored value IS the article's own path, so it is now
+     * expressed as SELF-canonical rather than restated as an explicit override —
+     * `buildMetadata` then derives it from the rendering origin. In production
+     * and on staging the two are the same string, because the rendering origin
+     * and the origin a canonical is re-based onto are both SITE_URL; they differ
+     * here only because this case passes SITE explicitly. The override plumbing
+     * itself is proven by the cross-page case below.
+     */
+    expect(meta.alternates?.canonical).toBe(`${SITE_URL}/articles/bull-riding-guide/`);
     expect(meta.robots).toEqual({ index: true, follow: true });
     const og = meta.openGraph as { title?: string; description?: string; images?: { url: string }[]; type?: string };
     expect(og.title).toBe('Custom SEO Title — NFRGuide');
@@ -171,6 +180,19 @@ describe('S1 — end-to-end through buildMetadata', () => {
     const tw = meta.twitter as { title?: string; description?: string };
     expect(tw.title).toBe('Custom SEO Title — NFRGuide');
     expect(tw.description).toBe('Stored meta description.');
+  });
+
+  /**
+   * Batch 02 Task E — the override path itself, with a canonical that points at
+   * a DIFFERENT page. Healing a stale self-referential value must not stop an
+   * editor from canonicalising one article onto another (duplicate or
+   * syndicated content), so this is the case that proves the plumbing.
+   */
+  it('a deliberate cross-page canonical still reaches alternates.canonical verbatim', () => {
+    const meta = buildMetadata(articleMetadataInput(article({}, seo({
+      canonicalUrl: '/articles/some-other-guide/',
+    })), SITE));
+    expect(meta.alternates?.canonical).toBe('https://nfrguide.com/articles/some-other-guide/');
   });
 
   it.each([

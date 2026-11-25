@@ -247,6 +247,120 @@ body {
 .legal-page-body th { background: #f5f5f4; font-weight: 700; }
 
 /* ---------------------------------------------------------------------------
+   FAQ ACCORDION
+
+   The visual half of `components/FaqAccordion.tsx`, which every public question
+   set on the site now draws through — the article body, the entity pages and
+   the Visual Builder's FAQ region.
+
+   WHY CSS RATHER THAN TAILWIND UTILITIES. Three of these rules cannot be
+   expressed as utilities at all: the `::details-content` pseudo-element that
+   holds the answer, the `interpolate-size` opt-in that lets a height animate to
+   `auto`, and the `::marker` resets that stop the browser drawing its own
+   triangle beside ours. Keeping the rest beside them means the row is described
+   in one place instead of split between a class list and a stylesheet.
+
+   PROGRESSIVE, NOT REQUIRED. A browser without `::details-content` ignores the
+   animation block entirely and the row opens and closes instantly — the answer
+   is in the HTML and reachable either way. Nothing here gates access to
+   content on CSS support.
+   --------------------------------------------------------------------------- */
+.nfr-faq-item {
+  /* `auto` is not an animatable length by default; this opts the subtree in so
+     the panel can grow from 0 to its natural height. Scoped to the item rather
+     than `:root` so no other element on the page changes behaviour. */
+  interpolate-size: allow-keywords;
+}
+
+.nfr-faq-summary {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 1rem;
+  /* Comfortable to read and large enough to tap: the padding plus the line box
+     clears the 44px touch target WCAG 2.2 asks for (2.5.8). */
+  padding: 0.875rem 0;
+  cursor: pointer;
+  font-family: var(--font-sans);
+  font-weight: 600;
+  font-size: 1rem;
+  line-height: 1.5;
+  color: var(--color-charcoal);
+  /* BOTH resets are needed: Safari draws `::-webkit-details-marker`, everything
+     else draws `::marker`, and `list-style: none` alone misses one of them. */
+  list-style: none;
+}
+.nfr-faq-summary::-webkit-details-marker { display: none; }
+.nfr-faq-summary::marker { content: ""; }
+
+/* `min-width: 0` lets a long question wrap inside the flex row instead of
+   forcing the row wider than the article column and scrolling the page
+   sideways. */
+.nfr-faq-question { min-width: 0; }
+
+.nfr-faq-icon {
+  flex: none;
+  /* Sits on the first line of the question rather than centred against a
+     question that wraps to three lines. */
+  margin-top: 0.3rem;
+  stroke: var(--color-terrain);
+  stroke-width: 2;
+  stroke-linecap: round;
+}
+
+/* Plus becomes minus: the vertical bar is the only thing that moves.
+   `transform-box: fill-box` makes `center` mean the centre of the line itself,
+   which is what keeps it shrinking into the horizontal bar rather than sliding
+   off towards the SVG's origin. */
+.nfr-faq-icon__bar {
+  transform-box: fill-box;
+  transform-origin: center;
+  transition: transform 160ms ease, opacity 160ms ease;
+}
+.nfr-faq-item[open] > .nfr-faq-summary .nfr-faq-icon__bar {
+  transform: scaleY(0);
+  opacity: 0;
+}
+
+.nfr-faq-answer {
+  padding-bottom: 1rem;
+  font-family: var(--font-sans);
+  font-size: 1rem;
+  line-height: 1.7;
+  color: #292524; /* stone-800, the body colour the article prose already uses */
+}
+.nfr-faq-answer > * + * { margin-top: 0.75rem; }
+.nfr-faq-answer a {
+  color: var(--color-terrain);
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
+/* Tailwind's preflight strips list markers, so an answer carrying a list needs
+   them back — the same reason `.legal-page-body` and `.prose-editor` do. */
+.nfr-faq-answer ul { list-style: disc; padding-left: 1.4rem; }
+.nfr-faq-answer ol { list-style: decimal; padding-left: 1.4rem; }
+.nfr-faq-answer li + li { margin-top: 0.25rem; }
+
+/* The expand and collapse itself. `content-visibility` is transitioned with
+   `allow-discrete` so the answer stays rendered for the length of the slide
+   instead of vanishing on the first frame of the close. */
+.nfr-faq-item::details-content {
+  block-size: 0;
+  overflow: hidden;
+  transition: block-size 220ms ease, content-visibility 220ms allow-discrete;
+}
+.nfr-faq-item[open]::details-content {
+  block-size: auto;
+}
+
+/* Motion is a preference. Someone who has asked for less of it still gets the
+   answer and still sees the plus become a minus — neither one travels. */
+@media (prefers-reduced-motion: reduce) {
+  .nfr-faq-item::details-content { transition: none; }
+  .nfr-faq-icon__bar { transition: none; }
+}
+
+/* ---------------------------------------------------------------------------
    BUSY INDICATOR
 
    The visual half of `components/ui/GlobalBusy.tsx`: a hairline bar across the
