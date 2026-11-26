@@ -1,0 +1,17 @@
+-- Stage 03 (D-5): index the column chain flattening filters on.
+--
+-- Both redirect write paths run
+--     UPDATE "ArticleRedirect" SET "targetPath" = $new WHERE "targetPath" = $old
+-- when a slug changes, to re-point every redirect that aimed at the old URL.
+-- Only "sourcePath" was indexed (by its UNIQUE constraint), so that UPDATE was a
+-- sequential scan taken INSIDE the same transaction as the entity mutation. The
+-- table only ever grows, so the lock was held longer over time.
+--
+-- Purely additive: no column, constraint or row is altered, and no data is moved.
+--
+-- PRODUCTION NOTE. A plain CREATE INDEX takes a SHARE lock on the table, which
+-- blocks writes (not reads) for the duration. "ArticleRedirect" is small, so that
+-- is milliseconds. If it is ever large, use the CONCURRENTLY form by hand instead
+-- — it cannot be used here because Prisma wraps each migration in a transaction
+-- and CREATE INDEX CONCURRENTLY may not run inside one.
+CREATE INDEX "ArticleRedirect_targetPath_idx" ON "ArticleRedirect"("targetPath");

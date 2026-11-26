@@ -49,7 +49,7 @@ describe('proxy convention (migrated from the deprecated middleware convention)'
     const req = new NextRequest('https://nfrguide.com/admin/articles/', {
       headers: { host: 'nfrguide.com' },
     });
-    expect(proxy(req).headers.get('X-Robots-Tag')).toBe('noindex, nofollow');
+    expect((await proxy(req)).headers.get('X-Robots-Tag')).toBe('noindex, nofollow');
   });
 
   it('leaves a public page on a production hostname indexable', async () => {
@@ -57,6 +57,6 @@ describe('proxy convention (migrated from the deprecated middleware convention)'
     const req = new NextRequest('https://nfrguide.com/about/', {
       headers: { host: 'nfrguide.com' },
     });
-    expect(proxy(req).headers.get('X-Robots-Tag')).toBeNull();
+    expect((await proxy(req)).headers.get('X-Robots-Tag')).toBeNull();
   });
 });

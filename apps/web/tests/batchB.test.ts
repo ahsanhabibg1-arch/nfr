@@ -220,9 +220,9 @@ dbSuite('Batch B — fixtures never surface publicly in production (isolated tes
     await prisma.articleRedirect.create({ data: { sourcePath: src, targetPath: `/articles/${FIXTURE_SLUGS.publishedArticle}/` } });
     try {
       process.env.APP_ENV = 'test';
-      expect(await content.resolveArticleRedirect(src.split('/')[2])).toBeTruthy();
+      expect(await content.resolveArticleRedirect(src)).toBeTruthy();
       asProduction();
-      expect(await content.resolveArticleRedirect(src.split('/')[2])).toBeNull();
+      expect(await content.resolveArticleRedirect(src)).toBeNull();
     } finally {
       await prisma.articleRedirect.deleteMany({ where: { sourcePath: src } });
     }

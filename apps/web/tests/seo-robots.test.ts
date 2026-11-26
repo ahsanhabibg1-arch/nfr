@@ -167,14 +167,14 @@ describe('S3 — route-level policies that must not change', () => {
       vi.stubEnv('STAGING_NOINDEX', 'true');
       vi.resetModules();
       const { proxy: middleware } = await import('../proxy');
-      expect(middleware(req()).headers.get('X-Robots-Tag')).toBe('noindex, nofollow');
+      expect((await middleware(req())).headers.get('X-Robots-Tag')).toBe('noindex, nofollow');
     });
 
     it('STAGING_NOINDEX unset → no X-Robots-Tag header on the production host', async () => {
       vi.stubEnv('STAGING_NOINDEX', '');
       vi.resetModules();
       const { proxy: middleware } = await import('../proxy');
-      expect(middleware(req()).headers.get('X-Robots-Tag')).toBeNull();
+      expect((await middleware(req())).headers.get('X-Robots-Tag')).toBeNull();
     });
   });
 });

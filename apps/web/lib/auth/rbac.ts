@@ -72,6 +72,12 @@ export type Permission =
   | 'seo.audit.run'
   | 'seo.audit.view'
   | 'seo.finding.manage'
+  | 'redirect.view'
+  | 'redirect.manage'
+  | 'redirect.import'
+  | 'redirect.export'
+  | 'redirect.delete'
+  | 'redirect.diagnostics'
   // Batch 07 Analytics & Search permissions (owner-approved; see ANALYTICS_RBAC_MATRIX.md)
   | 'analytics.view'
   | 'analytics.config'
@@ -135,6 +141,8 @@ const ADMIN_PERMS: Permission[] = [
   'reader.view', 'reader.manage',
   // Site structure (Batch 04) — Admin/Super Admin only
   'navigation.manage',
+  'redirect.view', 'redirect.manage', 'redirect.import', 'redirect.export',
+  'redirect.delete', 'redirect.diagnostics',
   // Managed Article Types (Batch 04-E) — Admin/Super Admin only. Editors keep
   // `taxonomy.manage` for categories/subcategories/tags and are unaffected.
   'articletype.manage',
@@ -167,6 +175,7 @@ export const ROLE_PERMISSIONS: Record<RoleKey, Permission[]> = {
     // on own articles via article-edit rights. No partner/link/config management.
     'monetization.view'],
   seo_manager: ['cms.access', 'seo.config',
+    'redirect.view', 'redirect.export', 'redirect.diagnostics',
     // Article Type evergreen eligibility (Batch 04-E.1) — this role and Super
     // Admin only. It carries no Article Type management rights.
     'articletype.seo',

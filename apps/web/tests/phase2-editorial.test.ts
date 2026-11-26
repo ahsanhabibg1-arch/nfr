@@ -222,7 +222,7 @@ suite('Phase 2 editorial integrity (isolated test DB)', () => {
     const newSlug = `p2ed-renamed-${rid()}`;
     const res = await svc.saveArticle(admin, input({ id: r.id, slug: newSlug }));
     expect(res).toMatchObject({ previousSlug: r.slug, redirectCreated: true });
-    expect(await repo.resolveArticleRedirect(r.slug)).toEqual({ destination: `/articles/${newSlug}/`, permanent: true });
+    expect(await repo.resolveArticleRedirect(`/articles/${r.slug}/`)).toEqual({ destination: `/articles/${newSlug}/`, permanent: true });
     expect(await repo.getPublishedArticleBySlug(newSlug)).toBeTruthy();
     expect(await prisma.auditLog.count({ where: { entityId: r.id, action: 'redirect.create' } })).toBe(1);
   });
@@ -234,13 +234,13 @@ suite('Phase 2 editorial integrity (isolated test DB)', () => {
     await svc.saveArticle(admin, input({ id: r.id, slug: s1 }));
     await svc.saveArticle(admin, input({ id: r.id, slug: s2 }));
     // s0 points straight at s2 (no chain through s1).
-    expect((await repo.resolveArticleRedirect(s0))?.destination).toBe(`/articles/${s2}/`);
-    expect((await repo.resolveArticleRedirect(s1))?.destination).toBe(`/articles/${s2}/`);
+    expect((await repo.resolveArticleRedirect(`/articles/${s0}/`))?.destination).toBe(`/articles/${s2}/`);
+    expect((await repo.resolveArticleRedirect(`/articles/${s1}/`))?.destination).toBe(`/articles/${s2}/`);
 
     // Back to the original slug: the article owns s0 again; s0 must not redirect anywhere.
     await svc.saveArticle(admin, input({ id: r.id, slug: s0 }));
-    expect(await repo.resolveArticleRedirect(s0)).toBeNull();
-    expect((await repo.resolveArticleRedirect(s2))?.destination).toBe(`/articles/${s0}/`);
+    expect(await repo.resolveArticleRedirect(`/articles/${s0}/`)).toBeNull();
+    expect((await repo.resolveArticleRedirect(`/articles/${s2}/`))?.destination).toBe(`/articles/${s0}/`);
     const active = await prisma.articleRedirect.findMany({ where: { status: 'ACTIVE', sourcePath: { in: [s0, s1, s2].map((s) => `/articles/${s}/`) } } });
     for (const red of active) expect(red.sourcePath).not.toBe(red.targetPath);
   });
@@ -259,9 +259,9 @@ suite('Phase 2 editorial integrity (isolated test DB)', () => {
 
     await prisma.articleRedirect.create({ data: { sourcePath: `/articles/p2ed-dangling-${rid()}/`, targetPath: `/articles/${res.slug}/` } });
     const dangling = await prisma.articleRedirect.findFirstOrThrow({ where: { targetPath: `/articles/${res.slug}/` } });
-    expect(await repo.resolveArticleRedirect(dangling.sourcePath.split('/')[2])).toBeNull(); // target is a draft
+    expect(await repo.resolveArticleRedirect(dangling.sourcePath)).toBeNull(); // target is a draft
     const external = await prisma.articleRedirect.create({ data: { sourcePath: `/articles/p2ed-ext-${rid()}/`, targetPath: 'https://evil.example/' } });
-    expect(await repo.resolveArticleRedirect(external.sourcePath.split('/')[2])).toBeNull(); // never an off-site target
+    expect(await repo.resolveArticleRedirect(external.sourcePath)).toBeNull(); // never an off-site target
   });
 
   // ---- D. Publish gate on live edits / rights ----

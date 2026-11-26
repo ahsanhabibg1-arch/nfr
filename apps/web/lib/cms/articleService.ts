@@ -8,6 +8,7 @@ import type { Article, ContentBlock } from '../../types';
 import { resolveBlocks } from '../content/articleBlockGrandfather';
 import { safeHref } from '../url';
 import { productionCanonicalUrl } from '../seo/canonical';
+import { writeMoveRedirect, claimCanonicalPath, invalidateRedirectCache } from '../redirects/write';
 
 /**
  * Authenticated, RBAC-enforced CMS article operations (Batch 03 §6/§7/§8).
@@ -649,22 +650,21 @@ async function loadArticleInput(articleId: string): Promise<ParsedInput | null> 
  * the first segment of the URL. Both arrive here as a from/to pair, so an
  * editor who only ticks a subcategory dropdown still leaves a 308 behind and
  * never silently strands an indexed URL.
+ *
+ * Stage 03 (D-3): the mechanics moved to `lib/redirects/write.ts`, which the
+ * rodeo slug service now shares. The rules this function already had — claim
+ * the destination, flatten, then upsert, in that order — are the ones that
+ * became the shared definition, so article behaviour is unchanged except that
+ * a deliberately temporary redirect is no longer swept up by flattening.
  */
 async function syncUrlRedirect(tx: Prisma.TransactionClient, from: string, to: string): Promise<boolean> {
-  if (from === to) return false;
-  await claimPath(tx, to);
-  await tx.articleRedirect.updateMany({ where: { targetPath: from, status: 'ACTIVE' }, data: { targetPath: to } });
-  await tx.articleRedirect.upsert({
-    where: { sourcePath: from },
-    update: { targetPath: to, status: 'ACTIVE', statusCode: 308 },
-    create: { sourcePath: from, targetPath: to, statusCode: 308 },
-  });
-  return true;
+  const r = await writeMoveRedirect(tx, from, to);
+  return r.written;
 }
 
 /** A live article owns its canonical path: disable any active redirect away from it. */
 async function claimPath(tx: Prisma.TransactionClient, path: string): Promise<void> {
-  await tx.articleRedirect.updateMany({ where: { sourcePath: path, status: 'ACTIVE' }, data: { status: 'DISABLED' } });
+  await claimCanonicalPath(tx, path);
 }
 
 export interface SaveResult { id: string; slug: string; version: number; previousSlug?: string; redirectCreated?: boolean }
@@ -703,7 +703,7 @@ async function persistArticle(
   const isLive = existing?.workflowStatus === 'PUBLISHED';
   if (isLive) await assertPublishable(v);
 
-  return prisma.$transaction(async (tx) => {
+  const saved = await prisma.$transaction(async (tx) => {
     const clash = await tx.article.findFirst({ where: { slug: v.slug, ...(existing ? { id: { not: existing.id } } : {}) }, select: { id: true } });
     if (clash) throw new ServiceError('conflict', `The slug "${v.slug}" is already used by another article.`, { field: 'slug' });
 
@@ -772,6 +772,16 @@ async function persistArticle(
 
     return { id: articleId, slug: v.slug, version, ...(slugChanged ? { previousSlug: existing!.slug } : {}), redirectCreated };
   });
+
+  /*
+    AFTER THE COMMIT, not inside it (Stage 03, §17).
+
+    Invalidating from within the transaction would advertise the new redirect
+    to readers before it is durable, and a rollback would then leave the cache
+    serving a hop that does not exist.
+  */
+  if (saved.redirectCreated) await invalidateRedirectCache();
+  return saved;
 }
 
 /**
@@ -1032,6 +1042,8 @@ export async function transitionWorkflow(
     const after = await tx.article.findUniqueOrThrow({ where: { id }, select: { version: true } });
     return after.version;
   });
+
+  if (willBePublic) await invalidateRedirectCache();
 
   // Batch 05 §14: when an article goes live, make its attached DAM media
   // publicly servable (rights were confirmed by the publish gate above). One-way

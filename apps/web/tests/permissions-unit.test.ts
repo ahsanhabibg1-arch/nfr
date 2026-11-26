@@ -11,10 +11,10 @@ describe('Batch 09 — permission registry', () => {
     for (const m of CMS_MODULES) expect(allPerms.has(m.view), `${m.id}:${m.view}`).toBe(true);
   });
 
-  it('there are exactly the 18 CMS modules (adds info-pages in Batch 28)', () => {
+  it('registers the complete CMS module inventory', () => {
     expect(CMS_MODULES.map((m) => m.id)).toEqual([
       'overview', 'articles', 'rodeo-coverage', 'venues', 'competitors', 'competition', 'editorial-organization', 'comments', 'readers', 'media', 'sources',
-      'seo', 'website', 'analytics', 'monetization', 'team', 'info-pages', 'settings',
+      'seo', 'redirects', 'website', 'analytics', 'monetization', 'team', 'info-pages', 'settings',
     ]);
   });
 
@@ -25,11 +25,12 @@ describe('Batch 09 — permission registry', () => {
     expect(sa).toContain('comments');
     expect(sa).toContain('readers');
     expect(sa).toContain('info-pages');
-    expect(sa.length).toBe(18);
+    expect(sa.length).toBe(19);
 
     const admin = visibleModuleIds(['administrator']);
     expect(admin).toContain('team');
     expect(admin).toContain('readers'); // reader administration is Admin/Super Admin
+    expect(admin).toContain('redirects');
     expect(admin).not.toContain('settings'); // system.config is Super Admin only
 
     for (const role of ['editor', 'author', 'seo_manager'] as const) {
@@ -41,6 +42,7 @@ describe('Batch 09 — permission registry', () => {
     }
     // Editors moderate comments but cannot administer reader accounts.
     expect(visibleModuleIds(['editor'])).toContain('comments');
+    expect(visibleModuleIds(['seo_manager'])).toContain('redirects');
     expect(visibleModuleIds(['reader'])).toEqual([]); // readers see no CMS modules at all
   });
 

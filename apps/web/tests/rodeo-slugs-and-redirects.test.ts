@@ -175,8 +175,26 @@ describe.runIf(available)('Rodeo slugs and redirects', () => {
        * resolver-only assertion passed. Two guards are good; a test that can
        * only see one of them is not.
        */
+      /*
+        STAGE 03 (D-3): the row is now DISABLED, not deleted.
+
+        This previously asserted the row was gone, because `rodeoSlugs` deleted
+        a conflicting source while `articleService` disabled one. The two
+        services now share `claimCanonicalPath`, which preserves the historical
+        record and takes it out of service — the behaviour the Stage 03
+        directive requires, and the one the admin UI will need in order to show
+        where a path used to point.
+
+        The property under test is unchanged and still asserted on the STORED
+        ROW rather than only through the resolver: nothing ACTIVE may exist for
+        a live URL. It is now strictly stronger, because it also pins that the
+        history survives.
+      */
       const selfRow = await prisma.articleRedirect.findUnique({ where: { sourcePath: `/rodeo-events/${hub.slug}/` } });
-      expect(selfRow, 'no redirect row may exist for the live URL').toBeNull();
+      if (selfRow) {
+        expect(selfRow.status, 'a redirect for the live URL must not be ACTIVE').toBe('DISABLED');
+        expect(selfRow.sourcePath, 'and it must never have become a self-redirect').not.toBe(selfRow.targetPath);
+      }
 
       const atDest = await slugs.resolveRodeoRedirect(`/rodeo-events/${hub.slug}/`);
       expect(atDest, 'and the live URL must not redirect').toBeNull();
@@ -267,13 +285,28 @@ describe.runIf(available)('Rodeo slugs and redirects', () => {
 
       const next = `moved-${tag}-${rid()}`;
       const r = await slugs.changeSlug(editor, 'event', eventId, next);
-      expect(r.nestedRedirects, 'both editions were redirected').toBe(2);
+      /*
+        STAGE 03 (D-4): four URLs per edition, not one.
+
+        An edition serves `/schedule/`, `/results/` and `/standings/` below its
+        own URL, and a parent rename used to strand all three — three indexed
+        URLs per edition, 404ing while the operator saw a success message. Two
+        editions x (root + three tabs) = eight.
+      */
+      expect(r.nestedRedirects, 'both editions, each with its three sub-tabs').toBe(8);
 
       for (const ed of [a, b]) {
         const moved = await slugs.resolveRodeoRedirect(`/rodeo-events/${eventSlug}/${ed}/`);
         expect(moved, `nested URL for ${ed} must redirect`).not.toBeNull();
         expect(moved!.destination).toBe(`/rodeo-events/${next}/${ed}/`);
         expect(moved!.permanent).toBe(true);
+
+        for (const tab of ['schedule', 'results', 'standings']) {
+          const t = await slugs.resolveRodeoRedirect(`/rodeo-events/${eventSlug}/${ed}/${tab}/`);
+          expect(t, `${tab} for ${ed} must redirect`).not.toBeNull();
+          expect(t!.destination).toBe(`/rodeo-events/${next}/${ed}/${tab}/`);
+          expect(t!.permanent).toBe(true);
+        }
       }
     });
 

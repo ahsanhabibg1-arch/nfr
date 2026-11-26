@@ -41,7 +41,15 @@ export default async function SubcategoryArticlePage({ params }: Params) {
   const article = await getPublishedArticleBySlug(slug);
 
   if (!article) {
-    const moved = await resolveArticleRedirect(slug);
+    /*
+      THE SUBCATEGORY PATH, NOT THE BARE SLUG (Stage 03, D-1).
+
+      A renamed article under a subcategory has its 308 stored at
+      `/<subcategory>/<slug>/`. Passing only the slug made the resolver look
+      under `/articles/<slug>/`, find nothing, and 404 — stranding the indexed
+      URL even though the redirect existed.
+    */
+    const moved = await resolveArticleRedirect(`/${section}/${slug}/`);
     if (moved) (moved.permanent ? permanentRedirect : redirect)(moved.destination);
     notFound();
   }

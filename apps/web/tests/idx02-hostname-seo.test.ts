@@ -20,11 +20,11 @@ const WWW = 'www.nfrguide.com';
 const STAGING = 'nfr-qadd.onrender.com';
 const NOINDEX = 'noindex, nofollow';
 
-async function loadMiddleware(stagingNoindex = ''): Promise<(r: NextRequest) => NextResponseLike> {
+async function loadMiddleware(stagingNoindex = ''): Promise<(r: NextRequest) => Promise<NextResponseLike>> {
   vi.stubEnv('STAGING_NOINDEX', stagingNoindex);
   vi.resetModules();
   const mod = await import('../proxy');
-  return mod.proxy as unknown as (r: NextRequest) => NextResponseLike;
+  return mod.proxy as unknown as (r: NextRequest) => Promise<NextResponseLike>;
 }
 
 type NextResponseLike = { headers: Headers };
@@ -40,7 +40,7 @@ async function robotsHeader(
   stagingNoindex = '',
 ): Promise<string | null> {
   const middleware = await loadMiddleware(stagingNoindex);
-  return middleware(request(url, headers)).headers.get('X-Robots-Tag');
+  return (await middleware(request(url, headers))).headers.get('X-Robots-Tag');
 }
 
 afterEach(() => {
@@ -118,7 +118,7 @@ describe('IDX-02 (4) unknown or missing hostname — fails closed', () => {
     const req = request(`https://${APEX}/`);
     req.headers.delete('host');
     expect(req.headers.get('host')).toBeNull();
-    expect(middleware(req).headers.get('X-Robots-Tag')).toBe(NOINDEX);
+    expect((await middleware(req)).headers.get('X-Robots-Tag')).toBe(NOINDEX);
   });
 
   it('a malformed or header-injecting Host value is noindexed', async () => {
@@ -313,7 +313,7 @@ describe('IDX-02 (13) local development', () => {
 
   it('development is otherwise unaffected — the response is still NextResponse.next()', async () => {
     const middleware = await loadMiddleware('');
-    const res = middleware(request('http://localhost:3000/about/', { host: 'localhost:3000' }));
+    const res = await middleware(request('http://localhost:3000/about/', { host: 'localhost:3000' }));
     expect(res.headers.get('x-middleware-next')).toBe('1');
   });
 });
@@ -370,8 +370,8 @@ describe('IDX-02 (15) cache and CDN variation cannot leak the wrong header', () 
 
   it('no Vary header is introduced (the primary key already separates the hosts)', async () => {
     const middleware = await loadMiddleware('');
-    expect(middleware(request(`https://${APEX}/`, { host: APEX })).headers.get('Vary')).toBeNull();
-    expect(middleware(request(`https://${STAGING}/`, { host: STAGING })).headers.get('Vary')).toBeNull();
+    expect((await middleware(request(`https://${APEX}/`, { host: APEX }))).headers.get('Vary')).toBeNull();
+    expect((await middleware(request(`https://${STAGING}/`, { host: STAGING }))).headers.get('Vary')).toBeNull();
   });
 
   it('the asset and API exclusions are unchanged, so asset caching is unaffected', async () => {

@@ -1,6 +1,8 @@
 import { NextResponse } from 'next/server';
 import type { NextRequest } from 'next/server';
 import { isIndexableHost } from '@/lib/seo/productionHosts';
+import { resolveManagedRedirectAtBoundary } from '@/lib/redirects/snapshot';
+import { redirectLocation } from '@/lib/redirects/query';
 
 /**
  * SEO protection for non-production hostnames (Batch 29, reworked for IDX-02).
@@ -60,7 +62,16 @@ function isAlwaysNoindexPath(pathname: string): boolean {
   return pathname === '/admin' || pathname.startsWith('/admin/');
 }
 
-export function proxy(request: NextRequest): NextResponse {
+export async function proxy(request: NextRequest): Promise<NextResponse> {
+  if (request.method === 'GET' || request.method === 'HEAD') {
+    const managed = await resolveManagedRedirectAtBoundary(request.nextUrl.pathname);
+    if (managed) {
+      return NextResponse.redirect(
+        redirectLocation(request.url, managed.targetPath),
+        { status: managed.statusCode },
+      );
+    }
+  }
   const response = NextResponse.next();
 
   const noindex =

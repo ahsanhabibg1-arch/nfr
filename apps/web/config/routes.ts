@@ -66,6 +66,7 @@ export const ROUTES = {
   ADMIN_MEDIA: '/admin/media/',
   ADMIN_SOURCES: '/admin/sources/',
   ADMIN_SEO: '/admin/seo/',
+  ADMIN_REDIRECTS: '/admin/seo/redirects/',
   ADMIN_WEBSITE: '/admin/website/',
   ADMIN_INFO_PAGES: '/admin/info-pages/',
   ADMIN_ANALYTICS: '/admin/analytics/',

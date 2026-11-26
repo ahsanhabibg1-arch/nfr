@@ -140,23 +140,35 @@ export async function getRelatedPublishedArticles(
 /** Batch 01 compatibility alias (same published-only guarantee). */
 export const getRelatedArticles = getRelatedPublishedArticles;
 
-const ARTICLE_PATH = /^\/articles\/([a-z0-9]+(?:-[a-z0-9]+)*)\/$/;
-
 /**
- * Resolve an article slug that no longer renders to its redirect target (ADM-14 / WEB-11).
- * Only ACTIVE redirects whose destination is an internal article path of a PUBLISHED
- * article are honoured — anything else falls through to 404 (no open or dangling redirect).
+ * Resolve a public article URL that no longer renders to its redirect target
+ * (ADM-14 / WEB-11; corrected in Stage 03, defect D-1).
+ *
+ * THE DEFECT THIS REPLACES. This function used to take a bare SLUG and look up
+ * `/articles/<slug>/`, and it validated the destination against an
+ * `/articles/...`-only regular expression. But an article that has a
+ * subcategory lives at `/<subcategory>/<slug>/`, and that is exactly the path
+ * `syncUrlRedirect` stores when such an article is renamed. So the write path
+ * saved a correct 308 and the read path looked for it under a different key:
+ * the old URL returned 404 while a perfectly good redirect sat in the table,
+ * unreachable. Subcategory URLs are the site's primary article form, so this
+ * affected the main content type.
+ *
+ * It now takes the ACTUAL REQUESTED PATH, which is the only thing that can be
+ * matched against `sourcePath` for both URL shapes, and both route consumers
+ * pass what the reader asked for.
+ *
+ * Destination validation moved to `lib/redirects/resolve.ts`, which proves the
+ * target resolves to a live public entity and returns that entity's CURRENT
+ * canonical URL rather than the stored string — so a stale target becomes one
+ * hop instead of two, and a dead one falls through to `notFound()`.
  */
-export async function resolveArticleRedirect(slug: string): Promise<{ destination: string; permanent: boolean } | null> {
-  const r = await prisma.articleRedirect.findFirst({
-    where: { sourcePath: `/articles/${slug}/`, status: 'ACTIVE' },
-    select: { targetPath: true, statusCode: true },
-  });
-  const target = r ? ARTICLE_PATH.exec(r.targetPath) : null;
-  if (!r || !target) return null;
-  const live = await prisma.article.findFirst({ where: { slug: target[1], ...publicArticleWhere() }, select: { id: true } });
-  if (!live) return null;
-  return { destination: r.targetPath, permanent: r.statusCode === 301 || r.statusCode === 308 };
+export async function resolveArticleRedirect(
+  requestPath: string,
+): Promise<{ destination: string; permanent: boolean } | null> {
+  const { resolveRedirect } = await import('./redirects/resolve');
+  const hit = await resolveRedirect(requestPath);
+  return hit ? { destination: hit.destination, permanent: hit.permanent } : null;
 }
 
 export async function getPublishedArticleSlugs(): Promise<string[]> {

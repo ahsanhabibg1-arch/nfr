@@ -137,11 +137,11 @@ describe('deploy config — the declared value, fed to the real middleware', () 
     const { proxy: middleware } = await import('../proxy');
 
     expect(
-      middleware(req('nfrguide.com')).headers.get('X-Robots-Tag'),
+      (await middleware(req('nfrguide.com'))).headers.get('X-Robots-Tag'),
       `render.yaml declares STAGING_NOINDEX="${declared}", which would noindex the production site`,
     ).toBeNull();
-    expect(middleware(req('www.nfrguide.com')).headers.get('X-Robots-Tag')).toBeNull();
-    expect(middleware(req('nfr-qadd.onrender.com')).headers.get('X-Robots-Tag')).toBe('noindex, nofollow');
+    expect((await middleware(req('www.nfrguide.com'))).headers.get('X-Robots-Tag')).toBeNull();
+    expect((await middleware(req('nfr-qadd.onrender.com'))).headers.get('X-Robots-Tag')).toBe('noindex, nofollow');
   });
 });
 

@@ -166,6 +166,16 @@ const MODULE_GROUPS: NavGroup[] = [
         ),
       },
       {
+        id: 'redirects',
+        name: 'URL Redirects Engine',
+        path: ROUTES.ADMIN_REDIRECTS,
+        icon: (p) => (
+          <svg {...p} fill="none" viewBox="0 0 24 24" stroke="currentColor">
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.8} d="M7 7h10m0 0-3-3m3 3-3 3M17 17H7m0 0 3 3m-3-3 3-3" />
+          </svg>
+        ),
+      },
+      {
         id: 'analytics',
         name: 'Analytics & Search',
         path: ROUTES.ADMIN_ANALYTICS,

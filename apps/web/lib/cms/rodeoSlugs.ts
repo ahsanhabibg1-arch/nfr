@@ -5,6 +5,7 @@ import { roleHasPermission } from '../auth/rbac';
 import { ServiceError } from './articleService';
 import type { RodeoEntityKind } from './rodeoService';
 import { normalizeSlug, slugShapeError } from './slugRules';
+import { writeMoveRedirect, invalidateRedirectCache, EDITION_SUB_TABS } from '../redirects/write';
 
 /**
  * Custom slug editing for Rodeo Coverage, with permanent redirects.
@@ -181,41 +182,60 @@ export async function changeSlug(a: Actor, kind: RodeoEntityKind, id: string, ra
       return { oldPath, newPath, redirectCreated: false, chainsCollapsed: 0, nestedRedirects: 0, affectedPaths: [] };
     }
 
-    // A redirect FROM the destination would send the new URL straight back out.
-    await tx.articleRedirect.deleteMany({ where: { sourcePath: newPath } });
+    /*
+      THE MOVE ITSELF now goes through `lib/redirects/write.ts` (Stage 03,
+      D-3). This block used to DELETE a conflicting row while `articleService`
+      DISABLED it, and it flattened chains regardless of status — so a disabled
+      historical record could be rewritten by an unrelated rename. Both
+      services now share one definition: disable rather than delete, and
+      flatten only ACTIVE permanent rows.
+    */
+    const move = await writeMoveRedirect(tx, oldPath, newPath);
 
-    // Collapse chains: anything that pointed at the old path now points here.
-    const chains = await tx.articleRedirect.updateMany({
-      where: { targetPath: oldPath },
-      data: { targetPath: newPath },
-    });
+    /*
+      DESCENDANT URLs (Stage 03, D-4).
 
-    await tx.articleRedirect.upsert({
-      where: { sourcePath: oldPath },
-      update: { targetPath: newPath, statusCode: 308, status: 'ACTIVE' },
-      create: { sourcePath: oldPath, targetPath: newPath, statusCode: 308, status: 'ACTIVE' },
-    });
+      An edition is addressed through its parent, and it serves three sub-tabs
+      below its own URL. Redirecting only the edition root left
+      `/schedule/`, `/results/` and `/standings/` 404ing after a parent rename
+      — three indexed URLs per edition, silently stranded, while the operator
+      saw a success message.
 
-    // Each nested edition URL gets the same treatment as its parent.
+      The tab list is the real route inventory from
+      `app/(public)/rodeo-events/[slug]/[edition]/`, not an assumption that
+      every edition has every tab: a redirect is written for each, and the
+      resolver independently refuses any whose destination does not resolve, so
+      a tab that is not meaningful for a given edition never produces a
+      misleading hop.
+    */
     const affectedPaths: string[] = [oldPath, newPath];
     let nestedRedirects = 0;
     for (const editionSlug of nestedBefore) {
-      const from = `${oldPath}${editionSlug}/`;
-      const to = `${newPath}${editionSlug}/`;
-      if (from === to) continue;
-      await tx.articleRedirect.deleteMany({ where: { sourcePath: to } });
-      await tx.articleRedirect.updateMany({ where: { targetPath: from }, data: { targetPath: to } });
-      await tx.articleRedirect.upsert({
-        where: { sourcePath: from },
-        update: { targetPath: to, statusCode: 308, status: 'ACTIVE' },
-        create: { sourcePath: from, targetPath: to, statusCode: 308, status: 'ACTIVE' },
-      });
-      affectedPaths.push(from, to);
-      nestedRedirects++;
+      const editionFrom = `${oldPath}${editionSlug}/`;
+      const editionTo = `${newPath}${editionSlug}/`;
+      for (const suffix of ['', ...EDITION_SUB_TABS.map((t) => `${t}/`)]) {
+        const from = `${editionFrom}${suffix}`;
+        const to = `${editionTo}${suffix}`;
+        if (from === to) continue;
+        const r = await writeMoveRedirect(tx, from, to);
+        if (!r.written) continue;
+        affectedPaths.push(from, to);
+        nestedRedirects++;
+      }
     }
 
-    return { oldPath, newPath, redirectCreated: true, chainsCollapsed: chains.count, nestedRedirects, affectedPaths };
+    return {
+      oldPath,
+      newPath,
+      redirectCreated: move.written,
+      chainsCollapsed: move.flattened,
+      nestedRedirects,
+      affectedPaths,
+    };
   });
+
+  // After the commit, never inside it: see `invalidateRedirectCache`.
+  if (result.redirectCreated) await invalidateRedirectCache();
 
   await audit(a.id, `rodeo.${kind}.slug_change`, kind, id,
     `${result.oldPath} -> ${result.newPath}; permanent redirect created; ` +
@@ -226,17 +246,31 @@ export async function changeSlug(a: Actor, kind: RodeoEntityKind, id: string, ra
 /**
  * Resolve a redirect for any non-article public path.
  *
- * `resolveArticleRedirect` in `lib/content.ts` does the same job for articles
- * but hardcodes `/articles/<slug>/` and validates the target against a live
- * article, so it cannot serve these routes. Same table, same semantics.
+ * THE DEFECT THIS REPLACES (Stage 03, D-2). This function used to return the
+ * stored `targetPath` after a single self-redirect check. It did not verify
+ * that the destination was internal, well-formed, or that anything public
+ * still lived there — while the article resolver checked all three. Any row
+ * carrying an off-site or dead target would therefore have been honoured on
+ * `/disciplines/`, `/venues/`, `/rodeo-events/` and every edition URL: an open
+ * redirect waiting for the first row that did not come from this file.
+ *
+ * Nothing user-controlled writes to the table today, so there is no evidence it
+ * was ever exploitable. That is precisely why it is fixed BEFORE Stage 04 adds
+ * manual redirect creation, rather than after.
+ *
+ * It now delegates to the shared resolver, which treats every stored row as
+ * untrusted, proves the destination resolves to a live public entity, and
+ * returns that entity's current canonical URL. Behaviour for valid rows is
+ * unchanged except that a stale target now resolves in one hop.
+ *
+ * VISIBILITY IS NOT "PUBLISHED" HERE. An archived hub, event, edition, venue
+ * or discipline still serves its detail URL at HTTP 200 with `noindex` by
+ * owner-approved policy (`lib/cms/lifecycle.ts`), so it remains a legitimate
+ * destination. Requiring a published state would have broken the inbound links
+ * that policy exists to keep working.
  */
 export async function resolveRodeoRedirect(path: string): Promise<{ destination: string; permanent: boolean } | null> {
-  const r = await prisma.articleRedirect.findFirst({
-    where: { sourcePath: path, status: 'ACTIVE' },
-    select: { targetPath: true, statusCode: true },
-  });
-  if (!r) return null;
-  // Never redirect to itself, whatever is stored.
-  if (r.targetPath === path) return null;
-  return { destination: r.targetPath, permanent: r.statusCode === 301 || r.statusCode === 308 };
+  const { resolveRedirect } = await import('../redirects/resolve');
+  const hit = await resolveRedirect(path);
+  return hit ? { destination: hit.destination, permanent: hit.permanent } : null;
 }

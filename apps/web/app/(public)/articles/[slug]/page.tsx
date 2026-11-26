@@ -3,7 +3,7 @@ import { notFound, permanentRedirect, redirect } from 'next/navigation';
 import { getPublishedArticleBySlug, getPublishedArticleSlugs, resolveArticleRedirect } from '@/lib/content';
 import { buildMetadata, JsonLd } from '@/lib/seo';
 import { articleMetadataInput, unavailableArticleMetadataInput } from '@/lib/seo/articleMeta';
-import { articleUrl } from '@/config/routes';
+import { articleUrl, ROUTES } from '@/config/routes';
 import { ArticlePageBody } from '@/views/ArticlePageBody';
 
 type Params = { params: Promise<{ slug: string }> };
@@ -45,7 +45,9 @@ export default async function ArticlePage({ params }: Params) {
   // Eligibility policy: unpublished/unknown slugs never render publicly. A slug that was
   // renamed while published redirects to its current URL; everything else is a 404.
   if (!article) {
-    const moved = await resolveArticleRedirect(slug);
+    // The path the reader actually asked for — the only thing that can be
+    // matched against a stored `sourcePath` (Stage 03, D-1).
+    const moved = await resolveArticleRedirect(ROUTES.ARTICLE(slug));
     if (moved) (moved.permanent ? permanentRedirect : redirect)(moved.destination);
     notFound();
   }
