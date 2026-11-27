@@ -155,6 +155,60 @@ describe('the structured data describes exactly what is published', () => {
   });
 });
 
+describe('the published heading structure', () => {
+  /**
+   * HEADING LEVELS MUST NOT SKIP.
+   *
+   * A question set is a top-level section of the article, a sibling of the
+   * body's own h2 headings. Rendered as an h3 it skipped a level on any article
+   * whose body has no h2 — the page went h1 → h3 — and a reader navigating by
+   * heading level is told there is a level of structure that does not exist.
+   *
+   * Caught by the accessibility suite's heading-order check, which only sees it
+   * on an article that actually has a question set. This pins it where it is
+   * cheap to run.
+   */
+  const levelsIn = (html: string): number[] =>
+    [...html.matchAll(/<h([1-6])/gi)].map((m) => Number(m[1]));
+
+  const skips = (levels: number[]): string[] => {
+    const out: string[] = [];
+    for (let i = 1; i < levels.length; i += 1) {
+      if (levels[i] - levels[i - 1] > 1) out.push(`h${levels[i - 1]}->h${levels[i]}`);
+    }
+    return out;
+  };
+
+  it('does not skip a level on an article whose body has no h2', () => {
+    const html = publish([
+      { type: 'paragraph', text: 'A body with no headings at all.' },
+      { type: 'faq', title: 'Reader questions', items: [{ question: 'Q?', answer: 'A.' }] },
+    ]);
+    // The article's own h1 is outside this component, so the body must START at h2.
+    expect(levelsIn(html)[0], 'the question set heading must be an h2').toBe(2);
+    expect(skips([1, ...levelsIn(html)])).toEqual([]);
+  });
+
+  it('does not skip a level for the notes section either', () => {
+    const html = publish([
+      { type: 'paragraph', text: 'No headings here.' },
+      { type: 'footnotes', items: [{ text: 'A note.' }] },
+    ]);
+    expect(levelsIn(html)[0]).toBe(2);
+    expect(skips([1, ...levelsIn(html)])).toEqual([]);
+  });
+
+  it('still does not skip when the body has its own headings', () => {
+    const html = publish([
+      { type: 'heading', level: 2, text: 'A section' },
+      { type: 'heading', level: 3, text: 'A sub-section' },
+      { type: 'faq', title: 'Questions', items: [{ question: 'Q?', answer: 'A.' }] },
+      { type: 'footnotes', title: 'Notes', items: [{ text: 'A note.' }] },
+    ]);
+    expect(skips([1, ...levelsIn(html)])).toEqual([]);
+  });
+});
+
 describe('the editor panel edits those same rows', () => {
   it('appends a question set to the END of the body when there is none', async () => {
     const { ArticleFaqPanel } = await import('../components/admin/editor/ArticleFaqPanel');

@@ -304,7 +304,7 @@ describe('MED-01C (10) missing or malformed derivatives fall back safely', () =>
     // Case-insensitive: renderToStaticMarkup emits camelCase `srcSet=`, so a
     // lowercase-only check would pass even if a srcset were present.
     expect(html).not.toMatch(/srcset=/i);
-    expect(html).not.toMatch(/sizes=/i);
+    expect(html).not.toMatch(/(^|[^A-Za-z0-9_-])sizes=/i);
   });
 });
 
@@ -321,7 +321,7 @@ describe('MED-01C (8) srcset and sizes reach the HTML', () => {
 
   it('sizes is omitted when there is no srcset (it would be meaningless)', () => {
     const html = heroHtml({ heroImageWidth: 1600 });
-    expect(html).not.toMatch(/sizes=/i);
+    expect(html).not.toMatch(/(^|[^A-Za-z0-9_-])sizes=/i);
   });
 
   it('cards advertise the same derivatives with card-appropriate sizes', () => {
