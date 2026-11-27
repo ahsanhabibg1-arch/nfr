@@ -71,15 +71,42 @@ export const RESERVED_EXACT_PATHS: readonly string[] = Object.freeze([
 ]);
 
 /**
+ * Drop ONE trailing slash, so a path and its trailing-slashed form compare equal.
+ *
+ * `/` itself is left alone: it is the root, not a slashed `""`.
+ */
+function withoutTrailingSlash(path: string): string {
+  return path.length > 1 && path.endsWith('/') ? path.slice(0, -1) : path;
+}
+
+/**
  * True when `path` belongs to infrastructure rather than public content.
+ *
+ * BOTH SIDES ARE COMPARED IN THE SAME SHAPE. This is the fix for APP-01/SEO-03.
+ * `normalizeRedirectPath()` always appends a trailing slash, so every value the
+ * redirect engine actually evaluates arrives here as `/robots.txt/`, while
+ * `RESERVED_EXACT_PATHS` stores the un-slashed `/robots.txt`. The old check
+ * compared the two directly, so the exact list never matched and
+ * `validateRedirectSource('/robots.txt')` returned ok — admitting robots.txt,
+ * the sitemap, the favicon and the manifest as redirect sources AND
+ * destinations. The prefix rules were unaffected, because they already tested
+ * the slashed form explicitly; only the exact list was reachable.
+ *
+ * Normalising both sides rather than adding slashed duplicates to the list
+ * keeps one definition of each reserved path and cannot drift again: a new
+ * entry is protected in both spellings the moment it is added.
  *
  * Compared segment-wise, not as a bare string prefix, so a genuine public route
  * such as `/administration/` or `/apiary/` is not caught by `/admin` or `/api`.
+ * No decoding happens here — `normalizeRedirectPath()` has already refused
+ * percent-encoded separators, backslashes and traversal, and decoding at this
+ * layer would hand an attacker a second interpretation of the path.
  */
 export function isReservedPath(path: string): boolean {
   const lower = path.toLowerCase();
-  if (RESERVED_EXACT_PATHS.includes(lower)) return true;
-  return RESERVED_PATH_PREFIXES.some((p) => lower === p || lower === `${p}/` || lower.startsWith(`${p}/`));
+  const bare = withoutTrailingSlash(lower);
+  if (RESERVED_EXACT_PATHS.some((p) => withoutTrailingSlash(p) === bare)) return true;
+  return RESERVED_PATH_PREFIXES.some((p) => bare === withoutTrailingSlash(p) || bare.startsWith(`${withoutTrailingSlash(p)}/`));
 }
 
 /* ── Normalisation ─────────────────────────────────────────────────────── */

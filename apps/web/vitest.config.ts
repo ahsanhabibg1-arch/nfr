@@ -34,6 +34,11 @@ export default defineConfig({
   test: {
     environment: 'node',
     include: ['tests/**/*.test.ts'],
+    // Stage 03 Task E. The guard above decides WHICH database a run may use; this
+    // hook checks that it is at the schema prisma/migrations describes, and fails
+    // with one actionable sentence instead of dozens of misleading Prisma errors.
+    // It never migrates anything and stays silent when no test database is set.
+    globalSetup: ['./tests/support/globalSetup.ts'],
     // DB integration tests may connect to a real database; give them room.
     //
     // Raised from 30s in Stage 04. `tests/seo-intel.test.ts` runs full audit

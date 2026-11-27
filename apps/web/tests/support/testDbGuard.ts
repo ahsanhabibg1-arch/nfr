@@ -74,6 +74,52 @@ export function decideTestDatabase(env: Record<string, string | undefined>): Tes
 }
 
 /**
+ * Stage 03 Task E — is the isolated test database at the schema the suites expect?
+ *
+ * WHY THIS EXISTS. When four migrations sat unapplied on the test database, the
+ * run did not say so: 13 DB-backed files failed with 71 assorted Prisma errors
+ * such as `The column "updatedAt" does not exist in the current database`, and
+ * reading that as "the database is behind" took a migration-status check to
+ * confirm. One comparison up front turns that into one sentence.
+ *
+ * Pure, so it is unit-testable and cannot itself touch a database. The caller
+ * supplies what the filesystem and the database each say; this only compares.
+ * It never silently skips a suite and never migrates anything — a missing
+ * migration is reported, and applying it stays a deliberate human step.
+ */
+export interface MigrationReadiness {
+  ok: boolean;
+  missing: string[];
+  message?: string;
+}
+
+export function checkMigrationReadiness(
+  migrationDirectories: readonly string[],
+  appliedMigrations: readonly string[],
+  target: string,
+): MigrationReadiness {
+  const applied = new Set(appliedMigrations);
+  const missing = migrationDirectories.filter((m) => !applied.has(m)).sort();
+  if (missing.length === 0) return { ok: true, missing: [] };
+
+  const listed = missing.map((m) => `  - ${m}`).join('\n');
+  return {
+    ok: false,
+    missing,
+    message:
+      `The test database is ${missing.length} migration(s) behind prisma/migrations, so the ` +
+      `DB-backed suites would fail with unrelated-looking Prisma column and relation errors.\n\n` +
+      `  target: ${target}\n  applied: ${appliedMigrations.length} of ${migrationDirectories.length}\n\n` +
+      `Not yet applied:\n${listed}\n\n` +
+      `Apply them to the TEST database only (never the development or cloud one):\n` +
+      `  cd apps/web\n` +
+      `  DATABASE_URL="$TEST_DATABASE_URL" npx prisma migrate deploy\n\n` +
+      `PowerShell:\n` +
+      `  $env:DATABASE_URL = "<TEST_DATABASE_URL from .env>"; npx prisma migrate deploy`,
+  };
+}
+
+/**
  * For local maintenance scripts that only repair relationships (no content, no publishing),
  * e.g. scripts/seed-rodeo-links.mts: the target must be a LOCAL database, must not be the
  * cloud database, and the app must not be running as production. Returns a safe description

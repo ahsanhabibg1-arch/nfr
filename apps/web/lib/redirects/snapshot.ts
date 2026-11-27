@@ -1,6 +1,6 @@
 import { prisma } from '@/lib/db';
 import { report } from '@/lib/logger';
-import { isSupportedRedirectStatus, validateRedirectDestinationShape, validateRedirectSource } from './paths';
+import { isReservedPath, isSupportedRedirectStatus, validateRedirectDestinationShape, validateRedirectSource } from './paths';
 import { resolveLiveCanonical } from './resolve';
 
 export interface ManagedRedirectSnapshotRow {
@@ -116,8 +116,33 @@ async function findOverflowRow(sourcePath: string): Promise<ManagedRedirectSnaps
   return { targetPath: destination.path, statusCode: row.statusCode };
 }
 
-/** A small DB generation read detects writes across Proxy and Server Action bundles. */
+/**
+ * A small DB generation read detects writes across Proxy and Server Action bundles.
+ *
+ * DEFENCE IN DEPTH FOR PROTECTED SYSTEM ROUTES (Stage 03 / APP-01, SEO-04).
+ *
+ * The reserved-path check below is deliberately redundant with
+ * `validateRedirectSource`, and it is placed FIRST, before the cache read and
+ * before any database access. Two things follow from that order:
+ *
+ *   - No redirect can move `/robots.txt`, `/sitemap.xml`, `/favicon.ico` or
+ *     `/manifest.json`, whatever its provenance: a legacy row written before the
+ *     validator existed, a row inserted around the admin service, a stale
+ *     snapshot entry, or a future normalisation mismatch of the kind that caused
+ *     this defect. The validator is the policy; this is the backstop.
+ *   - Those routes perform NO redirect-engine query. Before this, every request
+ *     for robots.txt reached `snapshot()` and read `RedirectCacheState`, which
+ *     put a database dependency in the request path of the most
+ *     availability-critical SEO endpoint on the site. It now returns here.
+ *
+ * `isReservedPath` is pure and allocation-light, so the early return costs less
+ * than the work it skips. Scope is deliberately narrow: only the redirect
+ * engine is bypassed. Hostname classification, the `X-Robots-Tag` decision,
+ * security headers, authentication and every legitimate content redirect are
+ * untouched — the proxy itself still runs for these paths.
+ */
 export async function resolveManagedRedirectAtBoundary(pathname: string): Promise<ManagedRedirectSnapshotRow | null> {
+  if (isReservedPath(pathname)) return null;
   const source = validateRedirectSource(pathname);
   if (!source.ok || !source.path) return null;
   const loaded = await snapshot();

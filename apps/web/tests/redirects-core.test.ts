@@ -89,15 +89,40 @@ describe('normalizeRedirectPath — shapes that must be refused', () => {
 });
 
 describe('reserved infrastructure paths', () => {
+  /*
+    THE BLIND SPOT THIS BLOCK USED TO HAVE (APP-01 / APP-02).
+
+    These cases asserted `isReservedPath` with the argument as written —
+    `/robots.txt` — and passed. But nothing in production ever calls it that
+    way: `validateRedirectSource` normalises first, and
+    `normalizeRedirectPath` always appends a trailing slash, so the real
+    argument is `/robots.txt/`, which the exact-path list did not match. The
+    test proved the list held the right strings; it never proved the guard
+    fired. Both the helper AND the entry points are asserted below, and every
+    exact path is checked in both spellings.
+  */
+  const EXACT = ['/robots.txt', '/sitemap.xml', '/favicon.ico', '/manifest.json'];
+  const PREFIXES = ['/admin', '/api', '/_next', '/login', '/register', '/account', '/forgot-password', '/reset-password'];
+
   it('protects admin, api, auth and framework routes', () => {
     for (const p of ['/admin/', '/admin/articles/', '/api/', '/api/health/', '/_next/static/', '/login/', '/account/']) {
       expect(isReservedPath(p), p).toBe(true);
     }
   });
 
-  it('protects exact infrastructure files', () => {
-    for (const p of ['/robots.txt', '/sitemap.xml', '/favicon.ico']) {
+  it('protects exact infrastructure files, slashed and un-slashed alike', () => {
+    for (const p of EXACT) {
       expect(isReservedPath(p), p).toBe(true);
+      expect(isReservedPath(`${p}/`), `${p}/`).toBe(true);
+      expect(isReservedPath(p.toUpperCase()), p.toUpperCase()).toBe(true);
+    }
+  });
+
+  it('protects every reserved prefix in both spellings and as a parent', () => {
+    for (const p of PREFIXES) {
+      expect(isReservedPath(p), p).toBe(true);
+      expect(isReservedPath(`${p}/`), `${p}/`).toBe(true);
+      expect(isReservedPath(`${p}/anything/`), `${p}/anything/`).toBe(true);
     }
   });
 
@@ -106,14 +131,61 @@ describe('reserved infrastructure paths', () => {
       Compared segment-wise, not as a bare string prefix. `/administration/` is
       a legitimate public slug and must stay redirectable.
     */
-    for (const p of ['/administration/', '/apiary/', '/accounts-payable/', '/loginesque/']) {
+    for (const p of ['/administration/', '/apiary/', '/accounts-payable/', '/loginesque/', '/registered-bulls/', '/robots-txt/']) {
       expect(isReservedPath(p), p).toBe(false);
     }
   });
 
-  it('refuses a reserved path as a redirect source or destination', () => {
-    expect(validateRedirectSource('/admin/articles/')).toMatchObject({ ok: false, reason: 'reserved' });
-    expect(validateRedirectDestinationShape('/api/health/')).toMatchObject({ ok: false, reason: 'reserved' });
+  /* ── the entry points production actually calls ──────────────────────── */
+
+  it('REGRESSION: validateRedirectSource refuses every exact infrastructure file', () => {
+    for (const p of EXACT) {
+      expect(validateRedirectSource(p), p).toMatchObject({ ok: false, reason: 'reserved' });
+      expect(validateRedirectSource(`${p}/`), `${p}/`).toMatchObject({ ok: false, reason: 'reserved' });
+      expect(validateRedirectSource(p.toUpperCase()), p.toUpperCase()).toMatchObject({ ok: false, reason: 'reserved' });
+    }
+  });
+
+  it('REGRESSION: validateRedirectDestinationShape refuses them too', () => {
+    for (const p of EXACT) {
+      expect(validateRedirectDestinationShape(p, '/articles/x/'), p).toMatchObject({ ok: false, reason: 'reserved' });
+      expect(validateRedirectDestinationShape(`${p}/`, '/articles/x/'), `${p}/`).toMatchObject({ ok: false, reason: 'reserved' });
+    }
+  });
+
+  it('refuses every reserved prefix through both entry points', () => {
+    for (const p of PREFIXES) {
+      expect(validateRedirectSource(`${p}/x/`), `${p}/x/`).toMatchObject({ ok: false, reason: 'reserved' });
+      expect(validateRedirectDestinationShape(`${p}/x/`, '/articles/y/'), `${p}/x/`).toMatchObject({ ok: false, reason: 'reserved' });
+    }
+  });
+
+  it('still accepts representative legitimate redirect sources and destinations', () => {
+    // Over-reservation would silently break real editorial redirects, so the
+    // permissive half of the contract is pinned as tightly as the refusing half.
+    for (const p of [
+      '/articles/old-slug/',
+      '/concerts/nfr-concerts-2026/',
+      '/administration/',
+      '/apiary/',
+      '/registered-bulls/',
+      '/robots-txt/',
+      '/sitemap/',
+      '/accounts-payable/',
+    ]) {
+      expect(validateRedirectSource(p), p).toMatchObject({ ok: true });
+    }
+    expect(validateRedirectDestinationShape('/rules-scoring/nfr-bull-riding-scoring/', '/standings-rankings/old/')).toMatchObject({ ok: true });
+  });
+
+  it('the normalised source and the boundary lookup key agree', () => {
+    /*
+      The defect's mechanism: the proxy passes a REQUEST pathname and the admin
+      stores a NORMALISED one. If those two disagree for a protected path, one
+      side can refuse while the other matches. Both must refuse.
+    */
+    expect(validateRedirectSource('/robots.txt').ok).toBe(false);
+    expect(validateRedirectSource(normalizeRedirectPath('/robots.txt') as string).ok).toBe(false);
   });
 });
 

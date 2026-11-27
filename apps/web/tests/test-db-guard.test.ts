@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { decideTestDatabase } from './support/testDbGuard';
+import { checkMigrationReadiness, decideTestDatabase } from './support/testDbGuard';
 
 describe('integration-test database isolation guard', () => {
   const local = 'postgresql://u:p@localhost:5433/nfrguide_test?schema=public';
@@ -44,5 +44,59 @@ describe('integration-test database isolation guard', () => {
     expect(d.mode).toBe('refused');
     const secret = decideTestDatabase({ TEST_DATABASE_URL: 'postgresql://user:S3CRET@db.example.com:5432/x_test' });
     expect(JSON.stringify(secret)).not.toContain('S3CRET');
+  });
+});
+
+/**
+ * Stage 03 Task E — the readiness check that replaces 71 misleading failures.
+ *
+ * The unapplied-migration case is the one worth pinning: the previous symptom
+ * was 13 files failing on assorted Prisma column errors, which reads as broken
+ * code rather than a database that is behind.
+ */
+describe('test database migration readiness', () => {
+  const dirs = ['20260101000000_a', '20260102000000_b', '20260103000000_c'];
+  const target = 'localhost:5433/nfrguide_test';
+
+  it('passes when every migration directory has been applied', () => {
+    const r = checkMigrationReadiness(dirs, [...dirs], target);
+    expect(r).toEqual({ ok: true, missing: [] });
+  });
+
+  it('passes when the database reports MORE than the directories (a newer branch)', () => {
+    // Switching to an older branch must not block the run: the schema is ahead,
+    // not behind, and the suites for that branch still have what they need.
+    const r = checkMigrationReadiness(dirs, [...dirs, '20260104000000_d'], target);
+    expect(r.ok).toBe(true);
+  });
+
+  it('names every unapplied migration, in order', () => {
+    const r = checkMigrationReadiness(dirs, ['20260101000000_a'], target);
+    expect(r.ok).toBe(false);
+    expect(r.missing).toEqual(['20260102000000_b', '20260103000000_c']);
+  });
+
+  it('gives an ACTIONABLE message: the count, the target, the names and the command', () => {
+    const r = checkMigrationReadiness(dirs, ['20260101000000_a'], target);
+    expect(r.message).toContain('2 migration(s) behind');
+    expect(r.message).toContain(target);
+    expect(r.message).toContain('applied: 1 of 3');
+    expect(r.message).toContain('20260102000000_b');
+    expect(r.message).toContain('20260103000000_c');
+    expect(r.message).toContain('prisma migrate deploy');
+    // It must steer to the TEST database explicitly — the failure mode this
+    // whole guard exists to prevent is migrating the wrong one.
+    expect(r.message).toContain('TEST_DATABASE_URL');
+    expect(r.message).toMatch(/never the development or cloud one/i);
+  });
+
+  it('reports an entirely unmigrated database rather than passing it', () => {
+    const r = checkMigrationReadiness(dirs, [], target);
+    expect(r.ok).toBe(false);
+    expect(r.missing).toEqual(dirs);
+  });
+
+  it('passes vacuously when there are no migration directories at all', () => {
+    expect(checkMigrationReadiness([], [], target).ok).toBe(true);
   });
 });
