@@ -1,4 +1,5 @@
 import type { Metadata } from 'next';
+import { resolveBranding } from '@/lib/cms/branding';
 import { notFound, redirect, permanentRedirect } from 'next/navigation';
 import { DisciplineGuideView } from '@/views/DisciplineGuideView';
 import { getDisciplineBySlug, getAllDisciplines } from '@/lib/content';
@@ -57,12 +58,14 @@ export default async function DisciplinePage({ params }: Params) {
     notFound();
   }
   const draft = await isStaffDraftPreview();
-  const [seo, faqs, appendageSlots, publisherName] = await Promise.all([
+  const [seo, faqs, appendageSlots, publisherName, branding] = await Promise.all([
     getEntitySeo('DISCIPLINE', d.id),
     listPublicFaqs('DISCIPLINE', d.id),
     resolveDisciplineTemplateSlots(d.id, { draft }),
     // Stage 03 (H-06): the administrator's site name for structured data.
     getPublicSiteName(),
+    // FC-03: published primary logo for the publisher Organization node.
+    resolveBranding('light'),
   ]);
   const faqLd = faqPageJsonLd(faqs);
 
@@ -70,7 +73,7 @@ export default async function DisciplinePage({ params }: Params) {
     <>
       <JsonLd
         data={[
-          disciplineJsonLd(d, { publisherName }),
+          disciplineJsonLd(d, { publisherName, publisherLogo: branding.logoUrl ?? undefined }),
           breadcrumbJsonLd([
             { name: 'Home', path: '/' },
             { name: 'NFR Competition', path: ROUTES.COMPETITION },

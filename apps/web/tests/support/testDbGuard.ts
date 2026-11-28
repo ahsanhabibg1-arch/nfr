@@ -120,6 +120,48 @@ export function checkMigrationReadiness(
 }
 
 /**
+ * Stage 04-R — the message for the one case `checkMigrationReadiness` cannot
+ * describe, because it never gets the chance: the readiness probe itself threw.
+ *
+ * It matters only under REQUIRE_DB_TESTS=1. Every DB-backed suite gates itself on
+ * its own `SELECT 1` and self-skips when that fails, so an isolated database that
+ * is merely *configured* — and is down, or has no schema — yields a run that
+ * exits 0 having asserted nothing against a database. That reads as a pass. In CI
+ * it has to read as a failure instead.
+ *
+ * Pure, and never returns a connection string: `target` is already host/port/name
+ * only (see `describe`), and only the error's first line is quoted, so a driver
+ * message carrying credentials cannot be echoed in full.
+ */
+export function describeUnqueryableDatabase(target: string, error: unknown): string {
+  // Prisma's messages routinely begin with a blank line and an `Invalid
+  // prisma.$queryRaw() invocation` banner, so the FIRST line is often empty and
+  // the next is boilerplate. Take the first line that actually says something.
+  const cause = (error instanceof Error ? error.message : String(error))
+    .split('\n')
+    .map((line) => line.trim())
+    .find(
+      (line) =>
+        line.length > 0 &&
+        !/^invalid\s+`?prisma\./i.test(line) &&
+        // `String(undefined)` is "undefined" — technically a line, but it tells
+        // the operator nothing, so it should fall through to "unknown error".
+        !/^(undefined|null)$/.test(line),
+    );
+  return (
+    `\n\nREQUIRE_DB_TESTS=1, but the configured test database could not be queried. Every ` +
+    `DB-backed suite would self-skip, so the run would exit 0 with no database coverage at ` +
+    `all — a pass that proves nothing.\n\n` +
+    `  target: ${target}\n` +
+    `  cause:  ${cause || 'unknown error'}\n\n` +
+    `Start the database and apply its migrations (the TEST database only):\n` +
+    `  cd apps/web\n` +
+    `  DATABASE_URL="$TEST_DATABASE_URL" npx prisma migrate deploy\n\n` +
+    `To run without database coverage on purpose, leave REQUIRE_DB_TESTS unset.\n`
+  );
+}
+
+/**
  * For local maintenance scripts that only repair relationships (no content, no publishing),
  * e.g. scripts/seed-rodeo-links.mts: the target must be a LOCAL database, must not be the
  * cloud database, and the app must not be running as production. Returns a safe description

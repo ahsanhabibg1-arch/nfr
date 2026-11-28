@@ -1,6 +1,14 @@
 'use client';
 
 import React, { useState } from 'react';
+import {
+  INITIAL_IMAGE_ATTEMPT,
+  nextImageAttempt,
+  resetOnSourceChange,
+  showsUnavailablePanel,
+  usesSrcSet,
+  type ImageAttempt,
+} from '../lib/media/imageFallback';
 
 interface ImageWithCreditProps {
   src: string;
@@ -53,8 +61,40 @@ export const ImageWithCredit: React.FC<ImageWithCreditProps> = ({
   height,
   tone = 'light',
 }) => {
-  const [hasError, setHasError] = useState(false);
+  /**
+   * FC-05B — the ladder now lives in `lib/media/imageFallback.ts` as pure
+   * functions, so every transition is unit-tested. This component only holds
+   * the state and reports events; it decides nothing.
+   */
+  const [attempt, setAttempt] = useState<ImageAttempt>(INITIAL_IMAGE_ATTEMPT);
+  const [renderedSrc, setRenderedSrc] = useState(src);
+  /**
+   * Stage 06-R (R-07) — one retry WITHOUT `srcSet`, then give up.
+   *
+   * A `srcset` candidate and the original are separate objects in storage. If a
+   * derivative is ever missing while the original is fine, the browser's chosen
+   * candidate 404s, `onError` fires, and the card used to drop straight to the
+   * "Image unavailable" panel — discarding a perfectly good original because a
+   * thumbnail was absent. Clearing `srcSet` once forces the browser back to
+   * `src` and re-attempts exactly that.
+   *
+   * Strictly two states, so this cannot loop: candidates → original → panel.
+   * Each is at most one additional request, and when nothing is wrong (the
+   * current state of production, where every advertised variant returns 200)
+   * this code never runs at all.
+   *
+   * This is RESILIENCE, not a fix for a confirmed defect — see the Stage 06-R
+   * report: the thumbnail 404s this was prompted by did not reproduce.
+   */
   const t = TONE[tone];
+
+  // A new image gets a fresh ladder, rather than inheriting the previous
+  // image's failure. Derived during render — no effect, no extra paint.
+  const effectiveAttempt = resetOnSourceChange(renderedSrc, src, attempt);
+  if (renderedSrc !== src) {
+    setRenderedSrc(src);
+    setAttempt(INITIAL_IMAGE_ATTEMPT);
+  }
   /**
    * D-A3 — a missing image must take the SAME path as a failed one.
    *
@@ -73,7 +113,7 @@ export const ImageWithCredit: React.FC<ImageWithCreditProps> = ({
   return (
     <figure className="relative w-full overflow-hidden group">
       <div className={`relative w-full ${aspectRatioClass} bg-[#1E293B]/60 overflow-hidden`}>
-        {!hasError && !missing ? (
+        {!showsUnavailablePanel(effectiveAttempt, missing) ? (
           /**
            * MED-01C — serve the derivative the viewport actually needs.
            *
@@ -97,8 +137,8 @@ export const ImageWithCredit: React.FC<ImageWithCreditProps> = ({
            */
           <img
             src={src}
-            srcSet={srcSet}
-            sizes={srcSet ? sizes : undefined}
+            srcSet={usesSrcSet(effectiveAttempt, Boolean(srcSet)) ? srcSet : undefined}
+            sizes={usesSrcSet(effectiveAttempt, Boolean(srcSet)) ? sizes : undefined}
             width={width}
             height={height}
             alt={alt}
@@ -106,7 +146,9 @@ export const ImageWithCredit: React.FC<ImageWithCreditProps> = ({
             fetchPriority={priority ? 'high' : undefined}
             decoding={priority ? 'sync' : 'async'}
             referrerPolicy="no-referrer"
-            onError={() => setHasError(true)}
+            // One step down the ladder per failure; `failed` is terminal, so
+            // repeated error events cannot produce a retry loop.
+            onError={() => setAttempt((prev) => nextImageAttempt(prev, Boolean(srcSet)))}
             className={`w-full h-full object-cover transition-transform duration-500 ease-out group-hover:scale-[1.02] ${className}`}
           />
         ) : (

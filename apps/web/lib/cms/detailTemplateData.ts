@@ -1,5 +1,6 @@
 import 'server-only';
-import { getRelatedPublishedArticles, getPublishedArticlesBySection, getPublishedArticlesByCategory } from '../content';
+import type { Article } from '../../types';
+import { getRelatedPublishedArticles, getPublishedArticlesBySection, getPublishedArticlesByCategory, toCardArticle } from '../content';
 import { getPublishedSections, getDraftSections } from './pageLayoutService';
 import { getKnownSectionTypes, type SectionSlot } from './sectionRegistry';
 import { selectRenderableSlots } from './slotSelection';
@@ -89,7 +90,12 @@ function resolveAppendageSlots(
       const count = relatedCount(slot.props.articleCount);
       const idx = out.length;
       out.push({ slot, data: {} });
-      tasks.push(getRelated(count).then((relatedArticles) => { out[idx].data = { relatedArticles, title: relatedTitle(slot.props.title) }; }));
+      // Stage 09 (PERF) — related-article rails render as CARDS in client
+      // components, so the article body is dropped before serialization.
+      tasks.push(getRelated(count).then((relatedArticles) => {
+        const cards = (relatedArticles as Article[]).map(toCardArticle);
+        out[idx].data = { relatedArticles: cards, title: relatedTitle(slot.props.title) };
+      }));
     } else if (t === 'detail-cta') {
       out.push({ slot, data: detailCta(slot) });
     } else {

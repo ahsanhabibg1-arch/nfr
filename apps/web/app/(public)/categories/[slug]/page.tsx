@@ -4,6 +4,7 @@ import {
   resolveCategoryArchive,
   getPublishedArticlesBySection,
   getPublishedArticlesByCategory,
+  toCardArticles,
 } from '@/lib/content';
 import { buildMetadata, faqPageJsonLd, breadcrumbJsonLd, JsonLd } from '@/lib/seo';
 import { getEntitySeo, mergeSeoMeta } from '@/lib/cms/entitySeoService';
@@ -63,9 +64,16 @@ export default async function CategoryPage({ params }: Params) {
    * still selects by its `categoryKey`, and everything else by the slug. The
    * resolver merely supplies the key instead of the page re-deriving it.
    */
-  const articles = identity.sectionKey
-    ? await getPublishedArticlesBySection(identity.categoryKey!)
-    : await getPublishedArticlesByCategory(slug);
+  /**
+   * Stage 09 (PERF) — `CategoryArchiveView` is a CLIENT component, so every
+   * article handed to it is serialized into the page. Cards never read the
+   * body, so it is dropped here rather than shipped to the browser.
+   */
+  const articles = toCardArticles(
+    identity.sectionKey
+      ? await getPublishedArticlesBySection(identity.categoryKey!)
+      : await getPublishedArticlesByCategory(slug),
+  );
   const categoryName = identity.name;
   const draft = await isStaffDraftPreview();
   const [seo, faqs] = identity.categoryId

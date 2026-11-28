@@ -316,6 +316,35 @@ export async function deleteMedia(actor: Actor, id: string): Promise<void> {
   if (publishedRefs > 0) throw new ServiceError('conflict', `Cannot delete: used by ${publishedRefs} published article(s). Archive it instead.`);
   if (refs > 0) throw new ServiceError('conflict', `Cannot delete: referenced by ${refs} item(s). Detach them or archive it instead.`);
 
+  /**
+   * Stage 06-R FC-05A — Site Identity branding is a reference too.
+   *
+   * The `_count` guards above only see RELATIONAL references. Branding is
+   * stored as JSON in `SiteConfig('identity')`, so a logo in active use on
+   * every page of the site — including the admin login — had no reference at
+   * all here and could be deleted, leaving the header pointing at a 404.
+   * Checked in both `draft` and `published`: a draft reference matters because
+   * publishing it later must not resurrect a deleted asset.
+   */
+  const identity = await prisma.siteConfig.findUnique({
+    where: { key: 'identity' },
+    select: { draft: true, published: true },
+  });
+  if (identity) {
+    const ID_FIELDS = ['logoMediaId', 'logoLightMediaId', 'logoDarkMediaId'] as const;
+    const usedBy = (blob: unknown): boolean => {
+      if (!blob || typeof blob !== 'object') return false;
+      const o = blob as Record<string, unknown>;
+      return ID_FIELDS.some((f) => typeof o[f] === 'string' && (o[f] as string).trim() === id);
+    };
+    if (usedBy(identity.published) || usedBy(identity.draft)) {
+      throw new ServiceError(
+        'conflict',
+        'Cannot delete: this image is the site logo. Remove or replace it in Website → Site Identity & Branding first.',
+      );
+    }
+  }
+
   // Remove managed blobs (never touch legacy static files).
   if (r.storageProvider !== 'legacy-local') {
     const storage = getStorage();

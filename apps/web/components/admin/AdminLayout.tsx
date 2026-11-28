@@ -1,6 +1,7 @@
 'use client';
 
 import React, { useState, useEffect } from 'react';
+import type { Branding } from '../../lib/cms/brandingShared';
 import { usePathname } from 'next/navigation';
 import { AdminSidebar } from './AdminSidebar';
 import { AdminTopbar } from './AdminTopbar';
@@ -14,7 +15,13 @@ export interface AdminUserInfo {
   roleLabel: string;
 }
 
-export const AdminLayout: React.FC<{ children: React.ReactNode; user: AdminUserInfo; visibleModules?: string[] }> = ({ children, user, visibleModules }) => {
+export const AdminLayout: React.FC<{
+  children: React.ReactNode;
+  user: AdminUserInfo;
+  visibleModules?: string[];
+  /** Resolved Site Identity branding for the admin chrome (Stage 06-R, R-06). */
+  branding?: Branding | null;
+}> = ({ children, user, visibleModules, branding }) => {
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
   const [mobileSidebarOpen, setMobileSidebarOpen] = useState(false);
   const [notificationsOpen, setNotificationsOpen] = useState(false);
@@ -59,6 +66,7 @@ export const AdminLayout: React.FC<{ children: React.ReactNode; user: AdminUserI
     <div className="min-h-screen bg-[#F4F6F8] text-stone-900 flex font-sans antialiased">
       {/* Sidebar Navigation */}
       <AdminSidebar
+        branding={branding}
         collapsed={sidebarCollapsed}
         onToggleCollapse={() => setSidebarCollapsed(!sidebarCollapsed)}
         mobileOpen={mobileSidebarOpen}

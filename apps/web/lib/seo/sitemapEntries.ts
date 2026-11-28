@@ -142,6 +142,24 @@ export async function loadSitemapCandidates(): Promise<SitemapCandidate[]> {
     changeFrequency: 'daily', priority: 1,
   });
 
+  /**
+   * Stage 06-R (R-04) — the site-wide editorial archive.
+   *
+   * ONLY the base URL. Paginated, searched, sorted and category-filtered views
+   * are deliberately absent: `/coverage/?page=2` is self-canonical and
+   * crawlable from the `rel="next"` link, but listing an unbounded set of
+   * query-string permutations here is exactly the duplicate-crawl-path problem
+   * the archive's SEO policy avoids. Its `lastModified` tracks the newest
+   * eligible article, because that is literally what the page lists.
+   */
+  out.push({
+    family: 'home',
+    subject: { path: '/coverage/', published: true },
+    lastModified: newestArticle(() => true),
+    changeFrequency: 'daily',
+    priority: 0.7,
+  });
+
   // Sections (EntitySeo SECTION keyed by PRIMARY_SECTIONS[key].id) + their category archives
   for (const key of sectionKeys) {
     const meta = PRIMARY_SECTIONS[key];

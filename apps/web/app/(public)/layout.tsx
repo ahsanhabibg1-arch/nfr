@@ -1,4 +1,5 @@
 import React from 'react';
+import { resolveBranding } from '@/lib/cms/branding';
 import { PublicChrome } from '@/components/PublicChrome';
 import { getPublishedSearchIndex, getAllDisciplines } from '@/lib/content';
 import { getPublicNavigation } from '@/lib/cms/navigationService';
@@ -72,13 +73,14 @@ export default async function PublicLayout({ children }: { children: React.React
    */
   const editorMode = await isStaffDraftPreview();
 
-  const [searchArticles, searchDisciplines, nav, footer, announcements, footerTopBlocks] = await Promise.all([
+  const [searchArticles, searchDisciplines, nav, footer, announcements, footerTopBlocks, branding] = await Promise.all([
     getPublishedSearchIndex(),
     getAllDisciplines(),
     getPublicNavigation(),
     getPublished<FooterConfig>('footer'),
     getActiveAnnouncements(2), // "two highest-priority announcements" — shown on every public page
     getActiveBlocksForPlacement('footer-top'),
+    resolveBranding('light'),
   ]);
 
   return (
@@ -90,6 +92,7 @@ export default async function PublicLayout({ children }: { children: React.React
         footer={footer}
         announcements={announcements}
         footerTopBlocks={footerTopBlocks}
+        branding={branding}
       >
         {children}
       </PublicChrome>

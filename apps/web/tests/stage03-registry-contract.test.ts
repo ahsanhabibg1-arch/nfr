@@ -256,8 +256,22 @@ describe('Stage 03 Task A — exemption register integrity', () => {
     for (const key of noRenderer) {
       expect(EXEMPTIONS[key].resolvedBy, `${key} must record its retirement`).toContain('retired');
     }
-    const byDesign = Object.entries(EXEMPTIONS).filter(([, e]) => e.reason === 'BY_DESIGN').map(([k]) => k);
-    expect(byDesign).toEqual(['landing-stat-pills']);
+    /**
+     * Stage 06-R added the three `categoryId` props (R-01): a STABLE category
+     * reference per category-scoped homepage section, so renaming a category
+     * can no longer silently empty it. They are resolver-level by nature —
+     * they change WHICH articles are chosen, never any rendered string — so a
+     * sentinel cannot appear in the HTML and they are exempt BY_DESIGN with a
+     * recorded reason. Their behaviour is covered by
+     * tests/stage06r-allocation-policy.test.ts.
+     */
+    const byDesign = Object.entries(EXEMPTIONS).filter(([, e]) => e.reason === 'BY_DESIGN').map(([k]) => k).sort();
+    expect(byDesign).toEqual([
+      'entertainment.categoryId',
+      'events-shopping.categoryId',
+      'landing-stat-pills',
+      'plan-and-watch.categoryId',
+    ]);
     for (const [key, entry] of Object.entries(EXEMPTIONS)) {
       expect(entry.note.length, `${key} needs a substantive note`).toBeGreaterThan(20);
     }

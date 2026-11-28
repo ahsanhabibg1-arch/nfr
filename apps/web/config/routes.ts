@@ -30,6 +30,8 @@ export const ROUTES = {
   /** A subcategory archive. Depth 1, sharing the namespace with the sections. */
   SUBCATEGORY: (slug: string) => `/${slug}/`,
   SUBCATEGORY_PATTERN: '/:subcategory',
+  /** Stage 06-R (R-04) — site-wide editorial archive; the homepage CTA's default destination. */
+  COVERAGE: '/coverage/',
   COMPETITION: '/competition/',
   ENTERTAINMENT: '/entertainment/',
   EVENTS_SHOPPING: '/events-shopping/',
@@ -121,6 +123,8 @@ export const RESERVED_SUBCATEGORY_SLUGS: ReadonlySet<string> = new Set([
   'competition', 'entertainment', 'events-shopping', 'plan-watch', 'rodeo-events',
   // Static public routes.
   'about', 'account', 'affiliate-disclosure', 'articles', 'categories',
+  // Stage 06-R (R-04) — the site-wide editorial archive at /coverage/.
+  'coverage',
   'competitors', 'contact', 'corrections', 'disciplines', 'editorial-policy',
   'forgot-password', 'info', 'login', 'privacy', 'register', 'reset-password',
   'search', 'terms', 'venues',

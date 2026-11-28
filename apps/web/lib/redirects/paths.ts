@@ -196,10 +196,40 @@ export interface PathCheck {
 }
 
 /** A redirect SOURCE must be a well-formed, non-reserved public path. */
+/**
+ * Stage 06-R FC-02C — paths reserved as a redirect SOURCE only.
+ *
+ * Source protection and destination eligibility are different questions, and
+ * `RESERVED_EXACT_PATHS` answers both at once. `/coverage/` needs opposite
+ * answers to each: the application serves that page itself, so a redirect row
+ * must never be able to shadow it — but redirecting OLD urls TO the archive is
+ * exactly what an editor should be able to do. Listing it here, rather than in
+ * `RESERVED_EXACT_PATHS`, gives it precisely that asymmetry.
+ *
+ * Why shadowing is possible at all: `proxy.ts` resolves managed redirects at
+ * the request boundary, BEFORE Next.js matches a route. A 308 issued there wins
+ * over the real page, so the guard has to live in validation, not in routing.
+ *
+ * Deliberately NOT the whole static route table. Other app-served routes
+ * (`/search/`, `/competitors/`, `/venues/`, the legal pages…) share this
+ * exposure; widening the rule would change behaviour for existing stored
+ * redirects, which is outside this closure's scope. Recorded for Stage 10.
+ */
+export const SOURCE_ONLY_RESERVED_PATHS: readonly string[] = Object.freeze(['/coverage']);
+
+/** True when a path may not be used as a redirect SOURCE (a superset of `isReservedPath`). */
+export function isReservedRedirectSource(path: string): boolean {
+  if (isReservedPath(path)) return true;
+  const bare = withoutTrailingSlash(path.toLowerCase());
+  return SOURCE_ONLY_RESERVED_PATHS.some((p) => withoutTrailingSlash(p) === bare);
+}
+
 export function validateRedirectSource(raw: string | null | undefined): PathCheck {
   const path = normalizeRedirectPath(raw);
   if (!path) return { ok: false, reason: 'malformed' };
-  if (isReservedPath(path)) return { ok: false, reason: 'reserved' };
+  // Source-only reservations included: this one function is the choke point for
+  // create, update, CSV import AND the runtime boundary resolver.
+  if (isReservedRedirectSource(path)) return { ok: false, reason: 'reserved' };
   return { ok: true, path };
 }
 

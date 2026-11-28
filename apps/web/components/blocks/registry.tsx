@@ -103,17 +103,17 @@ function CompetitionBlock({ slot, data }: BlockProps) {
 
 function PlanAndWatchBlock({ slot, data }: BlockProps) {
   const copy = copyFromProps(slot.props);
-  return <PlanAndWatchSection articles={hd(data).articles ?? []} copy={copy} />;
+  return <PlanAndWatchSection articles={hd(data).articles ?? []} copy={copy} emptyReason={hd(data).emptyReason} />;
 }
 
 function EntertainmentBlock({ slot, data }: BlockProps) {
   const copy = copyFromProps(slot.props);
-  return <EntertainmentSection articles={hd(data).articles ?? []} copy={copy} />;
+  return <EntertainmentSection articles={hd(data).articles ?? []} copy={copy} emptyReason={hd(data).emptyReason} />;
 }
 
 function EventsShoppingBlock({ slot, data }: BlockProps) {
   const copy = copyFromProps(slot.props);
-  return <EventsShoppingSection articles={hd(data).articles ?? []} copy={copy} />;
+  return <EventsShoppingSection articles={hd(data).articles ?? []} copy={copy} emptyReason={hd(data).emptyReason} />;
 }
 
 function MoreRodeoBlock({ slot, data }: BlockProps) {

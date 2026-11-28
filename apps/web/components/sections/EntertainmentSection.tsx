@@ -10,9 +10,11 @@ interface EntertainmentSectionProps {
   articles: Article[];
   /** Page Builder copy overrides. */
   copy?: SectionCopy;
+  /** Why the section is empty, so the feed can say something true. */
+  emptyReason?: 'no-eligible-content' | 'allocated-elsewhere' | 'limited-by-configuration' | 'invalid-source';
 }
 
-export const EntertainmentSection: React.FC<EntertainmentSectionProps> = ({ articles, copy = {} }) => {
+export const EntertainmentSection: React.FC<EntertainmentSectionProps> = ({ articles, copy = {}, emptyReason }) => {
   return (
     <section id="entertainment" className="w-full bg-[#1E293B] text-white py-16 border-b border-white/10">
       <div className="max-w-[1280px] mx-auto px-4 sm:px-6 lg:px-8">
@@ -24,7 +26,7 @@ export const EntertainmentSection: React.FC<EntertainmentSectionProps> = ({ arti
           actionLabel={copy.ctaText?.trim() || undefined}
           actionHref={copy.ctaText?.trim() ? copyOr(copy.ctaUrl, ROUTES.ENTERTAINMENT) : undefined}
         />
-        <HomeArticleFeed articles={articles} theme="dark" sectionPath={ROUTES.ENTERTAINMENT} sectionName="NFR Entertainment" />
+        <HomeArticleFeed articles={articles} emptyReason={emptyReason} theme="dark" sectionPath={ROUTES.ENTERTAINMENT} sectionName="NFR Entertainment" />
       </div>
     </section>
   );

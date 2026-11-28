@@ -1,6 +1,8 @@
 'use client';
 
 import React from 'react';
+import { SiteLogo } from './SiteLogo';
+import type { Branding } from '../lib/cms/brandingShared';
 import Link from 'next/link';
 import { ROUTES } from '../config/routes';
 import { LEGAL_PAGES } from '../config/legalPages';
@@ -48,6 +50,8 @@ const FooterLinks: React.FC<{ links: NavLink[] }> = ({ links }) => (
 const POLICY_LINKS: NavLink[] = LEGAL_PAGES.map((p) => ({ label: p.label, url: p.path, isExternal: false }));
 
 interface SiteFooterProps {
+  /** Resolved Site Identity branding; omitted renders the wordmark. */
+  branding?: Branding | null;
   sections?: NavLink[];
   academy?: NavLink[];
   /** Published Site Experience → Footer config. Blank fields keep the built-in defaults. */
@@ -59,7 +63,7 @@ const DEFAULT_COPYRIGHT = `© ${new Date().getFullYear()} NFRGuide.com. Independ
 
 const text = (v: string | undefined, fallback: string) => (v && v.trim() ? v : fallback);
 
-export const SiteFooter: React.FC<SiteFooterProps> = ({ sections, academy, config = {} }) => {
+export const SiteFooter: React.FC<SiteFooterProps> = ({ branding, sections, academy, config = {} }) => {
   const sectionLinks = sections && sections.length > 0 ? sections : SECTIONS_FALLBACK;
   const baseAcademy = academy && academy.length > 0 ? academy : ACADEMY_FALLBACK;
   const academyLinks = [...baseAcademy, ...DIRECTORY_LINKS.filter((d) => !baseAcademy.some((a) => a.url === d.url))];
@@ -78,7 +82,24 @@ export const SiteFooter: React.FC<SiteFooterProps> = ({ sections, academy, confi
   const lgGrid = gridCols >= 6 ? 'lg:grid-cols-6' : gridCols === 4 ? 'lg:grid-cols-4' : 'lg:grid-cols-5';
 
   return (
-    <footer className="w-full bg-[#0F1115] text-stone-400 font-sans border-t border-white/10 pt-16 pb-12">
+    /*
+      Stage 06-R (R-05) — footer top spacing.
+
+      The reported "empty black band" could not be reproduced: measured on
+      production at 390, 768 and 1440px the gap between <main> and <footer> was
+      0px, no footer descendant was empty-but-tall, and the grid had no empty
+      cell. The 65px of black above the first footer content was this element's
+      own `pt-16` plus its 1px border — intentional padding, not a rendering
+      defect.
+
+      The owner authorised tightening it regardless, so the top padding is now
+      responsive: compact on small screens where vertical space is scarce, and
+      still comfortably separated from the preceding section on desktop. It is
+      deliberately smaller than `pb-12`, because the space above a footer reads
+      as dead air while the space below it reads as margin. Padding only — no
+      negative margins, no content removed, no change to any configured column.
+    */
+    <footer className="w-full bg-[#0F1115] text-stone-400 font-sans border-t border-white/10 pt-8 sm:pt-10 lg:pt-12 pb-12">
       <div className="max-w-[1280px] mx-auto px-4 sm:px-6 lg:px-8">
         {/* Main Footer Grid */}
         <div className={`grid grid-cols-1 md:grid-cols-2 ${lgGrid} gap-10 pb-12 border-b border-white/10`}>
@@ -86,7 +107,7 @@ export const SiteFooter: React.FC<SiteFooterProps> = ({ sections, academy, confi
           <div className="lg:col-span-2 space-y-4">
             <div className="flex items-baseline gap-2">
               <Link href="/" className="font-serif text-3xl font-extrabold text-white tracking-tight uppercase hover:text-[#D4A757] transition-colors">
-                NFR<span className="text-[#D4A757]">Guide</span>
+                <SiteLogo branding={branding} wordmarkLead="NFR" wordmarkAccent="Guide" />
               </Link>
             </div>
             

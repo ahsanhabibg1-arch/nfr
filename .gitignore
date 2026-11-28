@@ -1,7 +1,13 @@
 node_modules/
 build/
 dist/
-coverage/
+# Test-coverage REPORTS only. This was an unanchored `coverage/`, which matches a
+# directory of that name at ANY depth — and so silently excluded the public
+# /coverage/ archive route added in Stage 06-R. Committing would have dropped
+# app/(public)/coverage/page.tsx from the repository and broken the build on a
+# clean checkout. Anchored to where vitest actually writes reports instead.
+/coverage/
+/apps/web/coverage/
 .DS_Store
 *.log
 .env*

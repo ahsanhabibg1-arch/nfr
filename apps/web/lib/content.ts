@@ -46,14 +46,162 @@ export async function getPublishedArticleBySlug(slug: string): Promise<Article |
   return row ? toArticle(row) : null;
 }
 
+/** `Category.name` -> the slug the public archive is addressed by. */
+export function sectionCategorySlug(categoryKey: string): string {
+  return categoryKey.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '');
+}
+
+/**
+ * Stage 06 (UI-02 / UI-03) — resolve a section token to a managed `Category.id`.
+ *
+ * THE DEFECT THIS REPLACES. `getPublishedArticlesBySection` matched
+ * `category: { name: token }` and nothing else, so it silently returned ZERO
+ * rows whenever the token was not character-for-character a `Category.name`:
+ *
+ *   - `lib/cms/detailTemplateData.ts` passes SECTION IDS (`'rodeo-events'`,
+ *     `'competition'`). No category is named that, so every related-article rail
+ *     on those detail templates was permanently empty.
+ *   - `Category.name` is an editor-facing display string (`@unique`, editable in
+ *     the admin) while `config/routes.ts` holds a hardcoded copy of it in
+ *     `categoryKey`. Renaming a category in the admin therefore emptied three
+ *     homepage sections with no error anywhere — the exact class of defect the
+ *     Stage 06 brief calls out as "hardcoded category names used as query logic".
+ *
+ * A name match alone also cannot be trusted going forward, so resolution now
+ * accepts, in order: an exact `Category.name`, the archive `slug`, or a
+ * `PRIMARY_SECTIONS` key/id — and then selects by `categoryId`.
+ *
+ * Selecting by `categoryId` is also what makes descendants work. `Article.categoryId`
+ * is REQUIRED and `subcategoryTaxon` is a COMPOSITE foreign key on
+ * `(categoryId, subcategoryId)`, so PostgreSQL guarantees that an article in a
+ * subcategory already carries that subcategory's parent `categoryId`. One
+ * `categoryId` predicate therefore returns direct-category AND every descendant
+ * article, with no join and no second query — which is why this fix needs no
+ * schema change and cannot drift from the archive's own view.
+ *
+ * Returns null when nothing matches, so the caller renders its real empty state
+ * rather than a misleading full feed.
+ */
+/**
+ * A section's category, by the most stable reference the caller has.
+ *
+ * `categoryId` is the Builder's persisted, immutable link (Stage 06-R / R-01).
+ * `token` is the legacy display-name / slug / section-id string, kept so every
+ * existing call site and every stored layout keeps working untouched.
+ */
+export interface SectionCategoryRef {
+  categoryId?: string | null;
+  token?: string | null;
+}
+
+/**
+ * Stage 06-R (R-01) — resolution is ORDERED, and each step is its own query.
+ *
+ * The Stage 06 version used one `findFirst` with `OR: [{name: {in: …}}, {slug:
+ * {in: …}}]`. That returns an ARBITRARY row when more than one matches — if a
+ * category is named "More Rodeo" while a different one is slugged `more-rodeo`,
+ * the database picks, and the homepage silently shows the wrong section's
+ * articles. Ambiguity must not be resolved by chance, so the candidates are
+ * tried strictly in order of how much they can be trusted:
+ *
+ *   1. `categoryId` — the Builder's stored link. Immutable: renaming the
+ *      category or changing its slug cannot break it.
+ *   2. an exact `Category.name` match on the token (legacy configuration).
+ *   3. an exact `Category.slug` match on the token.
+ *   4. the `PRIMARY_SECTIONS` entry the token names, by its `categoryKey`…
+ *   5. …then by that key's derived archive slug.
+ *
+ * Steps 2–5 are why a rename is survivable in BOTH directions: a renamed
+ * display name is still found by slug, and a changed slug is still found by
+ * name. Only changing both at once defeats them, which is exactly what step 1
+ * exists for.
+ *
+ * A `categoryId` that no longer exists falls through to the token rather than
+ * failing hard, and a token that matches nothing returns null so the caller
+ * renders its real empty state instead of an unrelated feed.
+ */
+export interface ResolvedSectionCategory {
+  id: string;
+  name: string;
+  slug: string;
+}
+
+export type SectionCategoryResolution =
+  | { ok: true; category: ResolvedSectionCategory }
+  /** An explicit `categoryId` was configured and does not resolve. */
+  | { ok: false; reason: 'invalid-id' }
+  /** No explicit id, and the legacy token matched nothing. */
+  | { ok: false; reason: 'unresolved' };
+
+/**
+ * Stage 06-R FC-01 — an explicit id that does not resolve now FAILS SAFE.
+ *
+ * It used to fall through to the legacy token. That is wrong whenever the two
+ * disagree, and they disagree in exactly the case that matters: an administrator
+ * who deliberately pointed the Entertainment SLOT at some other category, via
+ * `categoryId`, and whose chosen category is later deleted. Falling through
+ * would quietly start publishing the compiled-in Entertainment feed under their
+ * heading — a silent switch to an unrelated category, with no error anywhere.
+ *
+ * Explicit configuration is therefore authoritative in BOTH directions: when it
+ * resolves it wins, and when it does not resolve the section shows nothing and
+ * reports `invalid-id`, which the homepage surfaces as a distinct empty state.
+ * An administrator can see and fix that; a silently wrong feed they cannot.
+ *
+ * The legacy ladder below is unchanged and still applies when NO explicit id is
+ * stored, so every pre-existing layout behaves exactly as before.
+ */
+export async function resolveSectionCategoryResult(
+  ref: SectionCategoryRef | string,
+): Promise<SectionCategoryResolution> {
+  const { categoryId, token } = typeof ref === 'string' ? { categoryId: null, token: ref } : ref;
+  const select = { id: true, name: true, slug: true } as const;
+
+  const stableId = (categoryId ?? '').trim();
+  if (stableId) {
+    const byId = await prisma.category.findUnique({ where: { id: stableId }, select });
+    return byId ? { ok: true, category: byId } : { ok: false, reason: 'invalid-id' };
+  }
+
+  const raw = (token ?? '').trim();
+  if (!raw) return { ok: false, reason: 'unresolved' };
+
+  const section = getSectionMetaByCategorySlug(raw);
+  const candidates: Array<{ name: string } | { slug: string }> = [
+    { name: raw },
+    { slug: raw },
+    ...(section ? [{ name: section.categoryKey }, { slug: sectionCategorySlug(section.categoryKey) }] : []),
+  ];
+
+  for (const where of candidates) {
+    const row = await prisma.category.findFirst({ where, select });
+    if (row) return { ok: true, category: row };
+  }
+  return { ok: false, reason: 'unresolved' };
+}
+
+/** Convenience wrapper: the category, or null however it failed. */
+export async function resolveSectionCategory(
+  ref: SectionCategoryRef | string,
+): Promise<ResolvedSectionCategory | null> {
+  const r = await resolveSectionCategoryResult(ref);
+  return r.ok ? r.category : null;
+}
+
 export async function getPublishedArticlesBySection(
-  categoryKey: string,
+  categoryKey: string | SectionCategoryRef,
   opts: { limit?: number; excludeIds?: string[] } = {},
 ): Promise<Article[]> {
+  const category = await resolveSectionCategory(categoryKey);
+  if (!category) return [];
+  const categoryId = category.id;
+
   const rows = await prisma.article.findMany({
     where: {
       ...publicArticleWhere(),
-      category: { name: categoryKey },
+      // Direct-category AND descendant-subcategory articles — see the note on
+      // `resolveSectionCategoryId` for why one predicate covers both.
+      categoryId,
       ...(opts.excludeIds?.length ? { id: { notIn: opts.excludeIds } } : {}),
     },
     include: articleInclude,
@@ -61,6 +209,142 @@ export async function getPublishedArticlesBySection(
     ...(opts.limit ? { take: opts.limit } : {}),
   });
   return rows.map(toArticle);
+}
+
+/**
+ * Stage 09 (PERF) — an article with its BODY removed, for card rendering.
+ *
+ * MEASURED: the homepage serialized 16 complete articles — every paragraph of
+ * `content` and every block of `structuredBody` — into React's client payload
+ * so that cards could show a title, a deck and a thumbnail. The section landing
+ * and category archives do the same through their own resolvers, because each
+ * one hands `Article[]` to a client view.
+ *
+ * No card component reads either field (verified across every section and
+ * archive view), so emptying them changes nothing that renders. The shape stays
+ * `Article`, so no component prop, type or call site changes — which is what
+ * makes this safe to apply at several resolvers at once.
+ *
+ * Detail pages are unaffected: they fetch their own article and render the body
+ * from that, never from a card list.
+ */
+export function toCardArticle(a: Article): Article {
+  return { ...a, content: [], structuredBody: undefined };
+}
+
+/** `toCardArticle` over a list, preserving order. */
+export function toCardArticles(list: readonly Article[]): Article[] {
+  return list.map(toCardArticle);
+}
+
+/* ── /coverage/ archive (Stage 06-R, R-04) ─────────────────────────── */
+
+export const COVERAGE_SORTS = ['newest', 'oldest', 'title'] as const;
+export type CoverageSort = (typeof COVERAGE_SORTS)[number];
+
+export interface CoverageQuery {
+  q?: string;
+  /** Archive slug of a category to filter by. */
+  categorySlug?: string;
+  sort?: CoverageSort;
+  page?: number;
+  pageSize?: number;
+}
+
+export interface CoveragePage {
+  articles: Article[];
+  total: number;
+  page: number;
+  pageSize: number;
+  totalPages: number;
+  /** The filters actually applied, after clamping — what the view should echo. */
+  applied: { q: string; categorySlug: string; sort: CoverageSort };
+}
+
+/**
+ * One bounded page of publicly eligible articles for the site-wide archive.
+ *
+ * Eligibility is `publicArticleWhere()` — the same predicate every other public
+ * read uses — so drafts, in-review, archived and scheduled rows are excluded in
+ * the DATABASE, not the view. Editor `noindex` is deliberately NOT treated as
+ * unpublished: it withholds an article from search engines, not from readers,
+ * and the sitemap already models that distinction.
+ *
+ * Every input is clamped before it reaches Prisma: the page size is bounded, the
+ * page number is bounded by the real total, and the sort is an enum. An
+ * unbounded or injected query parameter therefore cannot produce an unbounded
+ * scan or an arbitrary ordering.
+ */
+export async function listCoverageArticles(query: CoverageQuery = {}): Promise<CoveragePage> {
+  const pageSize = Math.min(48, Math.max(6, Math.round(query.pageSize ?? 12)));
+  const q = (query.q ?? '').trim().slice(0, 120);
+  const categorySlug = (query.categorySlug ?? '').trim().slice(0, 120);
+  const sort: CoverageSort = COVERAGE_SORTS.includes(query.sort as CoverageSort)
+    ? (query.sort as CoverageSort)
+    : 'newest';
+
+  const where = {
+    ...publicArticleWhere(),
+    ...(categorySlug ? { category: { slug: categorySlug } } : {}),
+    ...(q
+      ? {
+          OR: [
+            { title: { contains: q, mode: 'insensitive' as const } },
+            { excerpt: { contains: q, mode: 'insensitive' as const } },
+            { deck: { contains: q, mode: 'insensitive' as const } },
+          ],
+        }
+      : {}),
+  };
+
+  const total = await prisma.article.count({ where });
+  const totalPages = Math.max(1, Math.ceil(total / pageSize));
+  // `Number.NaN` survives Math.max/min and would reach Prisma as `skip: NaN`,
+  // which throws. The route already sanitises its query string, but this
+  // function is called directly too, so it clamps its own input.
+  const requested = Number(query.page ?? 1);
+  const page = Number.isFinite(requested) ? Math.min(Math.max(1, Math.round(requested)), totalPages) : 1;
+
+  // `id` is the deterministic tie-break: without it two articles published in
+  // the same second can swap places between pages and one can be skipped.
+  const orderBy =
+    sort === 'oldest'
+      ? [{ publishedAt: 'asc' as const }, { id: 'asc' as const }]
+      : sort === 'title'
+        ? [{ title: 'asc' as const }, { id: 'asc' as const }]
+        : [{ publishedAt: 'desc' as const }, { id: 'desc' as const }];
+
+  const rows = await prisma.article.findMany({
+    where,
+    include: articleInclude,
+    orderBy,
+    skip: (page - 1) * pageSize,
+    take: pageSize,
+  });
+
+  return {
+    articles: rows.map(toArticle),
+    total,
+    page,
+    pageSize,
+    totalPages,
+    applied: { q, categorySlug, sort },
+  };
+}
+
+/** Categories that currently have at least one publicly eligible article. */
+export async function listCoverageCategories(): Promise<{ name: string; slug: string; count: number }[]> {
+  const rows = await prisma.category.findMany({
+    select: {
+      name: true,
+      slug: true,
+      _count: { select: { articles: { where: publicArticleWhere() } } },
+    },
+    orderBy: { sortOrder: 'asc' },
+  });
+  return rows
+    .map((r) => ({ name: r.name, slug: r.slug, count: r._count.articles }))
+    .filter((r) => r.count > 0);
 }
 
 /** Published articles for hand-picked IDs, returned in the given order (unpublished/missing IDs are dropped). */
@@ -267,11 +551,28 @@ export async function getEvergreenArticles(limit = 4): Promise<Article[]> {
   return rows.map(toArticle);
 }
 
+/**
+ * Upper bound for the client-side quick-search index (Stage 09, PERF).
+ *
+ * This index is fetched by the public layout and serialized into EVERY public
+ * page so the ⌘K modal can filter it in the browser. It was unbounded: every
+ * published article, forever, on every page load, whether or not anyone opened
+ * search. At today's volume that is small, but it grows without limit and the
+ * cost is paid by every visitor on every page.
+ *
+ * 300 newest articles keeps the modal useful — it filters by title and deck,
+ * and anything older is reached through `/search/`, which is server-side,
+ * paginated and searches the full corpus. A cap is not a feature change; it is
+ * the difference between a bounded page weight and one that tracks the archive.
+ */
+export const SEARCH_INDEX_LIMIT = 300;
+
 export async function getPublishedSearchIndex(): Promise<SearchIndexItem[]> {
   const rows = await prisma.article.findMany({
     where: { ...publicArticleWhere() },
     select: { id: true, slug: true, title: true, deck: true, readTime: true, category: { select: { name: true } } },
     orderBy: { publishedAt: 'desc' },
+    take: SEARCH_INDEX_LIMIT,
   });
   return rows.map((r) => ({
     id: r.id,

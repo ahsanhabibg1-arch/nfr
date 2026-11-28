@@ -9,6 +9,7 @@ import { Discipline, SearchIndexItem } from '../types';
 import { ROUTES, articleUrl } from '../config/routes';
 import type { PublicNavigation } from '../lib/cms/navTypes';
 import type { FooterConfig } from '../lib/cms/siteConfigService';
+import type { Branding } from '../lib/cms/brandingShared';
 import { AnnouncementBanner, type PublicAnnouncement } from './public/AnnouncementBanner';
 import { GlobalBlockRenderer, type PublicGlobalBlock } from './public/GlobalBlockRenderer';
 
@@ -26,6 +27,8 @@ export interface PublicChromeProps {
   footer?: FooterConfig;
   /** Active announcements, shown under the header on every public page. */
   announcements?: PublicAnnouncement[];
+  /** Resolved Site Identity branding, resolved once by the server layout. */
+  branding?: Branding | null;
   /** Global blocks placed "above the footer (all pages)". */
   footerTopBlocks?: PublicGlobalBlock[];
 }
@@ -37,6 +40,7 @@ export const PublicChrome: React.FC<PublicChromeProps> = ({
   nav,
   footer,
   announcements = [],
+  branding,
   footerTopBlocks = [],
 }) => {
   const [searchOpen, setSearchOpen] = useState(false);
@@ -55,11 +59,11 @@ export const PublicChrome: React.FC<PublicChromeProps> = ({
 
   return (
     <div className="min-h-screen flex flex-col bg-[#F7F3EA]">
-      <SiteHeader onOpenSearch={() => setSearchOpen(true)} navItems={nav?.header} />
+      <SiteHeader onOpenSearch={() => setSearchOpen(true)} navItems={nav?.header} branding={branding} />
       {announcements.length > 0 && <AnnouncementBanner announcements={announcements} />}
       <main className="flex-1">{children}</main>
       {footerTopBlocks.length > 0 && <GlobalBlockRenderer blocks={footerTopBlocks} />}
-      <SiteFooter sections={nav?.footerSections} academy={nav?.footerAcademy} config={footer} />
+      <SiteFooter sections={nav?.footerSections} academy={nav?.footerAcademy} config={footer} branding={branding} />
       <SearchModal
         isOpen={searchOpen}
         onClose={() => setSearchOpen(false)}

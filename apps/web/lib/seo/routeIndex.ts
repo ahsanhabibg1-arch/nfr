@@ -46,6 +46,9 @@ export const RENDERS_PUBLICLY: ReadonlySet<RouteStatus> = new Set(['indexable', 
  * A test asserts every app/(public) static folder is covered by S4 or this list.
  */
 export const STATIC_PUBLIC_ROUTES: ReadonlyArray<{ path: string; status: RouteStatus; family: string; detail: string }> = [
+  // Stage 06-R (R-04). Indexable and a sitemap candidate; listed here because
+  // this list is also the hand-checked route table S6 validates against.
+  { path: '/coverage/', status: 'indexable', family: 'archive', detail: 'site-wide editorial archive' },
   { path: '/search/', status: 'noindex', family: 'search', detail: 'search results (noindex, follow)' },
   { path: '/login/', status: 'noindex', family: 'auth', detail: 'reader sign-in (noindex)' },
   { path: '/register/', status: 'noindex', family: 'auth', detail: 'reader registration (noindex)' },

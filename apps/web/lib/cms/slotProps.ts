@@ -37,6 +37,32 @@ export function limitList<T>(items: T[], props: Record<string, unknown>, key: st
   return requested > 0 ? items.slice(0, requested) : items;
 }
 
+/** Trimmed string read; empty / non-string values collapse to `''`. */
+export function stringProp(props: Record<string, unknown>, key: string): string {
+  const raw = props[key];
+  return typeof raw === 'string' ? raw.trim() : '';
+}
+
+/**
+ * Read a stored value that must be one of a fixed set.
+ *
+ * Anything unrecognised falls back, so a hand-edited layout, an older stored
+ * value or a future policy name can never put a resolver into an undefined
+ * state — it simply behaves as the default. Pure, so the Builder inspector and
+ * the resolver agree on what a stored value means.
+ */
+export function enumProp<T extends string>(
+  props: Record<string, unknown>,
+  key: string,
+  allowed: readonly T[],
+  fallback: T,
+): T {
+  const raw = props[key];
+  if (typeof raw !== 'string') return fallback;
+  const v = raw.trim() as T;
+  return allowed.includes(v) ? v : fallback;
+}
+
 /** Accepts a comma string or an array; trims and drops empties. */
 export function idListProp(props: Record<string, unknown>, key: string): string[] {
   const raw = props[key];

@@ -1,5 +1,9 @@
 import { describe, it, expect } from 'vitest';
-import { checkMigrationReadiness, decideTestDatabase } from './support/testDbGuard';
+import {
+  checkMigrationReadiness,
+  decideTestDatabase,
+  describeUnqueryableDatabase,
+} from './support/testDbGuard';
 
 describe('integration-test database isolation guard', () => {
   const local = 'postgresql://u:p@localhost:5433/nfrguide_test?schema=public';
@@ -98,5 +102,55 @@ describe('test database migration readiness', () => {
 
   it('passes vacuously when there are no migration directories at all', () => {
     expect(checkMigrationReadiness([], [], target).ok).toBe(true);
+  });
+});
+
+/**
+ * Stage 04-R, Task F. A configured isolated database that cannot be queried used
+ * to end in a green run: the readiness probe swallowed the error, every DB suite
+ * self-skipped on its own `SELECT 1`, and vitest exited 0. Under REQUIRE_DB_TESTS=1
+ * that is the opposite of what the flag is for, so globalSetup now throws this.
+ */
+describe('unqueryable-database message (REQUIRE_DB_TESTS=1)', () => {
+  const target = 'localhost:5432/nfrguide_test';
+
+  it('says the run would otherwise pass while proving nothing', () => {
+    const m = describeUnqueryableDatabase(target, new Error("Can't reach database server"));
+    expect(m).toContain('REQUIRE_DB_TESTS=1');
+    expect(m).toContain(target);
+    expect(m).toContain("Can't reach database server");
+    expect(m).toMatch(/no database coverage/i);
+    // The whole point: name the false-pass, don't just report a connection error.
+    expect(m).toMatch(/self-skip/i);
+    expect(m).toContain('prisma migrate deploy');
+  });
+
+  it('skips the blank line and banner Prisma puts first, to quote the real cause', () => {
+    const m = describeUnqueryableDatabase(
+      target,
+      new Error('\nInvalid `prisma.$queryRaw()` invocation:\n\nCan\'t reach database server'),
+    );
+    expect(m).toContain("cause:  Can't reach database server");
+    expect(m).not.toContain('unknown error');
+  });
+
+  it('quotes only one line of a multi-line driver error', () => {
+    const m = describeUnqueryableDatabase(
+      target,
+      new Error('Authentication failed\npassword=SUPERSECRET\nat Connection.connect'),
+    );
+    expect(m).toContain('Authentication failed');
+    expect(m).not.toContain('SUPERSECRET');
+    expect(m).not.toContain('Connection.connect');
+  });
+
+  it('never echoes a connection string, only the host/port/name target', () => {
+    const m = describeUnqueryableDatabase(target, new Error('boom'));
+    expect(m).not.toMatch(/postgres(ql)?:\/\//);
+  });
+
+  it('handles a thrown non-Error without losing the message', () => {
+    expect(describeUnqueryableDatabase(target, 'ECONNREFUSED')).toContain('ECONNREFUSED');
+    expect(describeUnqueryableDatabase(target, undefined)).toContain('unknown error');
   });
 });

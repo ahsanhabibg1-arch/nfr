@@ -1,5 +1,5 @@
 import 'server-only';
-import { getSectionMeta, getPublishedArticlesBySection, getAllDisciplines } from '../content';
+import { getSectionMeta, getPublishedArticlesBySection, getAllDisciplines, toCardArticles } from '../content';
 import { getPublishedSections, getDraftSections } from './pageLayoutService';
 import { idListProp, limitList, pickedThenAuto } from './slotUtils';
 import type { SectionSlot } from './sectionRegistry';
@@ -52,7 +52,9 @@ export async function resolveSectionLandingSlots(
   const layoutSections = await fetchSections(`section:${sectionKey}`);
   const visible = selectRenderableSlots(layoutSections);
 
-  const sectionArticles = await getPublishedArticlesBySection(sectionMeta.categoryKey);
+  // Stage 09 (PERF) — these feed CLIENT landing views; cards never read the
+  // article body, so it is dropped before it can be serialized.
+  const sectionArticles = toCardArticles(await getPublishedArticlesBySection(sectionMeta.categoryKey));
 
   const featuredSlot = visible.find((s) => s.sectionType === 'landing-featured');
   const hasPicked = featuredSlot ? idListProp(featuredSlot.props, 'featuredIds').length > 0 : false;

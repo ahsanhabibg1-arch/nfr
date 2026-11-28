@@ -10,9 +10,11 @@ interface EventsShoppingSectionProps {
   articles: Article[];
   /** Page Builder copy overrides. */
   copy?: SectionCopy;
+  /** Why the section is empty, so the feed can say something true. */
+  emptyReason?: 'no-eligible-content' | 'allocated-elsewhere' | 'limited-by-configuration' | 'invalid-source';
 }
 
-export const EventsShoppingSection: React.FC<EventsShoppingSectionProps> = ({ articles, copy = {} }) => {
+export const EventsShoppingSection: React.FC<EventsShoppingSectionProps> = ({ articles, copy = {}, emptyReason }) => {
   return (
     <section id="events-shopping" className="w-full bg-[#FFFFFF] text-[#0F1115] py-16 border-b border-stone-300">
       <div className="max-w-[1280px] mx-auto px-4 sm:px-6 lg:px-8">
@@ -23,7 +25,7 @@ export const EventsShoppingSection: React.FC<EventsShoppingSectionProps> = ({ ar
           actionLabel={copy.ctaText?.trim() || undefined}
           actionHref={copy.ctaText?.trim() ? copyOr(copy.ctaUrl, ROUTES.EVENTS_SHOPPING) : undefined}
         />
-        <HomeArticleFeed articles={articles} sectionPath={ROUTES.EVENTS_SHOPPING} sectionName="NFR Events & Shopping" />
+        <HomeArticleFeed articles={articles} emptyReason={emptyReason} sectionPath={ROUTES.EVENTS_SHOPPING} sectionName="NFR Events & Shopping" />
       </div>
     </section>
   );

@@ -18,6 +18,15 @@ interface HomeArticleFeedProps {
   sectionPath: string;
   sectionName: string;
   columns?: 3 | 4;
+  /**
+   * Stage 06-R (R-02 §6.5) — WHY this section is empty.
+   *
+   * "No articles have been published yet" is not merely unhelpful when the
+   * articles exist and are shown further up the same page: it is false, and it
+   * tells the owner their CMS lost their work. Omitted means the caller does
+   * not know, and the original wording is kept.
+   */
+  emptyReason?: 'no-eligible-content' | 'allocated-elsewhere' | 'limited-by-configuration' | 'invalid-source';
 }
 
 export const HomeArticleFeed: React.FC<HomeArticleFeedProps> = ({
@@ -26,6 +35,7 @@ export const HomeArticleFeed: React.FC<HomeArticleFeedProps> = ({
   sectionPath,
   sectionName,
   columns = 3,
+  emptyReason,
 }) => {
   const dark = theme === 'dark';
 
@@ -37,7 +47,15 @@ export const HomeArticleFeed: React.FC<HomeArticleFeedProps> = ({
         }`}
         data-empty-state="section-feed"
       >
-        <p>No {sectionName} articles have been published yet.</p>
+        <p>
+          {emptyReason === 'allocated-elsewhere'
+            ? `Every published ${sectionName} article is already featured elsewhere on this page.`
+            : emptyReason === 'limited-by-configuration'
+              ? `This ${sectionName} module is configured to show no articles.`
+              : emptyReason === 'invalid-source'
+                ? `This ${sectionName} module points at a category that no longer exists. An editor needs to reselect its content source.`
+                : `No ${sectionName} articles have been published yet.`}
+        </p>
         <Link href={sectionPath} className={`mt-3 inline-block text-xs font-semibold ${dark ? 'text-[#D4A757]' : 'text-[#8B5E3C]'} hover:underline`}>
           Visit {sectionName} &rarr;
         </Link>

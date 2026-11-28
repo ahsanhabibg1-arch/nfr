@@ -218,6 +218,17 @@ export const IMAGE_SIZES = {
   lead: '(min-width: 1280px) 760px, (min-width: 768px) 70vw, 100vw',
   /** Cards in a 2-3 column grid. */
   card: '(min-width: 1024px) 33vw, (min-width: 640px) 50vw, 100vw',
+  /**
+   * Hero SECONDARY story thumbnail (Stage 09, PERF).
+   *
+   * Its container is `w-full sm:w-36 h-28`: full width below Tailwind's `sm`
+   * breakpoint (640px) and 144px above it. The call site used a flat
+   * `sizes="144px"`, which is simply false on a phone — the slot is ~338px
+   * wide there. The browser believed it, chose the 144w thumbnail and
+   * upscaled it, so the card rendered visibly soft on mobile. Measured on
+   * production: a 144x81 derivative painted into a 338x112 box.
+   */
+  heroSecondary: '(min-width: 640px) 144px, 100vw',
   /** An image inside the article body, same column as the hero. */
   body: '(min-width: 1280px) 860px, (min-width: 768px) 80vw, 100vw',
 } as const;

@@ -10,9 +10,11 @@ interface PlanAndWatchSectionProps {
   articles: Article[];
   /** Page Builder copy overrides. */
   copy?: SectionCopy;
+  /** Why the section is empty, so the feed can say something true. */
+  emptyReason?: 'no-eligible-content' | 'allocated-elsewhere' | 'limited-by-configuration' | 'invalid-source';
 }
 
-export const PlanAndWatchSection: React.FC<PlanAndWatchSectionProps> = ({ articles, copy = {} }) => {
+export const PlanAndWatchSection: React.FC<PlanAndWatchSectionProps> = ({ articles, copy = {}, emptyReason }) => {
   return (
     <section id="plan-watch" className="w-full bg-[#F7F3EA] text-[#0F1115] py-16 border-b border-stone-300">
       <div className="max-w-[1280px] mx-auto px-4 sm:px-6 lg:px-8">
@@ -23,7 +25,7 @@ export const PlanAndWatchSection: React.FC<PlanAndWatchSectionProps> = ({ articl
           actionLabel={copy.ctaText?.trim() || undefined}
           actionHref={copy.ctaText?.trim() ? copyOr(copy.ctaUrl, ROUTES.PLAN_WATCH) : undefined}
         />
-        <HomeArticleFeed articles={articles} sectionPath={ROUTES.PLAN_WATCH} sectionName="NFR Plan & Watch" columns={4} />
+        <HomeArticleFeed articles={articles} emptyReason={emptyReason} sectionPath={ROUTES.PLAN_WATCH} sectionName="NFR Plan & Watch" columns={4} />
       </div>
     </section>
   );

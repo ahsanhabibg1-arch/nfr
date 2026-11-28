@@ -7,11 +7,15 @@ import {
   getPublishedArticlesBySection,
   getPublishedArticlesByIds,
   getEvergreenArticles,
+  resolveSectionCategoryResult,
+  toCardArticle,
+  toCardArticles,
 } from '../content';
 import { listPublicHubs, listPublicEvents } from '../rodeoContent';
 import { getQuickAccessLinks } from './navigationService';
 import { PRIMARY_SECTIONS } from '../../config/routes';
 import { numProp, idListProp, pickedThenAuto, createSelectionContext } from './slotUtils';
+import { stringProp, enumProp } from './slotProps';
 import type { Article, Discipline } from '../../types';
 import type { QuickAccessLink } from './navTypes';
 import type { SectionSlot } from './sectionRegistry';
@@ -25,9 +29,35 @@ import { selectRenderableSlots } from './slotSelection';
  * its props, so edits made in the Page Builder never reached the public site.
  */
 
+/**
+ * Stage 06-R (R-02) — how a category section may draw on content another
+ * section has already taken.
+ *
+ * `strict` is the default and the pre-existing behaviour, so no stored layout
+ * changes meaning when this ships.
+ */
+export const SELECTION_POLICIES = ['strict', 'smart-fallback', 'independent'] as const;
+export type SelectionPolicy = (typeof SELECTION_POLICIES)[number];
+
+/** Why a section ended up with nothing to show (R-02 §6.5). */
+export type EmptyReason =
+  | 'no-eligible-content'
+  | 'allocated-elsewhere'
+  | 'limited-by-configuration'
+  /** FC-01: an explicit categoryId is configured but no longer resolves. */
+  | 'invalid-source';
+
 export interface HomeSlotData {
   /** Articles for article-driven sections (latest, plan & watch, entertainment, ...). */
   articles?: Article[];
+  /**
+   * Set when the section is empty, so the view can tell the visitor the truth.
+   * "No articles have been published yet" is false — and damaging — when the
+   * articles exist but are shown further up the same page.
+   */
+  emptyReason?: EmptyReason;
+  /** True when Smart Fallback had to re-show content allocated elsewhere. */
+  reusedAllocation?: boolean;
   /** Editorial hero: lead + secondary stories. */
   lead?: Article | null;
   secondary?: Article[];
@@ -112,26 +142,159 @@ export async function resolveHomepageSlots(slots: SectionSlot[]): Promise<Resolv
     heroData = { lead, secondary: uniqueSecondary };
   }
 
-  for (const slot of visible) {
+  /**
+   * Stage 06 (UI-02) — slots RESOLVE by specificity, and RENDER in the admin's
+   * order. Those are two different orders, and conflating them starved the
+   * category sections.
+   *
+   * Claims are first-come (see `createSelectionContext`), and the loop used to
+   * claim in page order. `latest-coverage` sits above the category sections on
+   * the homepage and draws from EVERY category, so it took the newest articles
+   * site-wide and the category sections below it resolved against whatever
+   * happened to be left. A section whose articles were simply the most recent
+   * ones on the site could be emptied by a generic feed that had no particular
+   * need for them.
+   *
+   * Specificity order fixes that without weakening deduplication:
+   *   1. the editorial hero (resolved above — the lead is the page's headline
+   *      act and keeps that privilege wherever an admin places it),
+   *   2. category-scoped sections, which can ONLY be filled from their own
+   *      category,
+   *   3. generic feeds (`latest-coverage`, `learning`), which can be filled
+   *      from anything and so should take what is left, not take first.
+   *
+   * Nothing about relevance, limits, manual picks or ordering changes, and no
+   * article can still appear twice. `out` is rebuilt in `visible` order below,
+   * so the rendered page is exactly the layout the admin configured.
+   */
+  /**
+   * Stage 09 (PERF) — drop the article BODY before it crosses into the client.
+   *
+   * MEASURED: the homepage HTML was 238 KB, of which 165 KB (69%) was React's
+   * serialized flight payload, and inside it sat the full `structuredBody` and
+   * `content` prose of all 16 articles — complete articles shipped to the
+   * browser so that cards could show a title, a deck and a thumbnail.
+   *
+   * `components/blocks/registry.tsx` is a CLIENT component, so everything in
+   * `HomeSlotData` is serialized across that boundary. No card reads the body
+   * (verified across every section component), so emptying those two arrays
+   * here removes the payload without changing a single rendered pixel or any
+   * component's props.
+   *
+   * It is applied at this ONE choke point, immediately before the data is
+   * handed over, so no caller has to remember to do it. Article DETAIL pages
+   * are unaffected: they render the body from their own query, not from here.
+   */
+  const CARD_SAFE = toCardArticle;
+  const cardSafe = (list: Article[] | undefined) => (list ? toCardArticles(list) : list);
+
+  const resolved = new Map<SectionSlot, HomeSlotData>();
+
+  const resolveArticleSlot = async (slot: SectionSlot): Promise<void> => {
     const t = slot.sectionType;
     const count = numProp(slot.props, 'articleCount', DEFAULT_COUNTS[t] ?? 4, 0, 12);
-    let data: HomeSlotData = {};
+    const data: HomeSlotData = {};
 
-    if (t === 'editorial-hero') data = heroData ?? {};
-    else if (t === 'latest-coverage') {
+    if (t === 'latest-coverage') {
       data.articles = await pickedThenAuto(slot.props, count, (need, ex) => getLatestArticles(need, ex), ctx);
     } else if (SECTION_CATEGORY[t]) {
-      // Category relevance is preserved: the filter is unchanged, only the
-      // exclude list now carries everything already placed on the page.
       const categoryKey = PRIMARY_SECTIONS[SECTION_CATEGORY[t]].categoryKey;
-      data.articles = await pickedThenAuto(slot.props, count, (need, ex) => getPublishedArticlesBySection(categoryKey, { limit: need, excludeIds: ex }), ctx);
+      // R-01: the Builder's stored `categoryId` is the stable link; the
+      // compiled-in key stays as the legacy fallback.
+      const ref = { categoryId: stringProp(slot.props, 'categoryId'), token: categoryKey };
+      const policy = enumProp(slot.props, 'selectionPolicy', SELECTION_POLICIES, 'strict');
+
+      if (policy === 'independent') {
+        /**
+         * Section Independent — resolve from this section's own eligible
+         * articles, ignoring what other sections took, and DO NOT claim. Not
+         * claiming is the point: a section that permits cross-section reuse has
+         * no business starving the sections after it. Within-section
+         * deduplication is still mandatory, and `pickedThenAuto` enforces it
+         * even with no context.
+         */
+        data.articles = await pickedThenAuto(slot.props, count, (need, ex) =>
+          getPublishedArticlesBySection(ref, { limit: need, excludeIds: ex }),
+        );
+      } else {
+        const unique = await pickedThenAuto(slot.props, count, (need, ex) =>
+          getPublishedArticlesBySection(ref, { limit: need, excludeIds: ex }), ctx);
+        data.articles = unique;
+
+        if (policy === 'smart-fallback' && unique.length === 0) {
+          /**
+           * Smart Fallback — unique content first, reuse only to avoid a
+           * MISLEADING empty state.
+           *
+           * This runs only when the unique pass returned nothing at all, which
+           * is the starvation case: on the live homepage the editorial hero's
+           * lead plus two secondaries were all three eligible Events & Shopping
+           * articles, so the section below rendered "no articles published yet"
+           * while three published articles sat on the same page.
+           *
+           * It borrows the minimum — `fallbackMinimum`, default 1 — never more
+           * than the configured count, never from outside this section's own
+           * category, and never the same article twice. The borrowed articles
+           * are deliberately NOT claimed: they already belong to the slot that
+           * took them first, and claiming again would move the starvation to
+           * the next section rather than remove it.
+           */
+          const want = Math.min(numProp(slot.props, 'fallbackMinimum', 1, 1, 4), count);
+          if (want > 0) {
+            const borrowed = await getPublishedArticlesBySection(ref, { limit: want });
+            const seen = new Set<string>();
+            data.articles = borrowed.filter((a) => !seen.has(a.id) && seen.add(a.id)).slice(0, want);
+            data.reusedAllocation = data.articles.length > 0;
+          }
+        }
+      }
+
+      // R-02 §6.5 / FC-01 — tell the section WHY it is empty, so it cannot claim
+      // "nothing published" when the truth is "all of it is elsewhere", and so a
+      // broken configuration is never mistaken for an empty category.
+      if ((data.articles?.length ?? 0) === 0) {
+        const resolution = await resolveSectionCategoryResult(ref);
+        if (!resolution.ok && resolution.reason === 'invalid-id') data.emptyReason = 'invalid-source';
+        else if (count === 0) data.emptyReason = 'limited-by-configuration';
+        else {
+          const anyEligible = await getPublishedArticlesBySection(ref, { limit: 1 });
+          data.emptyReason = anyEligible.length > 0 ? 'allocated-elsewhere' : 'no-eligible-content';
+        }
+      }
     } else if (t === 'learning') {
       data.articles = await pickedThenAuto(slot.props, count, async (need, ex) => (await getEvergreenArticles(need + ex.length)).filter((a) => !ex.includes(a.id)).slice(0, need), ctx);
-    } else if (t === 'competition') data.disciplines = disciplines;
+    }
+    resolved.set(slot, data);
+  };
+
+  const isCategorySlot = (s: SectionSlot) => Boolean(SECTION_CATEGORY[s.sectionType]);
+  const isGenericFeed = (s: SectionSlot) => s.sectionType === 'latest-coverage' || s.sectionType === 'learning';
+
+  // Pass 1 — the narrow feeds claim before the broad ones. Sequential, because
+  // each claim must be visible to the next slot's exclude list.
+  for (const slot of visible.filter(isCategorySlot)) await resolveArticleSlot(slot);
+  // Pass 2 — generic feeds fill from whatever remains.
+  for (const slot of visible.filter(isGenericFeed)) await resolveArticleSlot(slot);
+
+  for (const slot of visible) {
+    const t = slot.sectionType;
+    let data: HomeSlotData = resolved.get(slot) ?? {};
+
+    if (t === 'editorial-hero') data = heroData ?? {};
+    else if (t === 'competition') data.disciplines = disciplines;
     else if (t === 'quick-access') data.quickAccessLinks = quickAccessLinks;
     else if (t === 'more-rodeo') { data.hubs = hubs; data.recurringEvents = recurringEvents; }
 
-    out.push({ slot, data });
+    // Everything below this line is serialized into the client payload.
+    out.push({
+      slot,
+      data: {
+        ...data,
+        ...(data.articles ? { articles: cardSafe(data.articles) } : {}),
+        ...(data.lead ? { lead: CARD_SAFE(data.lead) } : {}),
+        ...(data.secondary ? { secondary: cardSafe(data.secondary) } : {}),
+      },
+    });
   }
   return out;
 }

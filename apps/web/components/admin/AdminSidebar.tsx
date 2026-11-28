@@ -1,6 +1,8 @@
 'use client';
 
 import React, { useState } from 'react';
+import { SiteLogo } from '../SiteLogo';
+import type { Branding } from '../../lib/cms/brandingShared';
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
 import { ROUTES } from '../../config/routes';
@@ -20,6 +22,8 @@ interface NavGroup {
 }
 
 interface AdminSidebarProps {
+  /** Resolved Site Identity branding; omitted renders the NFRCMS wordmark. */
+  branding?: Branding | null;
   collapsed: boolean;
   onToggleCollapse: () => void;
   mobileOpen: boolean;
@@ -252,7 +256,7 @@ const MODULE_GROUPS: NavGroup[] = [
 ];
 
 export const AdminSidebar: React.FC<AdminSidebarProps> = ({
-  collapsed,
+  branding, collapsed,
   onToggleCollapse,
   mobileOpen,
   onCloseMobile,
@@ -275,7 +279,7 @@ export const AdminSidebar: React.FC<AdminSidebarProps> = ({
             className="flex items-center gap-2 group overflow-hidden"
           >
             <span className="font-serif text-xl font-black text-white tracking-tight uppercase">
-              NFR<span className="text-[#D4A757]">CMS</span>
+              <SiteLogo branding={branding} wordmarkLead="NFR" wordmarkAccent="CMS" maxHeight={28} />
             </span>
           </Link>
 

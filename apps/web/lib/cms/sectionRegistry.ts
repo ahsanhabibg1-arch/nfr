@@ -347,6 +347,9 @@ const HOMEPAGE_SECTIONS: SectionDef[] = [
       { key: 'featuredIds', label: 'Pinned articles', type: 'featured', tab: 'content', helpText: 'Shown first, in this order. Remaining slots fill automatically from this section.' },
       { key: 'ctaText', label: 'CTA button text', type: 'text', tab: 'content' },
       { key: 'ctaUrl', label: 'CTA link URL', type: 'url', tab: 'content', requires: ['ctaText'] },
+      { key: 'selectionPolicy', label: 'When content is used elsewhere', type: 'select', tab: 'content', options: [{ value: 'strict', label: 'Strict — never repeat an article' }, { value: 'smart-fallback', label: 'Smart fallback — repeat only to avoid an empty section' }, { value: 'independent', label: 'Independent — ignore what other sections used' }], helpText: 'Strict keeps every article on the page unique. Smart fallback re-shows one article only when this section would otherwise be empty.' },
+      { key: 'fallbackMinimum', label: 'Fallback minimum cards (1–4)', type: 'number', max: 4, tab: 'content', requires: ['selectionPolicy'], helpText: 'How many articles Smart fallback may re-show. Default 1.' },
+      { key: 'categoryId', label: 'Category link (advanced)', type: 'text', tab: 'content', helpText: 'Stable category ID. Leave empty to match by section name — set it so renaming the category cannot empty this section.' },
     ],
   },
   {
@@ -364,6 +367,9 @@ const HOMEPAGE_SECTIONS: SectionDef[] = [
       { key: 'featuredIds', label: 'Pinned articles', type: 'featured', tab: 'content', helpText: 'Shown first, in this order. Remaining slots fill automatically from this section.' },
       { key: 'ctaText', label: 'CTA button text', type: 'text', tab: 'content' },
       { key: 'ctaUrl', label: 'CTA link URL', type: 'url', tab: 'content', requires: ['ctaText'] },
+      { key: 'selectionPolicy', label: 'When content is used elsewhere', type: 'select', tab: 'content', options: [{ value: 'strict', label: 'Strict — never repeat an article' }, { value: 'smart-fallback', label: 'Smart fallback — repeat only to avoid an empty section' }, { value: 'independent', label: 'Independent — ignore what other sections used' }], helpText: 'Strict keeps every article on the page unique. Smart fallback re-shows one article only when this section would otherwise be empty.' },
+      { key: 'fallbackMinimum', label: 'Fallback minimum cards (1–4)', type: 'number', max: 4, tab: 'content', requires: ['selectionPolicy'], helpText: 'How many articles Smart fallback may re-show. Default 1.' },
+      { key: 'categoryId', label: 'Category link (advanced)', type: 'text', tab: 'content', helpText: 'Stable category ID. Leave empty to match by section name — set it so renaming the category cannot empty this section.' },
     ],
   },
   {
@@ -381,6 +387,9 @@ const HOMEPAGE_SECTIONS: SectionDef[] = [
       { key: 'featuredIds', label: 'Pinned articles', type: 'featured', tab: 'content', helpText: 'Shown first, in this order. Remaining slots fill automatically from this section.' },
       { key: 'ctaText', label: 'CTA button text', type: 'text', tab: 'content' },
       { key: 'ctaUrl', label: 'CTA link URL', type: 'url', tab: 'content', requires: ['ctaText'] },
+      { key: 'selectionPolicy', label: 'When content is used elsewhere', type: 'select', tab: 'content', options: [{ value: 'strict', label: 'Strict — never repeat an article' }, { value: 'smart-fallback', label: 'Smart fallback — repeat only to avoid an empty section' }, { value: 'independent', label: 'Independent — ignore what other sections used' }], helpText: 'Strict keeps every article on the page unique. Smart fallback re-shows one article only when this section would otherwise be empty.' },
+      { key: 'fallbackMinimum', label: 'Fallback minimum cards (1–4)', type: 'number', max: 4, tab: 'content', requires: ['selectionPolicy'], helpText: 'How many articles Smart fallback may re-show. Default 1.' },
+      { key: 'categoryId', label: 'Category link (advanced)', type: 'text', tab: 'content', helpText: 'Stable category ID. Leave empty to match by section name — set it so renaming the category cannot empty this section.' },
     ],
   },
   {

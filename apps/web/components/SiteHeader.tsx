@@ -1,6 +1,8 @@
 'use client';
 
 import React, { useState, useRef, useEffect, useCallback } from 'react';
+import { SiteLogo } from './SiteLogo';
+import type { Branding } from '../lib/cms/brandingShared';
 import Link from 'next/link';
 import { usePathname, useRouter } from 'next/navigation';
 import { ROUTES } from '../config/routes';
@@ -8,6 +10,8 @@ import type { NavLink } from '../lib/cms/navTypes';
 import { AccountMenu } from './account/AccountMenu';
 
 interface SiteHeaderProps {
+  /** Resolved Site Identity branding; omitted renders the wordmark. */
+  branding?: Branding | null;
   onOpenSearch: () => void;
   navItems?: NavLink[];
 }
@@ -24,7 +28,7 @@ const NAV_FALLBACK: NavLink[] = [
 
 const SEARCH_PLACEHOLDER = 'Search NFR events, rodeo, competitors...';
 
-export const SiteHeader: React.FC<SiteHeaderProps> = ({ onOpenSearch, navItems }) => {
+export const SiteHeader: React.FC<SiteHeaderProps> = ({ branding, onOpenSearch, navItems }) => {
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
   const [searchOpen, setSearchOpen] = useState(false);
   const [query, setQuery] = useState('');
@@ -81,7 +85,7 @@ export const SiteHeader: React.FC<SiteHeaderProps> = ({ onOpenSearch, navItems }
             className="shrink-0 group focus:outline-none focus-visible:ring-2 focus-visible:ring-[#D4A757] rounded-sm py-1"
           >
             <span className="font-serif text-2xl sm:text-3xl font-extrabold tracking-tight text-white uppercase group-hover:text-[#D4A757] transition-colors">
-              NFR<span className="text-[#D4A757]">Guide</span>
+              <SiteLogo branding={branding} wordmarkLead="NFR" wordmarkAccent="Guide" />
             </span>
           </Link>
 
@@ -195,7 +199,7 @@ export const SiteHeader: React.FC<SiteHeaderProps> = ({ onOpenSearch, navItems }
                 onClick={() => setMobileMenuOpen(false)}
                 className="font-serif text-xl font-bold uppercase text-white"
               >
-                NFR<span className="text-[#D4A757]">Guide</span>
+                <SiteLogo branding={branding} wordmarkLead="NFR" wordmarkAccent="Guide" />
               </Link>
               <button
                 onClick={() => setMobileMenuOpen(false)}

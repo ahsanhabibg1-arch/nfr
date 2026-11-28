@@ -1,6 +1,6 @@
 import { readdirSync, existsSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
-import { checkMigrationReadiness, decideTestDatabase } from './testDbGuard';
+import { checkMigrationReadiness, decideTestDatabase, describeUnqueryableDatabase } from './testDbGuard';
 
 /**
  * Stage 03 Task E — fail fast, and legibly, when the test database is behind.
@@ -17,6 +17,13 @@ import { checkMigrationReadiness, decideTestDatabase } from './testDbGuard';
  *     errors describe perfectly well, or a transient connection problem. Either
  *     way, blocking the whole run on a failed probe would be worse than the
  *     noise it is meant to prevent, so the probe never fails the run by itself.
+ *
+ * The ONE exception is REQUIRE_DB_TESTS=1 (CI). There, a configured isolated
+ * database that cannot be queried is not a local convenience case: every DB
+ * suite probes with its own `SELECT 1`, self-skips when that throws, and vitest
+ * then exits 0 on a run with ZERO database coverage. `vitest.config.ts` already
+ * refuses that flag when no isolated database is CONFIGURED; this closes the
+ * remaining hole, where one is configured but unreachable or unmigrated.
  *
  * It never applies a migration. Telling the operator exactly what to run is the
  * whole point; doing it for them against a database this file did not verify is
@@ -42,9 +49,12 @@ export default async function setup(): Promise<void> {
     const rows = await prisma.$queryRaw<Array<{ migration_name: string }>>`
       SELECT migration_name FROM "_prisma_migrations" WHERE finished_at IS NOT NULL`;
     applied = rows.map((r) => r.migration_name);
-  } catch {
+  } catch (error) {
     // Unreachable, or never migrated. Not this hook's call to make — see above.
     await prisma.$disconnect();
+    if (process.env.REQUIRE_DB_TESTS === '1') {
+      throw new Error(describeUnqueryableDatabase(decision.target, error));
+    }
     return;
   }
   await prisma.$disconnect();

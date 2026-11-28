@@ -227,6 +227,12 @@ export interface Exemption {
 
 /** key format: `<blockType>.<propKey>`; a bare `<blockType>` covers a type with no props. */
 export const EXEMPTIONS: Record<string, Exemption> = {
+
+  // ── Stage 06-R: resolver-level category identity (R-01) ──
+  'plan-and-watch.categoryId': { reason: 'BY_DESIGN', note: 'Stage 06-R (R-01). A STABLE category reference, not rendered copy: it names which managed Category the section draws from, so `resolveSectionCategory` can survive an admin renaming the category display name or changing its archive slug. It reaches output only by changing WHICH articles are selected, so a sentinel string cannot appear in the HTML — an unknown id resolves to no category and the section correctly renders its empty state. Behaviour is covered by tests/stage06r-allocation-policy.test.ts instead.' },
+  'entertainment.categoryId': { reason: 'BY_DESIGN', note: 'Stage 06-R (R-01). A STABLE category reference, not rendered copy: it names which managed Category the section draws from, so `resolveSectionCategory` can survive an admin renaming the category display name or changing its archive slug. It reaches output only by changing WHICH articles are selected, so a sentinel string cannot appear in the HTML — an unknown id resolves to no category and the section correctly renders its empty state. Behaviour is covered by tests/stage06r-allocation-policy.test.ts instead.' },
+  'events-shopping.categoryId': { reason: 'BY_DESIGN', note: 'Stage 06-R (R-01). A STABLE category reference, not rendered copy: it names which managed Category the section draws from, so `resolveSectionCategory` can survive an admin renaming the category display name or changing its archive slug. It reaches output only by changing WHICH articles are selected, so a sentinel string cannot appear in the HTML — an unknown id resolves to no category and the section correctly renders its empty state. Behaviour is covered by tests/stage06r-allocation-policy.test.ts instead.' },
+
   // ── NO_RENDERER: 6 declared types absent from blockRegistry ──
   // ── RETIRED: newsletter-signup, owner decision D-11 (Stage 05) ──
   'newsletter-signup': { reason: 'RETIRED', note: 'Retired by owner decision D-11. The block rendered a styled email form whose input was readOnly and whose button had no handler — it collected nothing, but promised a subscription the site cannot deliver. Removed from blockRegistry so a legacy slot renders nothing; the definition is kept marked `retired` so a stored layout stays valid and editable. No subscription backend was created.' },

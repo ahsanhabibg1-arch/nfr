@@ -204,7 +204,7 @@ export const EditorialHero: React.FC<EditorialHeroProps> = ({
                   <img
                     src={story.heroImage}
                     srcSet={story.heroImageSrcSet}
-                    sizes={story.heroImageSrcSet ? '144px' : undefined}
+                    sizes={story.heroImageSrcSet ? IMAGE_SIZES.heroSecondary : undefined}
                     alt={story.heroImageAlt ?? story.imageAltText ?? story.title}
                     loading="lazy"
                     decoding="async"

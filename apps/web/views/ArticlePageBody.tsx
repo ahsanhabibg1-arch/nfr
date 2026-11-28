@@ -1,4 +1,5 @@
 import React from 'react';
+import { resolveBranding } from '@/lib/cms/branding';
 import { ArticleView } from '@/views/ArticleView';
 import { articleJsonLd, breadcrumbJsonLd, faqPageJsonLd, JsonLd } from '@/lib/seo';
 import { collectArticleFaqs } from '@/lib/content/articleFaq';
@@ -36,6 +37,10 @@ export async function ArticlePageBody({ article }: { article: Article }) {
   const crumb = articleCategoryCrumb(article);
   // Stage 03 (H-06): resolved here because `lib/seo` is synchronous.
   const publisherName = await getPublicSiteName();
+  // FC-03: the PUBLISHED primary logo for the publisher Organization node.
+  // `resolveBranding` is request-memoised and never throws, so structured
+  // data cannot be what breaks an article page.
+  const publisherLogo = (await resolveBranding('light')).logoUrl ?? undefined;
   const path = articleUrl(article);
 
   /**
@@ -77,7 +82,7 @@ export async function ArticlePageBody({ article }: { article: Article }) {
     <>
       <JsonLd
         data={[
-          articleJsonLd(article, { schemaType, publisherName }),
+          articleJsonLd(article, { schemaType, publisherName, publisherLogo }),
           breadcrumbJsonLd(trail),
           // Omitted entirely when the article has no complete question, which
           // is the same pattern the category and discipline pages use — an

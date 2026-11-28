@@ -11,7 +11,23 @@ const need = (a: Actor) => {
     throw new ServiceError('forbidden', 'Not permitted (system.config).');
 };
 
-export const SITE_CONFIG_KEYS = ['footer', 'appearance'] as const;
+/**
+ * Stage 06-R adds two keys. `SiteConfig` is keyed by a String primary key with
+ * `draft`/`published` JSON columns, so a new key is a new ROW, never a schema
+ * change — no Prisma migration is required for either, and existing rows are
+ * untouched.
+ *
+ *   coverage  — the `/coverage/` archive's editorial copy and SEO (R-04).
+ *   identity  — Site Identity & Branding: the authoritative logo source (R-06).
+ *
+ * `identity` is a key of its own rather than more fields on `appearance`
+ * because `appearance` already owns the homepage Intro Banner. Branding is
+ * consumed by the public header/footer, the admin chrome and the login pages —
+ * a different lifetime, a different audience and a different blast radius from
+ * one homepage module. Keeping them apart preserves single ownership per
+ * concern, which is the property this programme has been restoring.
+ */
+export const SITE_CONFIG_KEYS = ['footer', 'appearance', 'coverage', 'identity'] as const;
 export type SiteConfigKey = (typeof SITE_CONFIG_KEYS)[number];
 
 /* ── Footer schema ─────────────────────────────────────────────────── */
@@ -122,9 +138,79 @@ const AppearanceConfigSchema = z.object({
   introBannerImageAlt: z.string().max(300).optional(),
 });
 
+/* ── Coverage archive schema (R-04) ────────────────────────────────── */
+
+export interface CoverageConfig {
+  heading?: string;
+  intro?: string;
+  seoTitle?: string;
+  metaDescription?: string;
+  /** Editor kill switch for the archive's indexability. Default: indexable. */
+  noindex?: boolean;
+  /** Articles per page. Bounded so a stored value can never issue a huge query. */
+  pageSize?: number;
+}
+
+const CoverageConfigSchema = z.object({
+  heading: z.string().max(200).optional(),
+  intro: z.string().max(1000).optional(),
+  seoTitle: z.string().max(200).optional(),
+  metaDescription: z.string().max(400).optional(),
+  noindex: z.boolean().optional(),
+  pageSize: z.number().int().min(6).max(48).optional(),
+});
+
+/* ── Site Identity & Branding schema (R-06) ────────────────────────── */
+
+export interface SiteIdentityConfig {
+  /** Media Library delivery URL of the primary logo. Empty = wordmark fallback. */
+  logoUrl?: string;
+  /** Stable Media record id, so integrity can be checked and deletion guarded. */
+  logoMediaId?: string;
+  /** Accessible name. Empty string is NOT meaningful here — a logo is not decorative. */
+  logoAlt?: string;
+  /** Optional overrides. Each is an override of the primary logo, never a replacement system. */
+  logoLightUrl?: string;
+  logoLightMediaId?: string;
+  logoDarkUrl?: string;
+  logoDarkMediaId?: string;
+  /** Max rendered height in px, so a tall logo cannot distort the header. */
+  logoMaxHeight?: number;
+}
+
+/**
+ * Only same-origin, path-absolute media URLs are accepted.
+ *
+ * Branding is rendered into the header of every page including the admin login,
+ * so an arbitrary external URL here would be a stored SSRF/exfiltration vector
+ * and a third-party dependency on a page that must always render. Media served
+ * by this application starts `/api/media/` or `/media/`; nothing else is a
+ * valid logo source. `javascript:`, `data:` and protocol-relative `//host` URLs
+ * all fail this test by construction.
+ */
+const MediaUrlSchema = z
+  .string()
+  .max(500)
+  .refine((v) => v === '' || (/^\/(api\/media|media)\/[A-Za-z0-9._\-/]+$/.test(v) && !v.split('/').includes('..')), {
+    message: 'Logo must reference a Media Library file on this site (e.g. /api/media/...).',
+  });
+
+const SiteIdentityConfigSchema = z.object({
+  logoUrl: MediaUrlSchema.optional(),
+  logoMediaId: z.string().max(64).optional(),
+  logoAlt: z.string().max(200).optional(),
+  logoLightUrl: MediaUrlSchema.optional(),
+  logoLightMediaId: z.string().max(64).optional(),
+  logoDarkUrl: MediaUrlSchema.optional(),
+  logoDarkMediaId: z.string().max(64).optional(),
+  logoMaxHeight: z.number().int().min(16).max(160).optional(),
+});
+
 const SCHEMAS: Record<SiteConfigKey, z.ZodSchema> = {
   footer: FooterConfigSchema,
   appearance: AppearanceConfigSchema,
+  coverage: CoverageConfigSchema,
+  identity: SiteIdentityConfigSchema,
 };
 
 /* ── Generic config operations ─────────────────────────────────────── */
@@ -145,11 +231,66 @@ export async function getPublished<T>(key: SiteConfigKey): Promise<T> {
   }
 }
 
+/**
+ * Stage 06-R FC-05A — branding media references are proved against the Media
+ * Library, and the delivery URL is DERIVED rather than trusted.
+ *
+ * The admin form posts a media id and a url together. Believing the url would
+ * let a caller pair any id with any path — the id would look authoritative in
+ * the stored record while something else was actually served. So for each logo
+ * slot that carries an id, the asset is loaded and the url is REWRITTEN from
+ * its `storageKey`. A mismatch is not an error to report; it simply cannot
+ * survive, because the submitted value is discarded.
+ *
+ * The asset must also be one a public page may serve: PUBLIC, READY, a raster
+ * image. SVG stays excluded — it is an executable document, and branding is
+ * rendered on the admin login screen. A slot with a url but NO id is left
+ * alone, so records written before this existed keep working (the same-origin
+ * schema rule still applies to them).
+ */
+async function deriveBrandingMediaUrls(config: SiteIdentityConfig): Promise<SiteIdentityConfig> {
+  const slots = [
+    ['logoMediaId', 'logoUrl'],
+    ['logoLightMediaId', 'logoLightUrl'],
+    ['logoDarkMediaId', 'logoDarkUrl'],
+  ] as const;
+
+  const out: SiteIdentityConfig = { ...config };
+  for (const [idKey, urlKey] of slots) {
+    const mediaId = (out[idKey] ?? '').trim();
+    if (!mediaId) continue;
+
+    const asset = await prisma.mediaAsset.findUnique({
+      where: { id: mediaId },
+      select: { storageKey: true, mimeType: true, visibility: true, processingStatus: true },
+    });
+    if (!asset) throw new ServiceError('validation', `Logo media ${idKey} no longer exists in the Media Library.`);
+    if (asset.visibility !== 'PUBLIC' || asset.processingStatus !== 'READY') {
+      throw new ServiceError('validation', `Logo media ${idKey} is not a published, ready Media Library asset.`);
+    }
+    const mime = (asset.mimeType || '').toLowerCase();
+    if (!mime.startsWith('image/') || mime.includes('svg')) {
+      throw new ServiceError('validation', `Logo media ${idKey} must be a raster image (SVG is not permitted).`);
+    }
+
+    const derived = `/api/media/${asset.storageKey}`;
+    // Re-apply the same-origin + traversal rule to the DERIVED value too: a
+    // storage key is data, and data does not get to skip validation.
+    const shapeOk =
+      /^\/(api\/media|media)\/[A-Za-z0-9._\-/]+$/.test(derived) && !derived.split('/').includes('..');
+    if (!shapeOk) throw new ServiceError('validation', `Logo media ${idKey} has an unusable storage key.`);
+
+    out[urlKey] = derived;
+  }
+  return out;
+}
+
 export async function saveDraft(actor: Actor, key: SiteConfigKey, data: unknown): Promise<void> {
   need(actor);
   if (!SITE_CONFIG_KEYS.includes(key)) throw new ServiceError('validation', `Unknown config key: "${key}".`);
   const schema = SCHEMAS[key];
-  const validated = schema.parse(data);
+  let validated = schema.parse(data);
+  if (key === 'identity') validated = await deriveBrandingMediaUrls(validated as SiteIdentityConfig);
 
   await prisma.siteConfig.upsert({
     where: { key },

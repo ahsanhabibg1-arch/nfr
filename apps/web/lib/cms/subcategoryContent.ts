@@ -2,6 +2,7 @@ import 'server-only';
 import { prisma } from '../db';
 import { publicArticleWhere } from '../fixturePolicy';
 import { articleInclude, toArticle } from '../mappers';
+import { sectionCategorySlug } from '../content';
 import type { Article } from '../../types';
 import { PRIMARY_SECTIONS } from '../../config/routes';
 
@@ -117,8 +118,15 @@ export interface SubcategoryCard {
 }
 
 export async function getSubcategoryCardsForSection(categoryKey: string): Promise<SubcategoryCard[]> {
+  // Stage 06 (UI-02): matched `category: { name: categoryKey }` alone, so it
+  // returned nothing whenever the caller passed a section id or an admin had
+  // renamed the category. Accept the archive slug too — see
+  // `sectionCategorySlug` / `resolveSectionCategoryId` in lib/content.ts.
   const rows = await prisma.subcategory.findMany({
-    where: { archivedAt: null, category: { name: categoryKey } },
+    where: {
+      archivedAt: null,
+      category: { OR: [{ name: categoryKey }, { slug: sectionCategorySlug(categoryKey) }] },
+    },
     orderBy: { sortOrder: 'asc' },
     select: { id: true, slug: true, name: true, summary: true, description: true, image: true },
   });

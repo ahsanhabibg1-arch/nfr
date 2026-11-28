@@ -189,8 +189,17 @@ const APPEARANCE_FIELDS = [
 ];
 
 describe('Stage 08 Task F — the Appearance screen governs only the homepage banner', () => {
-  it('has exactly two site-config keys, neither of which is a theme', () => {
-    expect([...SITE_CONFIG_KEYS]).toEqual(['footer', 'appearance']);
+  it('has one site-config key per concern, and none of them is a theme', () => {
+    /**
+     * Stage 06-R added `coverage` (the /coverage/ archive's editorial copy and
+     * SEO) and `identity` (Site Identity & Branding — the logo). Both are new
+     * ROWS in SiteConfig, not schema changes, and both own a concern nothing
+     * else owned. The property this test actually guards is unchanged: there is
+     * still no site-wide "theme" key, and `appearance` is still only the
+     * homepage banner (asserted field-by-field below).
+     */
+    expect([...SITE_CONFIG_KEYS]).toEqual(['footer', 'appearance', 'coverage', 'identity']);
+    expect([...SITE_CONFIG_KEYS].some((k) => /theme/i.test(k))).toBe(false);
   });
 
   it('every one of its 21 fields is an introBanner field', () => {
@@ -198,7 +207,8 @@ describe('Stage 08 Task F — the Appearance screen governs only the homepage ba
      * D-06's central finding, re-verified: the tab is called "Appearance" and
      * implies site-wide control, while all 21 fields configure one banner on one
      * page. The page background and brand gold are literals in `PublicChrome`
-     * and the header/footer, and the logo is not editable at all.
+     * and the header/footer. (The LOGO half of that finding was resolved in
+     * Stage 06-R: it is now editable under the separate `identity` key.)
      */
     const src = fs.readFileSync(path.join(__dirname, '..', 'lib', 'cms', 'siteConfigService.ts'), 'utf8');
     const iface = src.slice(src.indexOf('export interface AppearanceConfig'), src.indexOf('const AppearanceConfigSchema'));

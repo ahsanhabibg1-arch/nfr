@@ -8,6 +8,7 @@ import { AdminAnnouncementsEditor } from './AdminAnnouncementsEditor';
 import { AdminGlobalBlocksEditor } from './AdminGlobalBlocksEditor';
 import { AdminFooterEditor } from './AdminFooterEditor';
 import { AdminAppearanceEditor } from './AdminAppearanceEditor';
+import { AdminIdentityEditor } from './AdminIdentityEditor';
 import type { NavItemRow } from '@/lib/cms/navigationService';
 import type { SectionSlot, PropDef, BlockCategory } from '@/lib/cms/sectionRegistry';
 import type { AnnouncementRow } from '@/lib/cms/announcementService';
@@ -56,6 +57,7 @@ const TABS = [
   { id: 'announcements', label: 'Announcements' },
   { id: 'global-blocks', label: 'Global Blocks' },
   { id: 'appearance', label: 'Appearance' },
+  { id: 'identity', label: 'Site Identity & Branding' },
 ] as const;
 
 type TabId = (typeof TABS)[number]['id'];
@@ -69,6 +71,7 @@ export const AdminWebsitePage: React.FC<Props> = ({
 
   const footerConfig = siteConfigs.find((c) => c.key === 'footer');
   const appearanceConfig = siteConfigs.find((c) => c.key === 'appearance');
+  const identityConfig = siteConfigs.find((c) => c.key === 'identity');
 
   const unpublishedDrafts = layouts.filter((l) => !l.publishedAt || l.draftSections.length > 0);
   const activeAnnouncements = announcements.filter((a) => a.enabled);
@@ -112,6 +115,7 @@ export const AdminWebsitePage: React.FC<Props> = ({
                 <button onClick={() => setTab('layout')} className="text-xs text-[#D4A757] hover:underline block">Edit Homepage Layout</button>
                 <button onClick={() => setTab('appearance')} className="text-xs text-[#D4A757] hover:underline block">Configure Intro Banner</button>
                 <button onClick={() => setTab('footer')} className="text-xs text-[#D4A757] hover:underline block">Edit Footer</button>
+                <button onClick={() => setTab('identity')} className="text-xs text-[#D4A757] hover:underline block">Site Identity &amp; Branding</button>
                 <button onClick={() => setTab('announcements')} className="text-xs text-[#D4A757] hover:underline block">Create Announcement</button>
               </div>
             </div>
@@ -130,6 +134,7 @@ export const AdminWebsitePage: React.FC<Props> = ({
       {tab === 'layout' && <AdminPageLayoutEditor layouts={layouts} registries={registries} canManage={canLayout} knownPageKeys={knownPageKeys} />}
       {tab === 'nav' && <AdminWebsiteNavPage items={items} canManage={canNav} />}
       {tab === 'footer' && <AdminFooterEditor config={footerConfig} canManage={canManage} />}
+      {tab === 'identity' && <AdminIdentityEditor config={identityConfig} canManage={canManage} />}
       {tab === 'announcements' && <AdminAnnouncementsEditor announcements={announcements} canManage={canManage} />}
       {tab === 'global-blocks' && <AdminGlobalBlocksEditor blocks={globalBlocks} canManage={canManage} />}
       {tab === 'appearance' && <AdminAppearanceEditor config={appearanceConfig} canManage={canManage} />}

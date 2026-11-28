@@ -1,5 +1,59 @@
 # NFRGuide.com — Render Blueprint (Batch 23, Phase 3C staging).
 #
+# ───────────────────────────────────────────────────────────────────────────────
+# STALE HEADING, CORRECTED IN STAGE 04-R (INF-02). Read this before the next line.
+#
+# The "STAGING ONLY / production is a separately-selected paid VPS" sentence below
+# no longer describes reality, and the STAGING_NOINDEX note further down already
+# contradicts it ("the official domain and the Render hostname share this
+# service"). Verified read-only over public HTTP on 2026-11-28:
+#
+#   https://nfr-qadd.onrender.com/        -> 200, serves this application
+#                                            (X-Robots-Tag: noindex, nofollow)
+#   https://nfrguide.com/                 -> 200, serves this application,
+#                                            canonical origin, indexable
+#   https://nfrguide-staging.onrender.com -> 404, x-render-routing: no-server
+#   https://nfr-gadd.onrender.com         -> 404, x-render-routing: no-server
+#
+# So ONE service currently answers for both the official domain and the Render
+# hostname, and no service is bound to `nfrguide-staging.onrender.com`.
+#
+# `*.onrender.com` is wildcard-resolved by Render (all three hostnames above
+# resolve to the same edge IPs) and routing is decided from the Host header, so a
+# 404 proves only that no service claims that hostname — never a service's
+# identity. The identity below came from the dashboard instead.
+#
+# OWNER-CONFIRMED DASHBOARD EVIDENCE (2026-11-28, Stage 05). The live service is:
+#
+#   name            nfr                  <- this file still declares nfrguide-staging
+#   branch          main                 <- matches
+#   rootDir         apps/web             <- matches
+#   autoDeploy      On Commit            <- this file still declares false
+#   runtime Node    22.23.4              <- matches NODE_VERSION below
+#   deployed commit 70da23b              <- Stage 03 reserved-route fix IS live
+#
+# So two keys below do NOT describe the running service: `name` and `autoDeploy`.
+# They are left exactly as they are, deliberately:
+#   - `name`: Render keys services by name during a sync, so renaming can create
+#     a SECOND service instead of adopting the running one.
+#   - `autoDeploy`: the live service deploys on commit, which means A GIT PUSH TO
+#     `main` DEPLOYS TO PRODUCTION. Changing this value here would not alter that
+#     until a sync, and a sync is out of scope. Treat every push as a release.
+#
+# Still unverified, and therefore still not asserted: whether this Blueprint was
+# ever synced, and how the live service was originally created.
+#
+# Also reported missing from the dashboard: `APP_ENV` (tracked as INF-05). It is
+# declared below as `production`. Nothing in the request path depends on it —
+# lib/env.ts falls back to NODE_ENV — but lib/cms/scheduledPublishRunner.ts reads
+# APP_ENV *directly* and so keeps the scheduled-publishing writer disabled while
+# it is unset. Adding it is safe only while SCHEDULED_PUBLISHING stays "off".
+#
+# DO NOT change `name:` below to match the live hostname. In a Blueprint sync,
+# Render keys services by name: renaming can create a SECOND service rather than
+# adopt the running one. Any rename is an owner decision made in the dashboard.
+# ───────────────────────────────────────────────────────────────────────────────
+#
 # STAGING ONLY on Render's FREE Web Service; production is a separately-selected paid VPS.
 # This file contains NO secret values — every secret uses `sync: false` and is set in the
 # Render dashboard. Migrations are NOT run in the build (approval-gated; see

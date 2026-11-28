@@ -168,6 +168,41 @@ export interface ArticleJsonLdOptions {
    * shipped, so no caller breaks and no page loses its publisher.
    */
   publisherName?: string;
+  /** Published primary logo path (FC-03). */
+  publisherLogo?: string;
+}
+
+/**
+ * Stage 06-R FC-03 — ONE builder for the publisher Organization node.
+ *
+ * Both structured-data consumers (`articleJsonLd` and `disciplineJsonLd`) used
+ * to assemble their own Organization literal. Adding a logo to one and not the
+ * other would have published two conflicting definitions of the same
+ * publisher, so the node is built here and shared.
+ *
+ * The logo is OPTIONAL and omitted unless a valid one is configured — an
+ * invalid, missing or unpublished logo must never become an inaccessible
+ * `logo` property in structured data. `absolute()` resolves it against the
+ * canonical production origin, because schema.org consumers fetch the URL.
+ *
+ * These builders are synchronous and isomorphic (four suites pin that), so the
+ * resolved values arrive as options from the Server Component rather than
+ * being read here.
+ */
+export interface PublisherOptions {
+  publisherName?: string;
+  /** Same-origin Media Library path of the PUBLISHED primary logo. */
+  publisherLogo?: string;
+}
+
+export function publisherOrganization(opts?: PublisherOptions): Record<string, unknown> {
+  const logo = opts?.publisherLogo?.trim();
+  return {
+    '@type': 'Organization',
+    name: opts?.publisherName?.trim() || DEFAULT_PUBLISHER_NAME,
+    url: SITE_URL,
+    ...(logo ? { logo: { '@type': 'ImageObject', url: absolute(logo) } } : {}),
+  };
 }
 
 function resolveSchemaType(article: Article, opts?: ArticleJsonLdOptions): 'Article' | 'NewsArticle' {
@@ -190,13 +225,10 @@ export function articleJsonLd(article: Article, opts?: ArticleJsonLdOptions): Re
       name: article.author.name,
       jobTitle: article.author.role,
     },
-    publisher: {
-      '@type': 'Organization',
-      // Stage 03 (H-06): the administrator's site name when the page resolved
-      // one; the shipped default otherwise. Author identity is separate above.
-      name: opts?.publisherName?.trim() || DEFAULT_PUBLISHER_NAME,
-      url: SITE_URL,
-    },
+    // Stage 03 (H-06) + Stage 06-R (FC-03): the administrator's site name and
+    // published logo when the page resolved them; the shipped defaults
+    // otherwise. Author identity is separate above.
+    publisher: publisherOrganization(opts),
     articleSection: article.category,
     // Batch 02 Task E: the article's RESOLVED public path, via the one shared
     // builder. Hardcoding `/articles/<slug>/` here made the structured data
@@ -208,7 +240,7 @@ export function articleJsonLd(article: Article, opts?: ArticleJsonLdOptions): Re
 
 export function disciplineJsonLd(
   discipline: Discipline,
-  opts?: { publisherName?: string },
+  opts?: PublisherOptions,
 ): Record<string, unknown> {
   return {
     '@context': 'https://schema.org',
@@ -216,11 +248,7 @@ export function disciplineJsonLd(
     headline: `${discipline.name} Guide`,
     description: discipline.summary,
     image: absolute(discipline.image),
-    publisher: {
-      '@type': 'Organization',
-      name: opts?.publisherName?.trim() || DEFAULT_PUBLISHER_NAME,
-      url: SITE_URL,
-    },
+    publisher: publisherOrganization(opts),
     mainEntityOfPage: `${SITE_URL}/disciplines/${discipline.slug}/`,
   };
 }

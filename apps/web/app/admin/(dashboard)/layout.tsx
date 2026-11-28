@@ -2,6 +2,7 @@ import { requireCmsAccess } from '@/lib/auth/currentUser';
 import { primaryRoleLabel } from '@/lib/auth/rbac';
 import { visibleModuleIds } from '@/lib/auth/permissions';
 import { AdminLayout } from '@/components/admin/AdminLayout';
+import { resolveBranding } from '@/lib/cms/branding';
 
 /**
  * Authenticated CMS shell + server-side authorization gate (Batch 03 §3, hardened in
@@ -12,10 +13,13 @@ import { AdminLayout } from '@/components/admin/AdminLayout';
  */
 export default async function DashboardLayout({ children }: { children: React.ReactNode }) {
   const user = await requireCmsAccess();
+  // The admin chrome is dark; branding failure degrades to the wordmark.
+  const branding = await resolveBranding('dark').catch(() => null);
   return (
     <AdminLayout
       user={{ name: user.name, email: user.email, roleLabel: primaryRoleLabel(user.roles) }}
       visibleModules={visibleModuleIds(user.roles)}
+      branding={branding}
     >
       {children}
     </AdminLayout>
