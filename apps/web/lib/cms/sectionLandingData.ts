@@ -6,6 +6,7 @@ import type { SectionSlot } from './sectionRegistry';
 import { selectRenderableSlots, orderAfter } from './slotSelection';
 import type { Article, Discipline } from '../../types';
 import { getSubcategoryCardsForSection, type SubcategoryCard } from './subcategoryContent';
+import { prisma } from '../db';
 
 export interface LandingSlotData {
   featuredStory?: Article | null;
@@ -22,6 +23,14 @@ export interface LandingSlotData {
    * value is never applied over it.
    */
   sectionHeroImage?: string | null;
+  /**
+   * Alt text for that hero, when it came from the Media Library.
+   *
+   * Carried so a hero chosen by an editor keeps the alt text they wrote on the
+   * asset. Null for a settings-configured image, which has none — the hero then
+   * stays decorative, as it is today.
+   */
+  sectionHeroImageAlt?: string | null;
   /**
    * The section's active subcategories, with their published article counts.
    *
@@ -46,7 +55,31 @@ export async function resolveSectionLandingSlots(
   // already consults, so this adds one query per section-landing render and no
   // per-slot work.
   const { getSectionConfig } = await import('./sectionConfigService');
-  const sectionHeroImage = (await getSectionConfig(sectionKey))?.heroImage ?? null;
+  /**
+   * The CATEGORY's own hero wins; section settings remain the fallback.
+   *
+   * `SectionConfig.heroImage` only ever reached the five foundational sections,
+   * so an administrator-created category had no way to give its landing page an
+   * image at all. The hero now lives on the `Category` row — the thing an editor
+   * actually creates and names — and is chosen from the Media Library in
+   * Editorial Organisation.
+   *
+   * Settings are kept as the fallback rather than removed: any section already
+   * configured there keeps its image with no migration and no operator action,
+   * and only starts using the new field once someone picks an image for it.
+   */
+  const [sectionConfig, heroCategory] = await Promise.all([
+    getSectionConfig(sectionKey),
+    // `categoryKey` is the category's NAME ("NFR Competition"), not its slug —
+    // see `PRIMARY_SECTIONS` in config/routes.ts, which is what every other
+    // lookup in this file matches on too.
+    prisma.category.findFirst({
+      where: { name: sectionMeta.categoryKey },
+      select: { heroMedia: { select: { url: true, altText: true } } },
+    }),
+  ]);
+  const sectionHeroImage = heroCategory?.heroMedia?.url ?? sectionConfig?.heroImage ?? null;
+  const sectionHeroImageAlt = heroCategory?.heroMedia?.url ? (heroCategory.heroMedia.altText ?? null) : null;
   const subcategories = await getSubcategoryCardsForSection(sectionMeta.categoryKey);
   const fetchSections = options?.draft ? getDraftSections : getPublishedSections;
   const layoutSections = await fetchSections(`section:${sectionKey}`);
@@ -99,7 +132,7 @@ export async function resolveSectionLandingSlots(
     const base: LandingSlotData = { sectionMeta: metaObj, sectionKey, totalArticleCount: sectionArticles.length, subcategories };
 
     if (t === 'landing-hero') {
-      out.push({ slot, data: { ...base, pillsVisible, sectionHeroImage, subcategories } });
+      out.push({ slot, data: { ...base, pillsVisible, sectionHeroImage, sectionHeroImageAlt, subcategories } });
     } else if (t === 'landing-competition-disciplines') {
       // An operator-placed block gets the same data the injected one gets, so
       // the two paths cannot diverge (Stage 07 Task E).

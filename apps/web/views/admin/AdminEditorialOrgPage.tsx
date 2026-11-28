@@ -5,6 +5,7 @@ import { useRouter } from 'next/navigation';
 import { AdminPageHeader } from '../../components/admin/AdminPageHeader';
 import { AdminTabs } from '../../components/admin/AdminTabs';
 import { AdminModal } from '../../components/admin/AdminModal';
+import { MediaPickerModal } from '../../components/admin/editor/MediaPickerModal';
 import type { CategoryRow, TagRow, AuthorRow, SubcategoryRow } from '../../lib/cms/taxonomyService';
 import type { ArticleTypeRow } from '../../lib/cms/articleTypeService';
 import type { ArticleSchemaTypeName } from '../../lib/content/articleTypeShape';
@@ -71,24 +72,112 @@ export const AdminEditorialOrgPage: React.FC<Props> = ({
   const [notice, setNotice] = useState<string | null>(null);
   const flash = (m: string) => { setNotice(m); setTimeout(() => setNotice(null), 5000); };
   const run = (p: Promise<{ ok: boolean; error?: string }>, okMsg: string) => startTransition(async () => { const r = await p; flash(r.ok ? okMsg : r.error || 'Error'); if (r.ok) router.refresh(); });
+  const [taxonomyDelete, setTaxonomyDelete] = useState<{
+    name: string;
+    kind: string;
+    reason?: string;
+    remove: () => Promise<{ ok: boolean; error?: string }>;
+  } | null>(null);
+  const [taxonomyDeleteError, setTaxonomyDeleteError] = useState('');
+  const openTaxonomyDelete = (target: NonNullable<typeof taxonomyDelete>) => {
+    setTaxonomyDeleteError('');
+    setTaxonomyDelete(target);
+  };
+  const closeTaxonomyDelete = () => { if (!isPending) setTaxonomyDelete(null); };
+  const confirmTaxonomyDelete = () => {
+    if (!taxonomyDelete || taxonomyDelete.reason) return;
+    startTransition(async () => {
+      setTaxonomyDeleteError('');
+      const result = await taxonomyDelete.remove();
+      if (!result.ok) {
+        setTaxonomyDeleteError(result.error || 'Unable to delete this record.');
+        return;
+      }
+      setTaxonomyDelete(null);
+      flash(`${taxonomyDelete.kind} deleted.`);
+      router.refresh();
+    });
+  };
 
   // Category modal
   const [catModal, setCatModal] = useState(false);
   const [catId, setCatId] = useState<string | null>(null);
-  const [catForm, setCatForm] = useState({ name: '', description: '', sortOrder: 99 });
-  const openCat = (c?: CategoryRow) => { setCatId(c?.id ?? null); setCatForm({ name: c?.name ?? '', description: c?.description ?? '', sortOrder: c?.sortOrder ?? 99 }); setCatModal(true); };
+  /**
+   * `heroMediaId` carries three states, and the editor needs all three:
+   * `undefined` is never sent here (the form always knows), `''` means "no
+   * hero" and is sent as null, and a uuid sets one. `heroImageUrl` is display
+   * only — the server resolves the URL from the id when it renders the page.
+   */
+  const [catForm, setCatForm] = useState({ name: '', description: '', sortOrder: 99, heroMediaId: '', heroImageUrl: '', heroImageAlt: '' });
+  const [catHeroPicker, setCatHeroPicker] = useState(false);
+  const openCat = (c?: CategoryRow) => {
+    setCatId(c?.id ?? null);
+    setCatForm({
+      name: c?.name ?? '',
+      description: c?.description ?? '',
+      sortOrder: c?.sortOrder ?? 99,
+      heroMediaId: c?.heroMediaId ?? '',
+      heroImageUrl: c?.heroImageUrl ?? '',
+      heroImageAlt: c?.heroImageAlt ?? '',
+    });
+    setCatModal(true);
+  };
   const saveCat = () => startTransition(async () => {
-    const r = catId ? await updateCategoryAction(catId, catForm) : await createCategoryAction(catForm);
+    // The display URL stays in the form and never crosses to the server: the id
+    // is the record, and the server resolves the URL from it. Sending both would
+    // let the two disagree.
+    const payload = {
+      name: catForm.name,
+      description: catForm.description,
+      sortOrder: catForm.sortOrder,
+      heroMediaId: catForm.heroMediaId || null,
+    };
+    const r = catId ? await updateCategoryAction(catId, payload) : await createCategoryAction(payload);
     if (r.ok) { setCatModal(false); flash('Category saved.'); router.refresh(); } else flash(r.error);
   });
 
   // Author modal
   const [authModal, setAuthModal] = useState(false);
   const [authId, setAuthId] = useState<string | null>(null);
+  const [authorToDelete, setAuthorToDelete] = useState<AuthorRow | null>(null);
+  const [replacementAuthorId, setReplacementAuthorId] = useState('');
+  const [deleteAuthorError, setDeleteAuthorError] = useState('');
+  const openDeleteAuthor = (author: AuthorRow) => {
+    setReplacementAuthorId('');
+    setDeleteAuthorError('');
+    setAuthorToDelete(author);
+  };
+  const closeDeleteAuthor = () => { if (!isPending) setAuthorToDelete(null); };
+  const confirmDeleteAuthor = () => {
+    if (!authorToDelete) return;
+    startTransition(async () => {
+      setDeleteAuthorError('');
+      const result = await deleteAuthorAction(authorToDelete.id, replacementAuthorId || undefined);
+      if (!result.ok) {
+        setDeleteAuthorError(result.error);
+        return;
+      }
+      setAuthorToDelete(null);
+      flash('Author byline deleted.');
+      router.refresh();
+    });
+  };
   const [authForm, setAuthForm] = useState({ name: '', role: '', bio: '', credentials: '' });
-  const openAuth = (a?: AuthorRow) => { setAuthId(a?.id ?? null); setAuthForm({ name: a?.name ?? '', role: a?.role ?? '', bio: '', credentials: '' }); setAuthModal(true); };
+  const [originalAuthorDetails, setOriginalAuthorDetails] = useState({ bio: '', credentials: '' });
+  const openAuth = (a?: AuthorRow) => {
+    setAuthId(a?.id ?? null);
+    setAuthForm({ name: a?.name ?? '', role: a?.role ?? '', bio: a?.bio ?? '', credentials: a?.credentials ?? '' });
+    setOriginalAuthorDetails({ bio: a?.bio ?? '', credentials: a?.credentials ?? '' });
+    setAuthModal(true);
+  };
   const saveAuth = () => startTransition(async () => {
-    const r = authId ? await updateAuthorAction(authId, authForm) : await createAuthorAction(authForm);
+    const { name, role, bio, credentials } = authForm;
+    const r = authId ? await updateAuthorAction(authId, {
+      name,
+      role,
+      bio: bio === originalAuthorDetails.bio ? undefined : bio,
+      credentials: credentials === originalAuthorDetails.credentials ? undefined : credentials,
+    }) : await createAuthorAction(authForm);
     if (r.ok) { setAuthModal(false); flash('Author saved.'); router.refresh(); } else flash(r.error);
   });
 
@@ -228,7 +317,16 @@ export const AdminEditorialOrgPage: React.FC<Props> = ({
                     <td className="py-2.5 px-4 text-right space-x-2">
                       {canTaxonomy ? <>
                         <button onClick={() => openCat(c)} className="text-[#8B5E3C] hover:underline font-bold">Edit</button>
-                        {!c.protected && c.articleCount === 0 && <button onClick={() => run(deleteCategoryAction(c.id), 'Category deleted.')} className="text-rose-600 hover:underline">Delete</button>}
+                        {c.protected ? (
+                          <span className="inline-block text-stone-500" title="Primary sections are required for the site and cannot be deleted.">Protected</span>
+                        ) : (
+                          <button type="button" onClick={() => openTaxonomyDelete({
+                            name: c.name,
+                            kind: 'Category',
+                            reason: c.articleCount || c.subcategoryCount ? 'Move the linked articles and move or remove any subcategories before deleting this category.' : undefined,
+                            remove: () => deleteCategoryAction(c.id),
+                          })} className="text-rose-600 hover:underline">Delete</button>
+                        )}
                       </> : <span className="text-stone-400">read-only</span>}
                     </td>
                   </tr>
@@ -285,14 +383,15 @@ export const AdminEditorialOrgPage: React.FC<Props> = ({
                     <td className="py-2.5 px-4 text-right space-x-2">
                       {canTaxonomy ? <>
                         <button onClick={() => openSub(s)} className="text-[#8B5E3C] hover:underline font-bold">Edit</button>
-                        <button onClick={() => run(setSubcategoryArchivedAction(s.id, !s.archivedAt), s.archivedAt ? 'Subcategory reactivated.' : 'Subcategory archived.')} className="text-stone-600 hover:underline">
+                        <button type="button" disabled={isPending} onClick={() => run(setSubcategoryArchivedAction(s.id, !s.archivedAt), s.archivedAt ? 'Subcategory reactivated.' : 'Subcategory archived. Select Show archived to find it again.')} className="text-stone-600 hover:underline disabled:opacity-50">
                           {s.archivedAt ? 'Reactivate' : 'Archive'}
                         </button>
-                        {/* Delete is offered only when nothing references it; the
-                            service and the foreign key both refuse otherwise. */}
-                        {s.articleCount === 0 && (
-                          <button onClick={() => { if (confirm(`Delete "${s.name}"? Archiving keeps it out of new assignments without removing it.`)) run(deleteSubcategoryAction(s.id), 'Subcategory deleted.'); }} className="text-rose-600 hover:underline">Delete</button>
-                        )}
+                        <button type="button" onClick={() => openTaxonomyDelete({
+                          name: s.name,
+                          kind: 'Subcategory',
+                          reason: s.articleCount > 0 ? `This subcategory has ${s.articleCount} linked article(s). Archive it to prevent new assignments, or move its linked articles before deleting it.` : undefined,
+                          remove: () => deleteSubcategoryAction(s.id),
+                        })} className="text-rose-600 hover:underline">Delete</button>
                       </> : <span className="text-stone-400">read-only</span>}
                     </td>
                   </tr>
@@ -349,20 +448,27 @@ export const AdminEditorialOrgPage: React.FC<Props> = ({
           {articleTypeSource === 'database' && articleTypeMissing.length > 0 && (
             <div className="p-3 bg-amber-50 border border-amber-200 text-amber-900 text-xs rounded-xs space-y-2">
               <p>
-                <strong>The managed registry is incomplete.</strong> {articleTypeMissing.length} of the
-                23 definitions this release ships with are missing, so anything that asks about them is
-                answered from the compiled-in fallback rather than from managed configuration:
+                <strong>Default article types are missing from the registry.</strong> Some features use
+                built-in settings for these stored values until their definitions are restored.
               </p>
               <p className="font-mono text-[11px] break-words">{articleTypeMissing.join(' · ')}</p>
               <p>
-                This happens if a definition was removed, or if an initialisation run did not finish.
-                Re-running the bootstrap adds only what is missing and changes nothing that already
-                exists.
+                Restore adds missing defaults. Conflicting stored values may need manual review.
               </p>
               {canArticleTypeSchema ? (
                 <button
-                  onClick={() => run(bootstrapArticleTypesAction(true), 'Missing definitions restored.')}
-                  className="px-3 py-1.5 bg-[#0F1115] text-[#D4A757] text-xs font-semibold rounded-xs"
+                  disabled={isPending}
+                  onClick={() => startTransition(async () => {
+                    const result = await bootstrapArticleTypesAction(true);
+                    if (!result.ok) {
+                      flash(result.error);
+                      return;
+                    }
+                    const restored = result.created === 1 ? 'Restored 1 definition.' : `Restored ${result.created} definitions.`;
+                    flash(result.conflicts ? `${restored} ${result.conflicts} conflicting value(s) need manual review.` : restored);
+                    router.refresh();
+                  })}
+                  className="px-3 py-1.5 bg-[#0F1115] text-[#D4A757] text-xs font-semibold rounded-xs disabled:opacity-50"
                 >
                   Restore missing definitions
                 </button>
@@ -454,28 +560,28 @@ export const AdminEditorialOrgPage: React.FC<Props> = ({
                     <td className="py-2.5 px-4 text-right space-x-2">
                       {canArticleTypes ? <>
                         <button onClick={() => openAtEdit(t)} className="text-[#8B5E3C] hover:underline font-bold">Edit</button>
-                        <button
+                        {!t.archivedAt && <button
+                          type="button"
+                          disabled={isPending}
                           onClick={() => run(setArticleTypeSelectableAction(t.id, !t.selectable), t.selectable ? 'Withdrawn from new classification.' : 'Offered for new classification.')}
-                          className="text-stone-600 hover:underline"
+                          className="text-stone-600 hover:underline disabled:opacity-50"
                         >
                           {t.selectable ? 'Deactivate' : 'Activate'}
-                        </button>
+                        </button>}
                         <button
-                          onClick={() => run(setArticleTypeArchivedAction(t.id, !t.archivedAt), t.archivedAt ? 'Article type reactivated.' : 'Article type archived.')}
-                          className="text-stone-600 hover:underline"
+                          type="button"
+                          disabled={isPending}
+                          onClick={() => run(setArticleTypeArchivedAction(t.id, !t.archivedAt), t.archivedAt ? 'Article type unarchived.' : 'Article type archived.')}
+                          className="text-stone-600 hover:underline disabled:opacity-50"
                         >
                           {t.archivedAt ? 'Unarchive' : 'Archive'}
                         </button>
-                        {/* Offered only when nothing stores the value; the service
-                            re-counts and refuses otherwise. */}
-                        {t.articleCount === 0 && (
-                          <button
-                            onClick={() => { if (confirm(`Delete "${t.value}" permanently? Deactivating keeps it out of new classification without removing the definition.`)) run(deleteArticleTypeAction(t.id), 'Article type deleted.'); }}
-                            className="text-rose-600 hover:underline"
-                          >
-                            Delete
-                          </button>
-                        )}
+                        <button type="button" onClick={() => openTaxonomyDelete({
+                          name: t.label,
+                          kind: 'Article type',
+                          reason: t.articleCount > 0 ? `This type is used by ${t.articleCount} article(s). Archive it to retire it, or change those articles’ type before deleting it.` : undefined,
+                          remove: () => deleteArticleTypeAction(t.id),
+                        })} className="text-rose-600 hover:underline">Delete</button>
                       </> : <span className="text-stone-400">read-only</span>}
                     </td>
                   </tr>
@@ -563,13 +669,16 @@ export const AdminEditorialOrgPage: React.FC<Props> = ({
               <tbody className="divide-y divide-stone-100">
                 {authors.map((a) => (
                   <tr key={a.id} className="hover:bg-stone-50/60">
-                    <td className="py-2.5 px-4 font-semibold text-stone-900">{a.name}</td>
+                    <td className="py-2.5 px-4 font-semibold text-stone-900">
+                      {a.name}
+                      <span className="block font-mono font-normal text-[10px] text-stone-400">{a.slug}</span>
+                    </td>
                     <td className="py-2.5 px-4 text-stone-600">{a.role}</td>
                     <td className="py-2.5 px-4 text-right font-mono text-stone-600">{a.articleCount}</td>
                     <td className="py-2.5 px-4 text-right space-x-2">
                       {canAuthors ? <>
                         <button onClick={() => openAuth(a)} className="text-[#8B5E3C] hover:underline font-bold">Edit</button>
-                        {a.articleCount === 0 && <button onClick={() => run(deleteAuthorAction(a.id), 'Author deleted.')} className="text-rose-600 hover:underline">Delete</button>}
+                        <button onClick={() => openDeleteAuthor(a)} className="text-rose-600 hover:underline">Delete</button>
                       </> : <span className="text-stone-400">read-only</span>}
                     </td>
                   </tr>
@@ -581,16 +690,79 @@ export const AdminEditorialOrgPage: React.FC<Props> = ({
         </div>
       )}
 
-      {catModal && (
+      {catModal && !catHeroPicker && (
         <AdminModal isOpen onClose={() => setCatModal(false)} title={catId ? 'Edit Category' : 'Add Category'}
           footerActions={<div className="flex gap-2"><button onClick={() => setCatModal(false)} className="px-3 py-1.5 border border-stone-300 rounded-xs text-xs">Cancel</button><button onClick={saveCat} disabled={isPending} className="px-3.5 py-1.5 bg-[#0F1115] text-[#D4A757] text-xs font-semibold rounded-xs disabled:opacity-50">Save</button></div>}>
           <div className="space-y-3 text-xs font-sans">
             <div><label className="block text-[10px] font-mono uppercase text-stone-500 mb-1">Name</label><input value={catForm.name} onChange={(e) => setCatForm({ ...catForm, name: e.target.value })} className="w-full p-2 bg-stone-50 border border-stone-200 rounded-xs" /></div>
             <div><label className="block text-[10px] font-mono uppercase text-stone-500 mb-1">Description</label><textarea rows={2} value={catForm.description} onChange={(e) => setCatForm({ ...catForm, description: e.target.value })} className="w-full p-2 bg-stone-50 border border-stone-200 rounded-xs" /></div>
             <div><label className="block text-[10px] font-mono uppercase text-stone-500 mb-1">Sort order</label><input type="number" value={catForm.sortOrder} onChange={(e) => setCatForm({ ...catForm, sortOrder: Number(e.target.value) })} className="w-24 p-2 bg-stone-50 border border-stone-200 rounded-xs" /></div>
+
+            {/*
+              The section landing page's hero photograph.
+
+              Chosen visually from the Media Library rather than typed as a URL:
+              an editor picking an image should not have to know where it is
+              served from, and a pasted path carries no alt text and no rights
+              record. `MediaPickerModal` is the chooser the article editor and
+              Info Pages already use, so the asset, its credit and its rights
+              status all travel with the choice.
+            */}
+            <div className="pt-3 border-t border-stone-200">
+              <label className="block text-[10px] font-mono uppercase text-stone-500 mb-1">Landing page hero image</label>
+              {catForm.heroImageUrl ? (
+                <div className="flex items-start gap-3">
+                  {/* eslint-disable-next-line @next/next/no-img-element */}
+                  <img
+                    src={catForm.heroImageUrl}
+                    alt={catForm.heroImageAlt || ''}
+                    className="w-40 aspect-[16/9] object-cover rounded-xs border border-stone-200 bg-stone-100"
+                  />
+                  <div className="flex-1 min-w-0">
+                    <p className="text-[11px] text-stone-600 break-all">{catForm.heroImageUrl}</p>
+                    {!catForm.heroImageAlt && (
+                      <p className="text-[10px] text-amber-700 mt-1">
+                        This asset has no alt text. Add it in the Media Library so the hero stays accessible.
+                      </p>
+                    )}
+                    <div className="flex gap-2 mt-2">
+                      <button type="button" onClick={() => setCatHeroPicker(true)} className="px-2.5 py-1 border border-stone-300 rounded-xs text-[11px]">Change image</button>
+                      <button
+                        type="button"
+                        onClick={() => setCatForm({ ...catForm, heroMediaId: '', heroImageUrl: '', heroImageAlt: '' })}
+                        className="px-2.5 py-1 border border-stone-300 rounded-xs text-[11px] text-rose-600"
+                      >
+                        Remove
+                      </button>
+                    </div>
+                  </div>
+                </div>
+              ) : (
+                <div>
+                  <button type="button" onClick={() => setCatHeroPicker(true)} className="px-3 py-1.5 border border-stone-300 rounded-xs text-xs font-semibold">
+                    Choose from Media Library
+                  </button>
+                  <p className="text-[10px] text-stone-500 mt-1.5">
+                    Optional. With no image the landing page keeps its plain dark header.
+                  </p>
+                </div>
+              )}
+            </div>
           </div>
         </AdminModal>
       )}
+
+      <MediaPickerModal
+        isOpen={catHeroPicker}
+        onClose={() => setCatHeroPicker(false)}
+        onSelect={(media) => {
+          // A pasted custom URL carries no library id, and the hero is a foreign
+          // key to an asset — so only a real library selection can be stored.
+          if (!media.id) { flash('Pick an image from the library: a pasted URL cannot be used as a category hero.'); return; }
+          setCatForm((f) => ({ ...f, heroMediaId: media.id!, heroImageUrl: media.url, heroImageAlt: media.altText ?? '' }));
+          setCatHeroPicker(false);
+        }}
+      />
 
       {subModal && (
         <AdminModal isOpen onClose={() => setSubModal(false)} title={subId ? 'Edit Subcategory' : 'Add Subcategory'}
@@ -693,14 +865,72 @@ export const AdminEditorialOrgPage: React.FC<Props> = ({
         </AdminModal>
       )}
 
+      {taxonomyDelete && (
+        <AdminModal
+          isOpen
+          onClose={closeTaxonomyDelete}
+          title={taxonomyDelete.reason ? `Cannot delete ${taxonomyDelete.kind.toLowerCase()}` : `Delete ${taxonomyDelete.kind.toLowerCase()}`}
+          footerActions={<>
+            <button type="button" onClick={closeTaxonomyDelete} disabled={isPending} className="px-3 py-1.5 border border-stone-300 rounded-xs text-xs">{taxonomyDelete.reason ? 'Close' : 'Cancel'}</button>
+            {!taxonomyDelete.reason && (
+              <button type="button" onClick={confirmTaxonomyDelete} disabled={isPending} className="px-3.5 py-1.5 bg-rose-700 text-white text-xs font-semibold rounded-xs disabled:opacity-50">Delete permanently</button>
+            )}
+          </>}
+        >
+          <p>{taxonomyDelete.reason ? <strong>{taxonomyDelete.name}</strong> : <>Permanently delete <strong>{taxonomyDelete.name}</strong>?</>}</p>
+          {taxonomyDelete.reason && <p>{taxonomyDelete.reason}</p>}
+          {taxonomyDeleteError && <p role="alert" className="text-rose-700">{taxonomyDeleteError}</p>}
+        </AdminModal>
+      )}
+
+      {authorToDelete && (
+        <AdminModal
+          isOpen
+          onClose={closeDeleteAuthor}
+          title="Delete Author Byline"
+          footerActions={<>
+            <button type="button" onClick={closeDeleteAuthor} disabled={isPending} className="px-3 py-1.5 border border-stone-300 rounded-xs text-xs">Cancel</button>
+            <button type="button" onClick={confirmDeleteAuthor} disabled={isPending || (authorToDelete.articleCount > 0 && !replacementAuthorId)} className="px-3.5 py-1.5 bg-rose-700 text-white text-xs font-semibold rounded-xs disabled:opacity-50">
+              {authorToDelete.articleCount > 0 ? 'Reassign articles and delete' : 'Delete byline'}
+            </button>
+          </>}
+        >
+          <p>Permanently delete <strong>{authorToDelete.name}</strong>?</p>
+          {authorToDelete.articleCount > 0 && (
+            <div className="space-y-2">
+              <p>This byline is used by {authorToDelete.articleCount} {authorToDelete.articleCount === 1 ? 'article' : 'articles'}. Choose the byline those articles should use.</p>
+              {authors.length > 1 ? (
+                <label className="block space-y-1">
+                  <span className="font-semibold">Replacement byline</span>
+                  <select value={replacementAuthorId} onChange={(event) => setReplacementAuthorId(event.target.value)} disabled={isPending} className="block w-full rounded-xs border border-stone-300 p-2">
+                    <option value="">Choose a byline</option>
+                    {authors.filter((author) => author.id !== authorToDelete.id).map((author) => (
+                      <option key={author.id} value={author.id}>{author.name} ({author.slug})</option>
+                    ))}
+                  </select>
+                </label>
+              ) : <p>Add another author byline before deleting this one.</p>}
+            </div>
+          )}
+          {deleteAuthorError && <p role="alert" className="text-rose-700">{deleteAuthorError}</p>}
+        </AdminModal>
+      )}
+
       {authModal && (
         <AdminModal isOpen onClose={() => setAuthModal(false)} title={authId ? 'Edit Author Byline' : 'Add Author Byline'}
           footerActions={<div className="flex gap-2"><button onClick={() => setAuthModal(false)} className="px-3 py-1.5 border border-stone-300 rounded-xs text-xs">Cancel</button><button onClick={saveAuth} disabled={isPending} className="px-3.5 py-1.5 bg-[#0F1115] text-[#D4A757] text-xs font-semibold rounded-xs disabled:opacity-50">Save</button></div>}>
           <div className="space-y-3 text-xs font-sans">
             <div><label className="block text-[10px] font-mono uppercase text-stone-500 mb-1">Name</label><input value={authForm.name} onChange={(e) => setAuthForm({ ...authForm, name: e.target.value })} className="w-full p-2 bg-stone-50 border border-stone-200 rounded-xs" /></div>
             <div><label className="block text-[10px] font-mono uppercase text-stone-500 mb-1">Role / Title</label><input value={authForm.role} onChange={(e) => setAuthForm({ ...authForm, role: e.target.value })} className="w-full p-2 bg-stone-50 border border-stone-200 rounded-xs" /></div>
-            <div><label className="block text-[10px] font-mono uppercase text-stone-500 mb-1">Bio</label><textarea rows={2} value={authForm.bio} onChange={(e) => setAuthForm({ ...authForm, bio: e.target.value })} className="w-full p-2 bg-stone-50 border border-stone-200 rounded-xs" /></div>
-            <div><label className="block text-[10px] font-mono uppercase text-stone-500 mb-1">Credentials</label><input value={authForm.credentials} onChange={(e) => setAuthForm({ ...authForm, credentials: e.target.value })} className="w-full p-2 bg-stone-50 border border-stone-200 rounded-xs" /></div>
+            <div>
+              <label className="block text-[10px] font-mono uppercase text-stone-500 mb-1">Bio <span className="text-stone-400 normal-case">({authForm.bio.length}/1000)</span></label>
+              {/* Desk bylines run close to the 1000-character limit; two rows hid nearly all of it. */}
+              <textarea rows={7} maxLength={1000} value={authForm.bio} onChange={(e) => setAuthForm({ ...authForm, bio: e.target.value })} className="w-full p-2 bg-stone-50 border border-stone-200 rounded-xs leading-relaxed" />
+            </div>
+            <div>
+              <label className="block text-[10px] font-mono uppercase text-stone-500 mb-1">Credentials <span className="text-stone-400 normal-case">({authForm.credentials.length}/300)</span></label>
+              <input maxLength={300} value={authForm.credentials} onChange={(e) => setAuthForm({ ...authForm, credentials: e.target.value })} className="w-full p-2 bg-stone-50 border border-stone-200 rounded-xs" />
+            </div>
           </div>
         </AdminModal>
       )}

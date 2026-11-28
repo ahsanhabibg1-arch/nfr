@@ -10,6 +10,7 @@ import {
   resolveSectionCategoryResult,
   toCardArticle,
   toCardArticles,
+  toCardArticlesWithLead,
 } from '../content';
 import { listPublicHubs, listPublicEvents } from '../rodeoContent';
 import { getQuickAccessLinks } from './navigationService';
@@ -188,6 +189,33 @@ export async function resolveHomepageSlots(slots: SectionSlot[]): Promise<Resolv
   const CARD_SAFE = toCardArticle;
   const cardSafe = (list: Article[] | undefined) => (list ? toCardArticles(list) : list);
 
+  /**
+   * One slot opts back in to a BOUNDED opening of the body: `latest-coverage`.
+   *
+   * Its featured card is stretched to the height of the card column beside it,
+   * and that height is editorial — it follows however many articles the Builder
+   * selected. `deck` and `excerpt` together run about five lines, several short
+   * of a five-card column, and the remainder showed as a blank band under the
+   * byline. No clamp can close it: a clamp limits text, it cannot produce any.
+   *
+   * So this slot keeps `CARD_LEAD_MAX_CHARS` of running text and nothing more.
+   * The ceiling is what preserves the fix above: the body that mattered was the
+   * UNBOUNDED one — sixteen complete articles, 165 KB of flight payload — and a
+   * bounded opening costs single-digit kilobytes against it. `structuredBody`
+   * stays stripped here as everywhere; it is the larger field and nothing on a
+   * card reads it.
+   *
+   * Every other slot is untouched and still ships no body at all. The lead is
+   * applied to the whole list rather than only the first article because the
+   * block's category tabs re-pick the featured story on the client, so any of
+   * them can become the card that needs the text.
+   */
+  const SLOTS_WITH_BODY_LEAD: ReadonlySet<SectionSlot['sectionType']> = new Set(['latest-coverage']);
+  const cardSafeForSlot = (slot: SectionSlot, list: Article[] | undefined) => {
+    if (!list) return list;
+    return SLOTS_WITH_BODY_LEAD.has(slot.sectionType) ? toCardArticlesWithLead(list) : toCardArticles(list);
+  };
+
   const resolved = new Map<SectionSlot, HomeSlotData>();
 
   const resolveArticleSlot = async (slot: SectionSlot): Promise<void> => {
@@ -290,7 +318,7 @@ export async function resolveHomepageSlots(slots: SectionSlot[]): Promise<Resolv
       slot,
       data: {
         ...data,
-        ...(data.articles ? { articles: cardSafe(data.articles) } : {}),
+        ...(data.articles ? { articles: cardSafeForSlot(slot, data.articles) } : {}),
         ...(data.lead ? { lead: CARD_SAFE(data.lead) } : {}),
         ...(data.secondary ? { secondary: cardSafe(data.secondary) } : {}),
       },

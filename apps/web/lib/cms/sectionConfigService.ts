@@ -6,6 +6,7 @@ import type { Actor } from './guard';
 import { audit } from './guard';
 import { ServiceError } from './articleService';
 import { z } from 'zod';
+import { isSafeLogoUrl } from './brandingShared';
 
 const need = (a: Actor) => {
   if (!roleHasPermission(a.roles, 'system.config')) throw new ServiceError('forbidden', 'Not permitted (system.config).');
@@ -16,7 +17,11 @@ const UpdateSchema = z.object({
   displayName: z.string().max(120).nullable().optional(),
   tagline: z.string().max(300).nullable().optional(),
   description: z.string().max(2000).nullable().optional(),
-  heroImage: z.string().url().max(500).nullable().optional(),
+  heroImage: z.string().max(500).refine(
+    (value) => (/^\/assets\/images\/[A-Za-z0-9._/-]+$/.test(value) && !value.split('/').includes('..')) ||
+      isSafeLogoUrl(value) || z.string().url().safeParse(value).success,
+    'Choose a Media Library image or enter a valid image URL.',
+  ).nullable().optional(),
   visible: z.boolean().optional(),
 });
 

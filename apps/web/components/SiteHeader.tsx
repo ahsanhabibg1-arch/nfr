@@ -82,7 +82,7 @@ export const SiteHeader: React.FC<SiteHeaderProps> = ({ branding, onOpenSearch, 
           {/* Zone 1: Brand Wordmark */}
           <Link
             href="/"
-            className="shrink-0 group focus:outline-none focus-visible:ring-2 focus-visible:ring-[#D4A757] rounded-sm py-1"
+            className="max-w-[52%] shrink-0 group focus:outline-none focus-visible:ring-2 focus-visible:ring-[#D4A757] rounded-sm py-1 xl:max-w-48"
           >
             <span className="font-serif text-2xl sm:text-3xl font-extrabold tracking-tight text-white uppercase group-hover:text-[#D4A757] transition-colors">
               <SiteLogo branding={branding} wordmarkLead="NFR" wordmarkAccent="Guide" />

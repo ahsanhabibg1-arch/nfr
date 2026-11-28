@@ -4,6 +4,8 @@ import { revalidatePath } from 'next/cache';
 import { requireActor, toActionError, type ActionResult } from '@/lib/cms/guard';
 import * as svc from '@/lib/cms/siteConfigService';
 import type { SiteConfigKey } from '@/lib/cms/siteConfigService';
+import { confirmRights, getMedia, setVisibility } from '@/lib/cms/mediaService';
+import { isSafeLogoUrl } from '@/lib/cms/brandingShared';
 
 /**
  * Stage 06-R FC-05A — branding is GLOBAL chrome, so it needs a wider purge.
@@ -19,7 +21,7 @@ import type { SiteConfigKey } from '@/lib/cms/siteConfigService';
  * on the auth screens, and purging extra routes on every save would discard
  * cache entries for no reason.
  */
-const BRANDING_PATHS = ['/login/', '/register/'];
+const BRANDING_PATHS = ['/login/', '/register/', '/admin/login/', '/admin/settings/'];
 
 const rev = (key?: SiteConfigKey) => {
   revalidatePath('/admin/website/');
@@ -40,4 +42,27 @@ export async function publishSiteConfigAction(key: SiteConfigKey): Promise<Actio
 export async function resetSiteConfigDraftAction(key: SiteConfigKey): Promise<ActionResult> {
   try { const a = await requireActor('system.config'); await svc.resetDraftToPublished(a, key); rev(key); return { ok: true }; }
   catch (e) { return toActionError(e); }
+}
+
+export async function prepareBrandingUploadAction(id: string, rightsConfirmed: boolean): Promise<ActionResult<{ url: string }>> {
+  try {
+    const actor = await requireActor('system.config');
+    if (rightsConfirmed !== true) return { ok: false, code: 'validation', error: 'Confirm that you have permission to use this image.' };
+    const asset = await getMedia(actor, id);
+    const url = `/api/media/${asset.storageKey}`;
+    if (asset.visibility === 'ARCHIVED' || asset.processingStatus !== 'READY' ||
+        !['image/png', 'image/jpeg', 'image/webp'].includes(asset.mimeType ?? '') || !isSafeLogoUrl(url)) {
+      return { ok: false, code: 'validation', error: 'Choose a ready PNG, JPEG, or WebP image that is not archived.' };
+    }
+    if (asset.visibility !== 'PUBLIC') {
+      if (!asset.rightsConfirmed) {
+        await confirmRights(actor, id, asset.licenseType === 'UNCONFIRMED' ? 'PERMISSION_GRANTED' : asset.licenseType, true);
+      }
+      await setVisibility(actor, id, 'PUBLIC');
+    }
+    revalidatePath('/admin/media/');
+    return { ok: true, url };
+  } catch (error) {
+    return toActionError(error) as ActionResult<{ url: string }>;
+  }
 }

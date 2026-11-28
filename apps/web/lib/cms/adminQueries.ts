@@ -34,6 +34,7 @@ function toRevision(r: {
 
 export interface EditableArticlePayload {
   article: Article;
+  authorId: string;
   version: number;
   revisions: ArticleRevision[];
 }
@@ -44,7 +45,7 @@ export async function getEditableArticle(id: string): Promise<EditableArticlePay
   const revisions = await prisma.articleRevision.findMany({
     where: { articleId: id }, orderBy: { revisionNo: 'desc' }, take: 30,
   });
-  return { article: toArticle(row), version: row.version, revisions: revisions.map(toRevision) };
+  return { article: toArticle(row), authorId: row.authorId, version: row.version, revisions: revisions.map(toRevision) };
 }
 
 /** Database-backed choices for the article editor's rodeo relationships panel. */

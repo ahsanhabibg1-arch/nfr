@@ -44,6 +44,7 @@ import { RodeoRelationshipsPanel, RodeoRelationshipsData } from '../../component
 import { ArticleSourcesPanel } from '../../components/admin/editor/ArticleSourcesPanel';
 import { MediaPickerModal, SelectedMediaData } from '../../components/admin/editor/MediaPickerModal';
 import { ArticleDraftPreview } from '../../components/admin/editor/ArticleDraftPreview';
+import type { Branding } from '../../lib/cms/brandingShared';
 import { EMPTY_RELATIONSHIP_OPTIONS, NEW_SOURCE_ID_PREFIX, type ArticleRelationshipOptions, type SourceDirectoryOption } from '../../lib/cms/relationshipTypes';
 
 /** Stage 02 (H-01) — a managed Category, as the server page supplies it. */
@@ -140,6 +141,7 @@ export interface EditorPermissions {
 
 interface AdminArticleEditorShellProps {
   initialArticle?: Article;
+  initialAuthorId?: string;
   initialVersion?: number;
   initialRevisions?: ArticleRevision[];
   permissions: EditorPermissions;
@@ -151,6 +153,7 @@ interface AdminArticleEditorShellProps {
   sourceDirectory?: SourceDirectoryOption[];
   /** Batch 04-E — managed Article Type definitions, resolved server-side. */
   articleTypes?: ArticleTypeSnapshot;
+  branding?: Branding;
   /**
    * Stage 02 (H-01) — the managed categories, resolved server-side. Omitted
    * falls back to the five foundational section names.
@@ -160,6 +163,7 @@ interface AdminArticleEditorShellProps {
 
 export const AdminArticleEditorShell: React.FC<AdminArticleEditorShellProps> = ({
   initialArticle,
+  initialAuthorId,
   initialVersion,
   initialRevisions = [],
   permissions,
@@ -168,6 +172,7 @@ export const AdminArticleEditorShell: React.FC<AdminArticleEditorShellProps> = (
   relationshipOptions = EMPTY_RELATIONSHIP_OPTIONS,
   sourceDirectory = [],
   articleTypes,
+  branding,
   categories,
 }) => {
   /**
@@ -268,9 +273,9 @@ export const AdminArticleEditorShell: React.FC<AdminArticleEditorShellProps> = (
   // resolve its saved byline to the matching database author id (else leave unselected,
   // preserving the legacy byline text as a review signal — see legacyBylineName below).
   const [authorKey, setAuthorKey] = useState<string>(() => {
-    const name = existingArticle?.author?.name;
-    if (!name) return '';
-    return authors.find((a) => a.name === name)?.id || '';
+    const author = existingArticle?.author;
+    if (!author) return '';
+    return (authors.find((a) => a.id === initialAuthorId) ?? authors.find((a) => a.name === author.name))?.id || '';
   });
   // A saved byline that doesn't match any current database author (legacy string) — shown
   // as an editorial review warning rather than silently reassigned.
@@ -634,6 +639,7 @@ export const AdminArticleEditorShell: React.FC<AdminArticleEditorShellProps> = (
     subcategoryId: subcategoryId || null,
     articleType,
     categoryName: category,
+    authorId: picked?.id,
     authorName: selectedAuthor.name,
     authorRole: selectedAuthor.role,
     reviewerName,
@@ -737,8 +743,8 @@ export const AdminArticleEditorShell: React.FC<AdminArticleEditorShellProps> = (
       if (p.categoryName) setCategory(str(p.categoryName));
       setSubcategoryId(str(p.subcategoryId ?? ''));
       if (p.articleType) setArticleType(str(p.articleType));
-      if (p.authorName) {
-        const match = authors.find((a) => a.name === p.authorName);
+      if (p.authorId || p.authorName) {
+        const match = authors.find((a) => a.id === p.authorId) ?? authors.find((a) => a.name === p.authorName);
         if (match) setAuthorKey(match.id);
       }
       setReviewerName(str(p.reviewerName));
@@ -2220,6 +2226,7 @@ export const AdminArticleEditorShell: React.FC<AdminArticleEditorShellProps> = (
         <ArticleDraftPreview
           article={currentArticleSnapshot}
           articleTypes={typeSnapshot}
+          branding={branding}
           onClose={() => setPreviewOpen(false)}
         />
       )}

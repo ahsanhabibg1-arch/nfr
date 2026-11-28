@@ -1,5 +1,9 @@
 import { test, expect, type Page } from '@playwright/test';
 import type { Prisma } from '@prisma/client';
+import { rm } from 'node:fs/promises';
+import path from 'node:path';
+import sharp from 'sharp';
+import { assertSafeKey } from '../lib/media/storage/adapter';
 import { readState, testDb } from './support';
 
 /**
@@ -179,6 +183,76 @@ test.describe('Stage 06-R FC-04 — Site Identity & Branding', () => {
     await expect(page.getByRole('button', { name: /^Publish$/ }).first()).toBeVisible();
     // Favicon stays a separate concern.
     await expect(page.getByText(/favicon is configured separately/i).first()).toBeVisible();
+  });
+
+  test('System Settings uploads, publishes and clears the logo and favicon', async ({ page, request }) => {
+    const { runId } = readState();
+    const prefix = `e2e-settings-branding-${runId}-`;
+    const db = testDb();
+    try {
+      await setIdentity(null);
+      await login(page);
+      await page.goto('/admin/settings/');
+      const settings = page.getByRole('region', { name: 'Logo and favicon' });
+      await settings.getByRole('checkbox', { name: /permission to make/i }).check();
+      const upload = async (label: string, name: string, width: number) => {
+        const preview = settings.getByRole('img', { name: `${name === 'logo' ? 'Logo' : 'Favicon'} preview` });
+        await settings.getByLabel(label, { exact: true }).setInputFiles({
+          name: `${prefix}${name}.png`,
+          mimeType: 'image/png',
+          buffer: await sharp({
+            create: { width, height: 64, channels: 3, background: `#${runId.slice(0, 6)}` },
+          }).png().toBuffer(),
+        });
+        await expect(preview).toHaveAttribute('src', /^\/api\/media\//, { timeout: 20_000 });
+        return (await preview.getAttribute('src'))!;
+      };
+      const logo = await upload('Upload primary logo', 'logo', 192);
+      const favicon = await upload('Upload favicon', 'favicon', 64);
+      const publish = async () => {
+        await settings.getByRole('button', { name: 'Publish', exact: true }).click();
+        await expect(settings.getByRole('status')).toHaveText(/branding is live/i);
+      };
+      await publish();
+      await expect(page.locator('aside img').first()).toHaveAttribute('src', logo);
+      expect((await request.get(favicon)).ok()).toBe(true);
+
+      await page.goto('/');
+      await expect(page.locator('header').first().locator('img').first()).toHaveAttribute('src', logo);
+      await expect(page.locator('footer img').first()).toHaveAttribute('src', logo);
+      await expect(page.locator('link[rel="icon"]')).toHaveAttribute('href', favicon);
+
+      await page.goto('/admin/settings/');
+      for (const title of ['Primary logo', 'Favicon']) {
+        const card = settings.getByRole('heading', { name: title, exact: true }).locator('..');
+        await card.getByRole('button', { name: 'Remove' }).click();
+      }
+      await publish();
+      const cleared = await db.siteConfig.findUniqueOrThrow({ where: { key: 'identity' } });
+      expect(cleared.published).not.toHaveProperty('logoUrl');
+      expect(cleared.published).not.toHaveProperty('faviconUrl');
+      await expect(async () => {
+        await page.goto('/');
+        await expect(page.locator('header').first()).toContainText('NFRGuide', { timeout: 1000 });
+        await expect(page.locator('link[rel="icon"]')).toHaveCount(0, { timeout: 1000 });
+      }).toPass({ timeout: 10_000 });
+    } finally {
+      await setIdentity(null);
+      try {
+        const assets = await db.mediaAsset.findMany({ where: { filename: { startsWith: prefix } } });
+        const root = process.env.MEDIA_LOCAL_ROOT || path.join(process.cwd(), 'var', 'media');
+        for (const asset of assets) {
+          const derivatives = (asset.derivatives ?? {}) as Record<string, { key: string }>;
+          for (const key of [asset.storageKey, ...Object.values(derivatives).map((item) => item.key)]) {
+            assertSafeKey(key);
+            await rm(path.join(root, key), { force: true });
+          }
+        }
+        await db.mediaAsset.deleteMany({ where: { id: { in: assets.map((asset) => asset.id) } } });
+      } finally {
+        await db.$disconnect();
+      }
+    }
   });
 
   test('a DRAFT logo does not reach the public site; publishing it does', async ({ page }) => {

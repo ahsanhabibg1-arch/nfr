@@ -141,6 +141,18 @@ suite('Batch 04 — editorial modules integration', () => {
     await expect(tax.deleteCategory(actors.editor, cat!.id)).rejects.toMatchObject({ code: 'forbidden' });
   });
 
+  it('category: reports subcategories as a deletion blocker', async () => {
+    const { id } = await tax.createCategory(actors.editor, { name: `B04Cat ${rid()}` });
+    const sub = await tax.createSubcategory(actors.editor, { categoryId: id, name: `B04 subcategory ${rid()}` });
+    try {
+      expect((await tax.listCategories()).find((category) => category.id === id)?.subcategoryCount).toBe(1);
+      await expect(tax.deleteCategory(actors.editor, id)).rejects.toMatchObject({ code: 'conflict' });
+    } finally {
+      await tax.deleteSubcategory(actors.editor, sub.id);
+    }
+    await expect(tax.deleteCategory(actors.editor, id)).resolves.toBeUndefined();
+  });
+
   it('tag: create and delete', async () => {
     const t = await tax.createTag(actors.editor, `b04 ${rid()}`);
     expect(t.id.startsWith('tag-b04')).toBe(true);

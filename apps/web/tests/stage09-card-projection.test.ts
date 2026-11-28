@@ -1,6 +1,13 @@
 import { describe, it, expect, beforeAll, afterAll } from 'vitest';
 import { PrismaClient, WorkflowStatus } from '@prisma/client';
-import { toCardArticle, toCardArticles, SEARCH_INDEX_LIMIT } from '@/lib/content';
+import {
+  toCardArticle,
+  toCardArticles,
+  toCardArticleWithLead,
+  buildCardLead,
+  CARD_LEAD_MAX_CHARS,
+  SEARCH_INDEX_LIMIT,
+} from '@/lib/content';
 import type { Article } from '@/types';
 
 /**
@@ -58,6 +65,63 @@ describe('Stage 09 — article card projection', () => {
     expect(card.author.name).toBe('Clayton Vance');
     expect(card.category).toBe('NFR Competition');
     expect(card.categorySlug).toBe('nfr-competition');
+  });
+
+  /* ── the opt-in bounded lead ─────────────────────────────────────────── */
+
+  it('buildCardLead keeps a short body whole', () => {
+    expect(buildCardLead(['One sentence.', 'And a second.'])).toBe('One sentence. And a second.');
+  });
+
+  it('buildCardLead joins paragraphs, so a short opening one does not strand the bound', () => {
+    // Two-line paragraphs are common; stopping at the first would often return
+    // far less than the card has room for, which is the whole reason the
+    // paragraphs are joined before the bound is applied.
+    const words = (n: number, w: string) => Array.from({ length: n }, () => w).join(' ');
+    const lead = buildCardLead(['Short.', words(40, 'second'), words(40, 'third')], 300);
+    expect(lead.length).toBeGreaterThan(280);
+    expect(lead).toContain('Short.');
+    expect(lead).toContain('second');
+    // Reached past the second paragraph into the third, which a first-paragraph
+    // -only implementation could never do.
+    expect(lead).toContain('third');
+  });
+
+  it('buildCardLead cuts on a WORD boundary and marks the continuation', () => {
+    const words = Array.from({ length: 200 }, (_, i) => `word${i}`).join(' ');
+    const lead = buildCardLead(words.split(' ').map((w) => w), 100);
+    expect(lead.length).toBeLessThanOrEqual(101);
+    expect(lead.endsWith('…')).toBe(true);
+    // Never mid-word: the character before the ellipsis is the end of a word.
+    expect(lead).not.toMatch(/\s…$/);
+    expect(lead.slice(0, -1).split(' ').pop()).toMatch(/^word\d+$/);
+  });
+
+  it('buildCardLead normalises whitespace and survives an empty or ragged body', () => {
+    expect(buildCardLead([])).toBe('');
+    expect(buildCardLead(['   ', ''])).toBe('');
+    expect(buildCardLead(['  spaced   out  ', '', ' text '])).toBe('spaced out text');
+  });
+
+  it('buildCardLead falls back to a hard cut on a single pathological word', () => {
+    const lead = buildCardLead(['x'.repeat(500)], 100);
+    expect(lead.length).toBeLessThanOrEqual(101);
+    expect(lead.endsWith('…')).toBe(true);
+  });
+
+  it('toCardArticleWithLead keeps ONE bounded paragraph and still drops structuredBody', () => {
+    const source: Article = { ...sample(), content: ['First paragraph. '.repeat(40), 'Second paragraph.'] };
+    const card = toCardArticleWithLead(source);
+    expect(card.content.length).toBe(1);
+    expect(card.content[0].length).toBeLessThanOrEqual(CARD_LEAD_MAX_CHARS + 1);
+    expect(card.structuredBody).toBeUndefined();
+    // The source is untouched, exactly as for the plain projection.
+    expect(source.content.length).toBe(2);
+  });
+
+  it('toCardArticleWithLead is a no-op on an article that has no body', () => {
+    const card = toCardArticleWithLead({ ...sample(), content: [] });
+    expect(card.content).toEqual([]);
   });
 
   it('does not mutate the source article, so detail pages keep their body', () => {
@@ -146,26 +210,72 @@ suite('Stage 09 — payload and search index against the database', () => {
     await db!.$disconnect();
   });
 
-  it('the homepage resolver emits NO article body for any slot', async () => {
+  /**
+   * The contract narrowed, and got more precise rather than weaker.
+   *
+   * It used to be "no slot emits any body". One slot now needs running text:
+   * `latest-coverage`'s featured card is stretched to the height of the card
+   * column beside it, and `deck` + `excerpt` run several lines short of that,
+   * leaving a blank band no clamp can close.
+   *
+   * So the assertion is no longer "none" but "none, except one slot, and there
+   * only within a stated bound" — which is the property that actually protected
+   * the payload. The 165 KB this projection was introduced to remove was
+   * UNBOUNDED body: sixteen complete articles. A single paragraph capped at
+   * `CARD_LEAD_MAX_CHARS` is what keeps that from coming back, so the cap is
+   * what gets pinned, per article and across the whole payload.
+   */
+  it('the homepage resolver emits NO article body, except one bounded lead slot', async () => {
     const slots = [
       { id: 's-latest', sectionType: 'latest-coverage', visible: true, order: 1, props: { articleCount: 6 } },
       { id: 's-ent', sectionType: 'entertainment', visible: true, order: 2, props: { articleCount: 3 } },
       { id: 's-hero', sectionType: 'editorial-hero', visible: true, order: 0, props: { secondaryCount: 2 } },
     ];
     const out = await home!.resolveHomepageSlots(slots);
-    const everyArticle = out.flatMap((r) => [
-      ...(r.data.articles ?? []),
-      ...(r.data.secondary ?? []),
-      ...(r.data.lead ? [r.data.lead] : []),
-    ]);
-    expect(everyArticle.length).toBeGreaterThan(0);
-    for (const a of everyArticle) {
-      expect(a.content, `${a.slug} leaked content`).toEqual([]);
-      expect(a.structuredBody, `${a.slug} leaked structuredBody`).toBeUndefined();
-      // …while the card still has what it needs to render and link.
-      expect(a.slug).toBeTruthy();
-      expect(a.title).toBeTruthy();
+
+    let leadBearing = 0;
+    let everyArticleSeen = 0;
+
+    for (const row of out) {
+      const articles = [
+        ...(row.data.articles ?? []),
+        ...(row.data.secondary ?? []),
+        ...(row.data.lead ? [row.data.lead] : []),
+      ];
+      const mayCarryLead = row.slot.sectionType === 'latest-coverage';
+
+      for (const a of articles) {
+        everyArticleSeen++;
+
+        // `structuredBody` is stripped EVERYWHERE, with no exception. It is the
+        // larger of the two fields and nothing on a card reads it.
+        expect(a.structuredBody, `${a.slug} leaked structuredBody`).toBeUndefined();
+
+        if (!mayCarryLead) {
+          expect(a.content, `${a.slug} leaked content from ${row.slot.sectionType}`).toEqual([]);
+        } else {
+          // At most ONE paragraph, and no longer than the declared bound.
+          expect(a.content.length, `${a.slug} emitted more than one lead paragraph`).toBeLessThanOrEqual(1);
+          for (const paragraph of a.content) {
+            expect(
+              paragraph.length,
+              `${a.slug} lead is ${paragraph.length} chars, over the ${CARD_LEAD_MAX_CHARS} bound`,
+            ).toBeLessThanOrEqual(CARD_LEAD_MAX_CHARS + 1); // +1 for the ellipsis
+          }
+          if (a.content.length) leadBearing++;
+        }
+
+        // …while the card still has what it needs to render and link.
+        expect(a.slug).toBeTruthy();
+        expect(a.title).toBeTruthy();
+      }
     }
+
+    expect(everyArticleSeen).toBeGreaterThan(0);
+    // The seeded corpus has bodies, so the exception must actually be exercised
+    // — otherwise this test would still pass if the lead silently stopped being
+    // attached, and the blank band would come back unnoticed.
+    expect(leadBearing, 'no latest-coverage article carried a lead').toBeGreaterThan(0);
   });
 
   it('article DETAIL reads keep the full body — the projection is card-only', async () => {

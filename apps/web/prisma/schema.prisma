@@ -29,6 +29,27 @@ model Category {
   name        String    @unique
   description String?
   sortOrder   Int       @default(0)
+
+  /// The section landing page's hero photograph, chosen from the Media Library.
+  ///
+  /// It lives on the CATEGORY rather than in section settings because a
+  /// category is the thing an editor creates, renames and gives a landing page
+  /// to. `SectionConfig.heroImage` only ever covered the five foundational
+  /// sections, so an administrator-created category had no way to set one at
+  /// all — the same hardcoding H-01 removed from the editor.
+  ///
+  /// `onDelete: SetNull` so retiring an asset from the Media Library empties the
+  /// hero instead of refusing the delete or stranding a dead reference; the
+  /// landing page then renders its plain dark header, exactly as it does today.
+  heroMediaId String?
+  heroMedia   MediaAsset? @relation("CategoryHero", fields: [heroMediaId], references: [id], onDelete: SetNull)
+
+  /// Declared so the model matches the index the migration creates. Without it
+  /// `prisma migrate diff` reports drift on every database and would propose
+  /// dropping a perfectly good index. It also earns its keep: `ON DELETE SET
+  /// NULL` makes PostgreSQL scan this column whenever a MediaAsset is deleted.
+  @@index([heroMediaId])
+
   articles    Article[]
   /// Batch 04-B — the managed second level inside this primary section.
   subcategories Subcategory[]
@@ -415,6 +436,7 @@ model MediaAsset {
   venues              VenueMedia[]
   /// Pages using this asset as their hero (PM-03).
   infoPageHeroes      InfoPage[]               @relation("InfoPageHero")
+  categoryHeroes      Category[]               @relation("CategoryHero")
 
   @@index([visibility, processingStatus])
   @@index([uploadedById])

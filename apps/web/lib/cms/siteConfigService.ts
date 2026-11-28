@@ -176,6 +176,8 @@ export interface SiteIdentityConfig {
   logoDarkMediaId?: string;
   /** Max rendered height in px, so a tall logo cannot distort the header. */
   logoMaxHeight?: number;
+  faviconUrl?: string;
+  faviconMediaId?: string;
 }
 
 /**
@@ -192,7 +194,7 @@ const MediaUrlSchema = z
   .string()
   .max(500)
   .refine((v) => v === '' || (/^\/(api\/media|media)\/[A-Za-z0-9._\-/]+$/.test(v) && !v.split('/').includes('..')), {
-    message: 'Logo must reference a Media Library file on this site (e.g. /api/media/...).',
+    message: 'Branding must reference a Media Library file on this site (e.g. /api/media/...).',
   });
 
 const SiteIdentityConfigSchema = z.object({
@@ -204,6 +206,8 @@ const SiteIdentityConfigSchema = z.object({
   logoDarkUrl: MediaUrlSchema.optional(),
   logoDarkMediaId: z.string().max(64).optional(),
   logoMaxHeight: z.number().int().min(16).max(160).optional(),
+  faviconUrl: MediaUrlSchema.optional(),
+  faviconMediaId: z.string().max(64).optional(),
 });
 
 const SCHEMAS: Record<SiteConfigKey, z.ZodSchema> = {
@@ -253,6 +257,7 @@ async function deriveBrandingMediaUrls(config: SiteIdentityConfig): Promise<Site
     ['logoMediaId', 'logoUrl'],
     ['logoLightMediaId', 'logoLightUrl'],
     ['logoDarkMediaId', 'logoDarkUrl'],
+    ['faviconMediaId', 'faviconUrl'],
   ] as const;
 
   const out: SiteIdentityConfig = { ...config };
@@ -264,13 +269,14 @@ async function deriveBrandingMediaUrls(config: SiteIdentityConfig): Promise<Site
       where: { id: mediaId },
       select: { storageKey: true, mimeType: true, visibility: true, processingStatus: true },
     });
-    if (!asset) throw new ServiceError('validation', `Logo media ${idKey} no longer exists in the Media Library.`);
+    const label = idKey === 'faviconMediaId' ? 'Favicon' : 'Logo';
+    if (!asset) throw new ServiceError('validation', `${label} media no longer exists in the Media Library.`);
     if (asset.visibility !== 'PUBLIC' || asset.processingStatus !== 'READY') {
-      throw new ServiceError('validation', `Logo media ${idKey} is not a published, ready Media Library asset.`);
+      throw new ServiceError('validation', `${label} media is not a published, ready Media Library asset.`);
     }
     const mime = (asset.mimeType || '').toLowerCase();
     if (!mime.startsWith('image/') || mime.includes('svg')) {
-      throw new ServiceError('validation', `Logo media ${idKey} must be a raster image (SVG is not permitted).`);
+      throw new ServiceError('validation', `${label} media must be a raster image (SVG is not permitted).`);
     }
 
     const derived = `/api/media/${asset.storageKey}`;
@@ -278,7 +284,7 @@ async function deriveBrandingMediaUrls(config: SiteIdentityConfig): Promise<Site
     // storage key is data, and data does not get to skip validation.
     const shapeOk =
       /^\/(api\/media|media)\/[A-Za-z0-9._\-/]+$/.test(derived) && !derived.split('/').includes('..');
-    if (!shapeOk) throw new ServiceError('validation', `Logo media ${idKey} has an unusable storage key.`);
+    if (!shapeOk) throw new ServiceError('validation', `${label} media has an unusable storage key.`);
 
     out[urlKey] = derived;
   }

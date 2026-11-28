@@ -237,6 +237,80 @@ export function toCardArticles(list: readonly Article[]): Article[] {
   return list.map(toCardArticle);
 }
 
+/**
+ * How much body text a lead-carrying card may keep, in characters.
+ *
+ * Sized from the surface that asked for it: the homepage's featured card is
+ * about 64 characters to the line and, beside a five-card column, has room for
+ * roughly a dozen. `deck` and `excerpt` supply the first five, so ~480 more
+ * characters covers the rest with a margin. Kept well under a full paragraph
+ * so the bound stays the point.
+ */
+export const CARD_LEAD_MAX_CHARS = 480;
+
+/**
+ * A card article that keeps a BOUNDED opening of the body. Opt-in.
+ *
+ * WHY THIS EXISTS, ALONGSIDE `toCardArticle` RATHER THAN REPLACING IT.
+ * Stripping the body was a measured fix: the homepage was serialising sixteen
+ * complete articles — every paragraph, every block — so that cards could show
+ * a title and a deck. That stays the default, and every list that does not ask
+ * for a lead still gets nothing.
+ *
+ * But one card does need running text. The homepage's featured card is as tall
+ * as the column of cards beside it, and `deck` + `excerpt` run out several
+ * lines short of that, leaving a blank band no CSS can close — a clamp limits
+ * text, it cannot produce any. The honest options were to crop the photograph
+ * to fill the space or to show a little more of the article, and the second is
+ * what a reader is actually served by.
+ *
+ * The bound is what keeps this from undoing the fix: at `CARD_LEAD_MAX_CHARS`
+ * a sixteen-card payload grows by single-digit kilobytes, against the hundreds
+ * the full bodies cost. The DB cost is nil — `articleInclude` already loads
+ * the blocks, so this only changes how much of what is already in memory
+ * crosses to the client.
+ *
+ * `structuredBody` stays stripped either way: nothing renders it from a card,
+ * and it is the larger of the two fields.
+ */
+export function toCardArticleWithLead(a: Article, maxChars = CARD_LEAD_MAX_CHARS): Article {
+  const lead = buildCardLead(a.content, maxChars);
+  return { ...a, content: lead ? [lead] : [], structuredBody: undefined };
+}
+
+/** `toCardArticleWithLead` over a list, preserving order. */
+export function toCardArticlesWithLead(list: readonly Article[], maxChars = CARD_LEAD_MAX_CHARS): Article[] {
+  return list.map((a) => toCardArticleWithLead(a, maxChars));
+}
+
+/**
+ * The opening of a body, trimmed to `maxChars` on a WORD boundary.
+ *
+ * Paragraphs are joined so a short opening paragraph does not strand the bound
+ * — several two-line paragraphs are common. Cutting mid-word reads as a fault
+ * rather than a continuation, so the trim steps back to the last space and
+ * drops a trailing comma or similar; the ellipsis then reads as deliberate.
+ * Returns `''` when there is no body, which callers treat as "no lead".
+ */
+export function buildCardLead(paragraphs: readonly string[], maxChars = CARD_LEAD_MAX_CHARS): string {
+  const joined = paragraphs
+    .map((p) => (typeof p === 'string' ? p.trim() : ''))
+    .filter(Boolean)
+    .join(' ')
+    .replace(/\s+/g, ' ')
+    .trim();
+
+  if (!joined) return '';
+  if (joined.length <= maxChars) return joined;
+
+  const cut = joined.slice(0, maxChars);
+  const lastSpace = cut.lastIndexOf(' ');
+  // A single word longer than the bound is pathological; fall back to the hard
+  // cut rather than returning nothing.
+  const trimmed = (lastSpace > maxChars * 0.6 ? cut.slice(0, lastSpace) : cut).replace(/[\s,;:.—-]+$/, '');
+  return `${trimmed}…`;
+}
+
 /* ── /coverage/ archive (Stage 06-R, R-04) ─────────────────────────── */
 
 export const COVERAGE_SORTS = ['newest', 'oldest', 'title'] as const;

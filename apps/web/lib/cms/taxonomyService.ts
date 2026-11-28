@@ -20,19 +20,92 @@ const requireAuthor = (a: Actor) => { if (!roleHasPermission(a.roles, 'author.ma
 const slugify = (s: string) => s.toLowerCase().trim().replace(/[^a-z0-9]+/g, '-').replace(/(^-|-$)/g, '');
 
 // ---- Categories ----
-export interface CategoryRow { id: string; slug: string; name: string; description: string | null; sortOrder: number; articleCount: number; protected: boolean; }
-export async function listCategories(): Promise<CategoryRow[]> {
-  const rows = await prisma.category.findMany({ orderBy: { sortOrder: 'asc' }, include: { _count: { select: { articles: true } } } });
-  return rows.map((c) => ({ id: c.id, slug: c.slug, name: c.name, description: c.description, sortOrder: c.sortOrder, articleCount: c._count.articles, protected: c.id.startsWith('cat-') }));
+export interface CategoryRow {
+  id: string;
+  slug: string;
+  name: string;
+  description: string | null;
+  sortOrder: number;
+  articleCount: number;
+  subcategoryCount: number;
+  protected: boolean;
+  /** The chosen Media Library asset, or null. */
+  heroMediaId: string | null;
+  /**
+   * That asset's served URL, resolved here so the editor can show a thumbnail
+   * without a second round trip per row. Null when no hero is set, and also
+   * when the asset has since been deleted — the foreign key empties the id, so
+   * the two always agree.
+   */
+  heroImageUrl: string | null;
+  /** The asset's alt text, carried so the public hero can stay accessible. */
+  heroImageAlt: string | null;
 }
-const CategoryInput = z.object({ name: z.string().min(1).max(120), description: z.string().max(600).optional(), sortOrder: z.number().int().optional() });
+
+/** The one include both the list and the single read need. */
+const categoryHeroSelect = { select: { id: true, url: true, altText: true } } as const;
+
+export async function listCategories(): Promise<CategoryRow[]> {
+  const rows = await prisma.category.findMany({
+    orderBy: { sortOrder: 'asc' },
+    include: { _count: { select: { articles: true, subcategories: true } }, heroMedia: categoryHeroSelect },
+  });
+  return rows.map((c) => ({
+    id: c.id,
+    slug: c.slug,
+    name: c.name,
+    description: c.description,
+    sortOrder: c.sortOrder,
+    articleCount: c._count.articles,
+    subcategoryCount: c._count.subcategories,
+    protected: c.id.startsWith('cat-'),
+    heroMediaId: c.heroMediaId,
+    heroImageUrl: c.heroMedia?.url ?? null,
+    heroImageAlt: c.heroMedia?.altText ?? null,
+  }));
+}
+
+/**
+ * `heroMediaId` is OPTIONAL in the schema but NULLABLE in its value, and the
+ * difference carries meaning:
+ *
+ *   - absent      -> leave whatever hero is set alone. A caller that only
+ *                    renames a category must not silently clear its image.
+ *   - null        -> remove the hero deliberately ("Remove" in the editor).
+ *   - a uuid      -> set it, after checking the asset exists.
+ */
+const CategoryInput = z.object({
+  name: z.string().min(1).max(120),
+  description: z.string().max(600).optional(),
+  sortOrder: z.number().int().optional(),
+  heroMediaId: z.string().uuid().nullable().optional(),
+});
 export type CategoryInput = z.input<typeof CategoryInput>;
+
+/**
+ * Refuse an id the Media Library cannot serve.
+ *
+ * Without this the foreign key would reject the write with a constraint name,
+ * which tells an operator nothing. Mirrors `saveInfoPageDraft`, which learned
+ * the same lesson about `heroMediaId`.
+ */
+async function resolveCategoryHero(heroMediaId: string | null | undefined): Promise<string | null | undefined> {
+  if (heroMediaId === undefined) return undefined;
+  if (heroMediaId === null) return null;
+  const asset = await prisma.mediaAsset.findUnique({ where: { id: heroMediaId }, select: { id: true } });
+  if (!asset) throw new ServiceError('not_found', 'That image is no longer in the Media Library.');
+  return asset.id;
+}
+
 export async function createCategory(actor: Actor, raw: CategoryInput): Promise<{ id: string }> {
   requireTaxonomy(actor);
   const v = CategoryInput.parse(raw);
   const slug = slugify(v.name);
   if (await prisma.category.findFirst({ where: { OR: [{ slug }, { name: v.name }] } })) throw new ServiceError('conflict', 'A category with that name/slug already exists.');
-  const c = await prisma.category.create({ data: { slug, name: v.name, description: v.description ?? null, sortOrder: v.sortOrder ?? 99 } });
+  const hero = await resolveCategoryHero(v.heroMediaId);
+  const c = await prisma.category.create({
+    data: { slug, name: v.name, description: v.description ?? null, sortOrder: v.sortOrder ?? 99, heroMediaId: hero ?? null },
+  });
   await audit(actor.id, 'category.create', 'category', c.id, v.name);
   return { id: c.id };
 }
@@ -41,16 +114,32 @@ export async function updateCategory(actor: Actor, id: string, raw: CategoryInpu
   const v = CategoryInput.parse(raw);
   const existing = await prisma.category.findUnique({ where: { id } });
   if (!existing) throw new ServiceError('not_found', 'Category not found');
-  // Protected (seeded) categories keep their canonical slug; only name/description/order change.
-  await prisma.category.update({ where: { id }, data: { name: v.name, description: v.description ?? null, sortOrder: v.sortOrder ?? existing.sortOrder } });
-  await audit(actor.id, 'category.update', 'category', id, v.name);
+  const hero = await resolveCategoryHero(v.heroMediaId);
+  // Protected (seeded) categories keep their canonical slug; only name/description/order/hero change.
+  await prisma.category.update({
+    where: { id },
+    data: {
+      name: v.name,
+      description: v.description ?? null,
+      sortOrder: v.sortOrder ?? existing.sortOrder,
+      ...(hero === undefined ? {} : { heroMediaId: hero }),
+    },
+  });
+  await audit(
+    actor.id,
+    'category.update',
+    'category',
+    id,
+    hero === undefined || hero === existing.heroMediaId ? v.name : `${v.name} — hero ${hero ? 'set' : 'removed'}`,
+  );
 }
 export async function deleteCategory(actor: Actor, id: string): Promise<void> {
   requireTaxonomy(actor);
-  const c = await prisma.category.findUnique({ where: { id }, include: { _count: { select: { articles: true } } } });
+  const c = await prisma.category.findUnique({ where: { id }, include: { _count: { select: { articles: true, subcategories: true } } } });
   if (!c) throw new ServiceError('not_found', 'Category not found');
   if (c.id.startsWith('cat-')) throw new ServiceError('forbidden', 'Foundational primary-section categories cannot be deleted.');
   if (c._count.articles > 0) throw new ServiceError('conflict', `Cannot delete: ${c._count.articles} article(s) use this category.`);
+  if (c._count.subcategories > 0) throw new ServiceError('conflict', 'Remove or move the subcategories before deleting this category.');
   await prisma.category.delete({ where: { id } });
   // Batch 11: remove polymorphic SEO/FAQ rows for this category (orphan cleanup).
   const { deleteEntitySeoForEntity } = await import('./entitySeoService');
@@ -410,10 +499,29 @@ export async function deleteTag(actor: Actor, id: string): Promise<void> {
 }
 
 // ---- Authors (public byline identities, distinct from auth Users — §9) ----
-export interface AuthorRow { id: string; slug: string; name: string; role: string; articleCount: number; }
+/**
+ * `bio` and `credentials` are part of the row because the editor EDITS them.
+ *
+ * They were missing, so the admin form had nothing to prefill from and opened
+ * every byline with both fields blank — then saved those blanks back over the
+ * stored text. The row a form writes has to be the row the form reads.
+ */
+export interface AuthorRow {
+  id: string;
+  slug: string;
+  name: string;
+  role: string;
+  bio: string | null;
+  credentials: string | null;
+  articleCount: number;
+}
 export async function listAuthors(): Promise<AuthorRow[]> {
   const rows = await prisma.author.findMany({ orderBy: { name: 'asc' }, include: { _count: { select: { articles: true } } } });
-  return rows.map((a) => ({ id: a.id, slug: a.slug, name: a.name, role: a.role, articleCount: a._count.articles }));
+  return rows.map((a) => ({
+    id: a.id, slug: a.slug, name: a.name, role: a.role,
+    bio: a.bio, credentials: a.credentials,
+    articleCount: a._count.articles,
+  }));
 }
 const AuthorInput = z.object({ name: z.string().min(1).max(120), role: z.string().min(1).max(120), bio: z.string().max(1000).optional(), credentials: z.string().max(300).optional() });
 export type AuthorInput = z.input<typeof AuthorInput>;
@@ -430,14 +538,51 @@ export async function updateAuthor(actor: Actor, id: string, raw: AuthorInput): 
   requireAuthor(actor);
   const v = AuthorInput.parse(raw);
   if (!(await prisma.author.findUnique({ where: { id } }))) throw new ServiceError('not_found', 'Author not found');
-  await prisma.author.update({ where: { id }, data: { name: v.name, role: v.role, bio: v.bio ?? null, credentials: v.credentials ?? null } });
+  // Three states, as for a category hero: an ABSENT field leaves the stored
+  // value alone, an EMPTY string clears it, text replaces it. Collapsing absent
+  // and empty into `?? null` is what let a caller that never sent a bio erase
+  // one, which is a destructive default for a field nothing else can restore.
+  await prisma.author.update({
+    where: { id },
+    data: {
+      name: v.name,
+      role: v.role,
+      ...(v.bio === undefined ? {} : { bio: v.bio.trim() || null }),
+      ...(v.credentials === undefined ? {} : { credentials: v.credentials.trim() || null }),
+    },
+  });
   await audit(actor.id, 'author.update', 'author', id, v.name);
 }
-export async function deleteAuthor(actor: Actor, id: string): Promise<void> {
+export async function deleteAuthor(actor: Actor, id: string, replacementId?: string): Promise<void> {
   requireAuthor(actor);
-  const a = await prisma.author.findUnique({ where: { id }, include: { _count: { select: { articles: true } } } });
-  if (!a) throw new ServiceError('not_found', 'Author not found');
-  if (a._count.articles > 0) throw new ServiceError('conflict', `Cannot delete: this byline is used by ${a._count.articles} article(s).`);
-  await prisma.author.delete({ where: { id } });
-  await audit(actor.id, 'author.delete', 'author', id, a.name);
+  if (replacementId === id) throw new ServiceError('validation', 'Choose a different replacement byline.');
+
+  try {
+    await prisma.$transaction(async (tx) => {
+      const author = await tx.author.findUnique({ where: { id }, select: { name: true } });
+      if (!author) throw new ServiceError('not_found', 'Author not found.');
+
+      let detail = author.name;
+      if (replacementId) {
+        const replacement = await tx.author.findUnique({ where: { id: replacementId }, select: { name: true } });
+        if (!replacement) throw new ServiceError('not_found', 'The replacement byline no longer exists.');
+        const { count } = await tx.article.updateMany({
+          where: { authorId: id },
+          data: { authorId: replacementId, version: { increment: 1 } },
+        });
+        detail = `${author.name}: reassigned ${count} article(s) to ${replacement.name} (${replacementId})`;
+      } else {
+        const count = await tx.article.count({ where: { authorId: id } });
+        if (count > 0) throw new ServiceError('conflict', 'Choose a replacement byline for the linked articles before deleting.');
+      }
+
+      await tx.author.delete({ where: { id } });
+      await tx.auditLog.create({ data: { actorId: actor.id, action: 'author.delete', entityType: 'author', entityId: id, detail } });
+    });
+  } catch (error) {
+    if (error instanceof Prisma.PrismaClientKnownRequestError && ['P2003', 'P2025', 'P2034'].includes(error.code)) {
+      throw new ServiceError('conflict', 'The byline or its linked articles changed. Refresh and try again.');
+    }
+    throw error;
+  }
 }

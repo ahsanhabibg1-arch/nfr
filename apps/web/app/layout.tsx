@@ -1,8 +1,9 @@
 import type { Metadata } from 'next';
 import './globals.css';
 import { SITE_URL } from '@/lib/seo';
+import { getPublishedIdentity, isSafeLogoUrl } from '@/lib/cms/branding';
 
-export const metadata: Metadata = {
+const baseMetadata: Metadata = {
   metadataBase: new URL(SITE_URL),
   title: 'NFRGuide — Independent Rodeo Editorial & Championship Coverage',
   description:
@@ -13,6 +14,13 @@ export const metadata: Metadata = {
   },
   twitter: { card: 'summary_large_image' },
 };
+
+export async function generateMetadata(): Promise<Metadata> {
+  const { faviconUrl } = await getPublishedIdentity();
+  return isSafeLogoUrl(faviconUrl)
+    ? { ...baseMetadata, icons: { icon: faviconUrl } }
+    : baseMetadata;
+}
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {
   return (

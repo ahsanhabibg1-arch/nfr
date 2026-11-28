@@ -63,6 +63,6 @@ export async function createAuthorAction(input: AuthorInput): Promise<ActionResu
 export async function updateAuthorAction(id: string, input: AuthorInput): Promise<ActionResult> {
   try { const a = await requireActor('author.manage'); await tax.updateAuthor(a, id, input); rev(); return { ok: true }; } catch (e) { return toActionError(e); }
 }
-export async function deleteAuthorAction(id: string): Promise<ActionResult> {
-  try { const a = await requireActor('author.manage'); await tax.deleteAuthor(a, id); rev(); return { ok: true }; } catch (e) { return toActionError(e); }
+export async function deleteAuthorAction(id: string, replacementId?: string): Promise<ActionResult> {
+  try { const a = await requireActor('author.manage'); await tax.deleteAuthor(a, id, replacementId); rev(); return { ok: true }; } catch (e) { return toActionError(e); }
 }

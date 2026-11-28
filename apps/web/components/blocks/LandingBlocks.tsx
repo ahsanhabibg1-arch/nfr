@@ -17,6 +17,7 @@ interface LandingData {
   sectionKey?: string;
   totalArticleCount?: number;
   sectionHeroImage?: string | null;
+  sectionHeroImageAlt?: string | null;
   /** Active subcategories of this section, for the hero's navigation row. */
   subcategories?: { id: string; slug: string; name: string; articleCount: number }[];
 }
@@ -44,15 +45,21 @@ export function LandingHeroBlock({ slot, data }: BlockProps) {
 
         Stage 02 (H-04) — DETERMINISTIC PRECEDENCE, Builder first:
           1. `landing-hero.heroImageUrl` — the Visual Builder property. When an
-             operator has set it, it wins, always. SectionConfig never overwrites
+             operator has set it, it wins, always. Nothing downstream overwrites
              an explicitly configured Builder image.
-          2. `SectionConfig.heroImage` — the Settings field, which until now
-             saved and was read by nothing.
+          2. `d.sectionHeroImage` — resolved by `sectionLandingData`, which
+             itself prefers the CATEGORY's own hero (chosen from the Media
+             Library in Editorial Organisation) over the older
+             `SectionConfig.heroImage` settings field.
           3. neither — the hero renders exactly as before, with no image.
-        The Settings value applies only where a `landing-hero` block exists in
+        The resolved value applies only where a `landing-hero` block exists in
         the layout; it does not introduce a hero where the Builder placed none.
+
+        Alt text travels with the image it belongs to. A Builder-set URL has
+        none to carry, so that case stays decorative, which is what it is today.
       */
       backgroundImageUrl={p('heroImageUrl') || d.sectionHeroImage || ''}
+      backgroundImageAlt={p('heroImageUrl') ? undefined : (d.sectionHeroImageAlt || undefined)}
       breadcrumbs={[{ label: meta.name }]}
       statPills={pillsSlotVisible ? [
         { label: 'Published articles', value: String(d.totalArticleCount ?? 0) },

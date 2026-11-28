@@ -11,8 +11,6 @@ export default async function Page() {
   // without a second round trip. Batch 04-E does the same for Article Types.
   const [categories, tags, authors, subcategories, articleTypes, articleTypeAudit, health] = await Promise.all([
     listCategories(), listTags(), listAuthors(), listSubcategories({ lifecycle: 'all' }),
-    // Batch 04-E.2: health is derived from the same cached snapshot the rest of
-    // the app reads, so this adds no query.
     listArticleTypes({ lifecycle: 'all' }), listArticleTypeAudit(20), getArticleTypeRegistryHealth(),
   ]);
   return (
@@ -30,9 +28,7 @@ export default async function Page() {
        */
       articleTypeSource={health.source}
       /**
-       * Batch 04-E.2 — the compatibility definitions the managed registry is
-       * missing. Empty when the registry is complete, and empty (not "all 23")
-       * when it has never been initialised, which `source` already says.
+       * Unresolved compatibility definitions for an initialised registry.
        */
       articleTypeMissing={health.missing}
       canTaxonomy={roleHasPermission(user.roles, 'taxonomy.manage')}

@@ -6,18 +6,20 @@ import { listAuthors, listCategories } from '@/lib/cms/taxonomyService';
 import { AdminArticleEditorShell } from '@/views/admin/AdminArticleEditorShell';
 import { ArticleSeoPanel } from '@/views/admin/ArticleSeoPanel';
 import { getArticleTypeSnapshot } from '@/lib/cms/articleTypeRegistry';
+import { resolveBranding } from '@/lib/cms/branding';
 
 type Params = { params: Promise<{ id: string }> };
 
 export default async function Page({ params }: Params) {
   const user = await requireUser();
   const { id } = await params;
-  const [payload, authors, relationshipOptions, sourceDirectory, articleTypes, categories] = await Promise.all([
+  const [payload, authors, relationshipOptions, sourceDirectory, articleTypes, categories, branding] = await Promise.all([
     getEditableArticle(id), listAuthors(), listArticleRelationshipOptions(), listSourceDirectoryOptions(),
     // Batch 04-E — resolved server-side so the client shell needs no DB access.
     getArticleTypeSnapshot(),
     // Stage 02 (H-01) — managed categories for the Primary Section selector.
     listCategories(),
+    resolveBranding('dark'),
   ]);
   if (!payload) notFound();
 
@@ -28,6 +30,7 @@ export default async function Page({ params }: Params) {
       <AdminArticleEditorShell
         key={payload.version}
         initialArticle={payload.article}
+        initialAuthorId={payload.authorId}
         initialVersion={payload.version}
         initialRevisions={payload.revisions}
         permissions={buildEditorPermissions(user.roles)}
@@ -36,6 +39,7 @@ export default async function Page({ params }: Params) {
         relationshipOptions={relationshipOptions}
         sourceDirectory={sourceDirectory}
         articleTypes={articleTypes}
+        branding={branding}
         categories={categories.map((c) => ({ id: c.id, name: c.name, slug: c.slug }))}
       />
       {/* Advisory SEO diagnostics — does not alter the eight-field editor (§19). */}

@@ -53,19 +53,20 @@ export const SiteLogo: React.FC<SiteLogoProps> = ({
    * leave a dangling reference. One flag, set once on `error`: the component
    * then renders the wordmark and never retries, so there is no request loop.
    */
-  const [imageFailed, setImageFailed] = useState(false);
+  const [failedUrl, setFailedUrl] = useState<string | null>(null);
 
-  if (branding?.logoUrl && !imageFailed) {
+  const url = branding?.logoUrl;
+  if (branding && url && url !== failedUrl) {
     return (
       // eslint-disable-next-line @next/next/no-img-element -- height-bounded brand mark; next/image adds no value and would need remote config
       <img
-        src={branding.logoUrl}
+        src={url}
         alt={branding.logoAlt}
         style={{ maxHeight: `${height}px` }}
-        className="w-auto h-auto object-contain"
+        className="block w-auto h-auto max-w-full object-contain"
         // No lazy loading: the logo is above the fold on every page, and a
         // late-swapping brand mark is a visible layout shift.
-        onError={() => setImageFailed(true)}
+        onError={() => setFailedUrl(url)}
         loading="eager"
         decoding="async"
       />

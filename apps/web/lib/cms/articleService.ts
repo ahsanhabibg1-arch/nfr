@@ -153,6 +153,7 @@ export const ArticleInputSchema = z.object({
     .default('General Information')
     .refine((s) => s.trim().length > 0, { message: 'Choose an article type.' }),
   categoryName: z.string().min(1),
+  authorId: z.string().min(1).optional(),
   authorName: z.string().min(1),
   authorRole: z.string().optional().default('Staff Writer'),
   reviewerName: z.string().optional().default(''),
@@ -627,7 +628,7 @@ async function loadArticleInput(articleId: string): Promise<ParsedInput | null> 
     blocks: a.blocks.map((b) => b.data), seoTitle: a.seo?.seoTitle ?? '', metaDescription: a.seo?.metaDescription ?? '',
     imageSeoTitle: a.imageSeoTitle ?? '', imageAltText: a.imageAltText ?? '', subcategory: a.subcategory ?? '',
     subcategoryId: a.subcategoryId ?? null,
-    articleType: a.articleType, categoryName: a.category.name, authorName: a.author.name, authorRole: a.author.role ?? undefined,
+    articleType: a.articleType, categoryName: a.category.name, authorId: a.authorId, authorName: a.author.name, authorRole: a.author.role ?? undefined,
     heroImage: a.heroImageUrl ?? '', imageCredit: a.imageCredit ?? '', imageCaption: a.imageCaption ?? '',
     imageRightsStatus: RIGHTS_LABEL[a.imageRightsStatus], disclosure: a.disclosureType, disclosureNote: a.disclosureNote ?? '',
     tags: a.tags.map((t) => t.tag.name), takeaways: a.takeaways,
@@ -709,7 +710,13 @@ async function persistArticle(
 
     const categoryId = await resolveCategoryId(tx, v.categoryName);
     await assertSubcategoryInCategory(tx, categoryId, v.subcategoryId ?? null);
-    const authorId = await resolveAuthorId(tx, v.authorName, v.authorRole);
+    const selectedAuthor = v.authorId
+      ? await tx.author.findUnique({ where: { id: v.authorId }, select: { id: true, name: true, role: true } })
+      : null;
+    if (v.authorId && !selectedAuthor && opts.action !== 'article.revision.restore') {
+      throw new ServiceError('validation', 'This author byline no longer exists. Choose another author.', { field: 'authorName' });
+    }
+    const authorId = selectedAuthor?.id ?? await resolveAuthorId(tx, v.authorName, v.authorRole);
     const rel = await resolveRelationships(tx, v);
     await resolveSources(tx, v);
     let articleId: string;
@@ -760,7 +767,10 @@ async function persistArticle(
     const fromPath = existing ? articlePath(existing.slug, existing.subcategoryTaxon?.slug) : '';
     const toPath = articlePath(v.slug, nextSub?.slug);
     const redirectCreated = isLive && !!existing ? await syncUrlRedirect(tx, fromPath, toPath) : false;
-    await addRevision(tx, articleId, actor, v.authorName, existing?.workflowStatus ?? 'DRAFT', opts.summary, buildSnapshot(v));
+    const revisionInput = selectedAuthor
+      ? { ...v, authorId, authorName: selectedAuthor.name, authorRole: selectedAuthor.role }
+      : { ...v, authorId };
+    await addRevision(tx, articleId, actor, revisionInput.authorName, existing?.workflowStatus ?? 'DRAFT', opts.summary, buildSnapshot(revisionInput));
     await tx.auditLog.create({
       data: { actorId: actor.id, action: opts.action, entityType: 'article', entityId: articleId, detail: opts.auditDetail ?? v.slug },
     });

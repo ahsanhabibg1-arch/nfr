@@ -4,6 +4,7 @@ import { getAllSectionConfigs } from '@/lib/cms/sectionConfigService';
 import { PRIMARY_SECTIONS } from '@/config/routes';
 import { getSearchEngineConfig } from '@/lib/cms/searchEngineService';
 import { AdminSettingsPage } from '@/views/admin/AdminSettingsPage';
+import { listSiteConfigs } from '@/lib/cms/siteConfigService';
 
 export default async function Page({ searchParams }: { searchParams: Promise<Record<string, string | string[] | undefined>> }) {
   const user = await requirePermissionPage('system.config');
@@ -12,12 +13,13 @@ export default async function Page({ searchParams }: { searchParams: Promise<Rec
   const str = (v: string | string[] | undefined) => (Array.isArray(v) ? v[0] : v) || undefined;
   const auditFilters = { action: str(sp.action), actorId: str(sp.actorId), page: Number(str(sp.page)) || 1 };
 
-  const [sys, operational, audit, sectionConfigs, searchEngine] = await Promise.all([
+  const [sys, operational, audit, sectionConfigs, searchEngine, siteConfigs] = await Promise.all([
     settings.getSystemSettings(actor),
     settings.getOperationalStatus(actor),
     settings.listAuditLog(actor, auditFilters),
     getAllSectionConfigs(),
     getSearchEngineConfig(actor),
+    listSiteConfigs(),
   ]);
 
   const sections = Object.values(PRIMARY_SECTIONS).map((s) => {
@@ -35,5 +37,5 @@ export default async function Page({ searchParams }: { searchParams: Promise<Rec
     };
   });
 
-  return <AdminSettingsPage settings={sys} operational={operational} audit={audit} auditFilters={auditFilters} sections={sections} searchEngine={searchEngine} />;
+  return <AdminSettingsPage settings={sys} operational={operational} audit={audit} auditFilters={auditFilters} sections={sections} searchEngine={searchEngine} brandingConfig={siteConfigs.find((config) => config.key === 'identity')} />;
 }

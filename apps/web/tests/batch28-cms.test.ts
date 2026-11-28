@@ -62,8 +62,10 @@ suite('Batch 28 — CMS gap remediation integration', () => {
       sectionKey: 'competition',
       displayName: 'B28 Custom Name',
       tagline: 'B28 Custom Tagline',
+      heroImage: '/api/media/2026/11/section-hero.png',
     });
     expect(cfg.displayName).toBe('B28 Custom Name');
+    expect(cfg.heroImage).toBe('/api/media/2026/11/section-hero.png');
 
     const meta = await content.getSectionMeta('competition');
     expect(meta).toBeDefined();

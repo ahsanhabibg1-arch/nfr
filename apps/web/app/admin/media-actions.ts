@@ -32,9 +32,9 @@ export async function unassignRodeoMediaAction(kind: 'hub' | 'event' | 'edition'
 }
 
 /** Read-only list for the editor's media picker (media.view). Returns rows or an error. */
-export async function listMediaForPickerAction(q?: string): Promise<{ ok: true; rows: MediaRow[] } | { ok: false; error: string }> {
+export async function listMediaForPickerAction(q?: string, publicOnly = false): Promise<{ ok: true; rows: MediaRow[] } | { ok: false; error: string }> {
   try {
-    const res = await media.listMedia(await actor(), { q: q || undefined, pageSize: 60 });
+    const res = await media.listMedia(await actor(), { q: q || undefined, visibility: publicOnly ? 'PUBLIC' : undefined, pageSize: 60 });
     return { ok: true, rows: res.rows.filter((row) => row.processingStatus === 'READY' && row.visibility !== 'ARCHIVED') };
   } catch (e) {
     const r = toActionError(e);

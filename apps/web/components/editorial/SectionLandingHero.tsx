@@ -56,10 +56,13 @@ export const SectionLandingHero: React.FC<SectionLandingHeroProps> = ({
             src={backgroundImageUrl}
             alt={backgroundImageAlt ?? ''}
             aria-hidden={backgroundImageAlt ? undefined : true}
-            className="absolute inset-0 w-full h-full object-cover opacity-35"
+            className="absolute inset-0 w-full h-full object-cover"
           />
           {/* Keeps headline contrast on top of an arbitrary editor-chosen image. */}
-          <div aria-hidden="true" className="absolute inset-0 bg-gradient-to-r from-[#0F1115] via-[#0F1115]/85 to-[#0F1115]/40" />
+          <div
+            aria-hidden="true"
+            className="absolute inset-0 bg-[linear-gradient(90deg,#0f1115eb_0%,#0f1115c7_55%,#0f1115ba_100%)] xl:bg-[linear-gradient(90deg,#0f1115_0%,#0f1115dc_54%,#0f111570_73%,#0f11151a_100%)]"
+          />
         </>
       )}
       <div className="relative max-w-[1280px] mx-auto px-4 sm:px-6 lg:px-8">
@@ -79,7 +82,7 @@ export const SectionLandingHero: React.FC<SectionLandingHeroProps> = ({
           <p className="mt-3 text-base sm:text-lg font-serif italic text-stone-300">
             &ldquo;{tagline}&rdquo;
           </p>
-          <p className="mt-3 text-sm sm:text-base text-stone-400 font-sans leading-relaxed">
+          <p className={`mt-3 text-sm sm:text-base font-sans leading-relaxed ${hasBackground ? 'text-stone-300' : 'text-stone-400'}`}>
             {description}
           </p>
 

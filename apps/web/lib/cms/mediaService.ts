@@ -331,7 +331,7 @@ export async function deleteMedia(actor: Actor, id: string): Promise<void> {
     select: { draft: true, published: true },
   });
   if (identity) {
-    const ID_FIELDS = ['logoMediaId', 'logoLightMediaId', 'logoDarkMediaId'] as const;
+    const ID_FIELDS = ['logoMediaId', 'logoLightMediaId', 'logoDarkMediaId', 'faviconMediaId'] as const;
     const usedBy = (blob: unknown): boolean => {
       if (!blob || typeof blob !== 'object') return false;
       const o = blob as Record<string, unknown>;
@@ -340,7 +340,7 @@ export async function deleteMedia(actor: Actor, id: string): Promise<void> {
     if (usedBy(identity.published) || usedBy(identity.draft)) {
       throw new ServiceError(
         'conflict',
-        'Cannot delete: this image is the site logo. Remove or replace it in Website → Site Identity & Branding first.',
+        'Cannot delete: this image is used for site branding. Remove or replace it in System Settings → Site Identity first.',
       );
     }
   }

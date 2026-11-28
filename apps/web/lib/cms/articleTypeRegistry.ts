@@ -188,19 +188,18 @@ export async function getArticleTypeSnapshot(): Promise<ArticleTypeSnapshot> {
  * values against the compiled-in definitions cannot disagree with reality,
  * because it IS reality — so no schema change was needed or made.
  *
- * COSTS NOTHING. It reads the same cached snapshot every other call uses; there
- * is no additional query, and nothing is per-row.
+ * Uses the cached snapshot and checks deletion records only for absent values.
  */
 export interface ArticleTypeRegistryHealth {
   source: 'database' | 'fallback';
   /** True once the table holds rows — i.e. a bootstrap has run at all. */
   initialised: boolean;
   managedCount: number;
-  /** Compatibility definitions absent from the managed registry. */
+  /** Compatibility definitions absent without a recorded deletion. */
   missing: string[];
   /** Managed values the compatibility registry does not define — administrator additions. */
   unmanaged: string[];
-  /** Initialised AND holding all 23 compatibility definitions. */
+  /** Initialised with no unresolved gaps in the compatibility definitions. */
   complete: boolean;
 }
 
@@ -209,7 +208,15 @@ export async function getArticleTypeRegistryHealth(): Promise<ArticleTypeRegistr
   const compat = new Set(compatibilityValues());
   const managed = new Set(snapshot.types.map((t) => t.value));
   const initialised = snapshot.source === 'database';
-  const missing = initialised ? [...compat].filter((v) => !managed.has(v)) : [];
+  const absent = initialised ? [...compat].filter((v) => !managed.has(v)) : [];
+  const deleted = absent.length > 0
+    ? await prisma.seedTombstone.findMany({
+        where: { kind: ARTICLE_TYPE_TOMBSTONE_KIND, key: { in: absent } },
+        select: { key: true },
+      })
+    : [];
+  const deletedValues = new Set(deleted.map(({ key }) => key));
+  const missing = absent.filter((value) => !deletedValues.has(value));
   const unmanaged = initialised ? [...managed].filter((v) => !compat.has(v)).sort() : [];
   return {
     source: snapshot.source,

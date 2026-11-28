@@ -337,7 +337,7 @@ suite('Batch 04-E.2 — registry hardening', () => {
     expect(after.filter((a) => a.articleType === 'guide')).toHaveLength(guideCount);
   });
 
-  it('(9) a DELETED definition is not filled back in, even though it is "missing"', async () => {
+  it('(9) a deliberately deleted definition stays out of fallback and registry warnings', async () => {
     await svc.runArticleTypeBootstrap(superAdmin, true);
     // Use a type with no articles so the delete is permitted, and one that IS
     // evergreen in the compiled-in matrix so the fill would be visible.
@@ -347,7 +347,7 @@ suite('Batch 04-E.2 — registry hardening', () => {
     registry.resetArticleTypeRegistryForTests();
 
     const health = await registry.getArticleTypeRegistryHealth();
-    expect(health.missing).toContain('Travel Guide');          // absent from the table
+    expect(health.missing).not.toContain('Travel Guide');
     expect(await registry.getEvergreenArticleTypeValues()).not.toContain('Travel Guide');
   });
 
@@ -498,7 +498,19 @@ suite('Batch 04-E.2 — registry hardening', () => {
     expect(h.missing).toEqual(['Schedule']);
   });
 
-  it('health adds no query, and a complete registry does no tombstone lookup', async () => {
+  it('health stays complete after a deliberate deletion and still reports unresolved gaps', async () => {
+    await svc.runArticleTypeBootstrap(superAdmin, true);
+    await svc.deleteArticleType(admin, (await byValue('Schedule')).id);
+    const complete = await registry.getArticleTypeRegistryHealth();
+    expect(complete).toMatchObject({ complete: true, managedCount: 22, missing: [] });
+
+    await prisma.articleType.deleteMany({ where: { value: 'news' } });
+    registry.resetArticleTypeRegistryForTests();
+    const partial = await registry.getArticleTypeRegistryHealth();
+    expect(partial).toMatchObject({ complete: false, missing: ['news'] });
+  });
+
+  it('a complete registry does no tombstone lookup', async () => {
     await svc.runArticleTypeBootstrap(superAdmin, true);
     registry.resetArticleTypeRegistryForTests();
     // Prime the snapshot, then count queries during the reads under test.

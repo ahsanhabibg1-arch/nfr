@@ -7,6 +7,8 @@ import { AuthorBio } from '../../editorial/AuthorBio';
 import { SourceList } from '../../editorial/SourceList';
 import { DisclosureBanner } from '../../editorial/DisclosureBanner';
 import { fallbackSnapshot, labelIn, type ArticleTypeSnapshot } from '../../../lib/content/articleTypeShape';
+import type { Branding } from '../../../lib/cms/brandingShared';
+import { SiteLogo } from '../../SiteLogo';
 
 interface ArticleDraftPreviewProps {
   article: Article;
@@ -17,9 +19,10 @@ interface ArticleDraftPreviewProps {
    * compatibility vocabulary, which is what this preview showed before 04-E.
    */
   articleTypes?: ArticleTypeSnapshot;
+  branding?: Branding;
 }
 
-export const ArticleDraftPreview: React.FC<ArticleDraftPreviewProps> = ({ article, onClose, articleTypes }) => {
+export const ArticleDraftPreview: React.FC<ArticleDraftPreviewProps> = ({ article, onClose, articleTypes, branding }) => {
   const typeSnapshot = articleTypes ?? fallbackSnapshot();
   const [viewport, setViewport] = useState<'desktop' | 'tablet' | 'mobile'>('desktop');
 
@@ -34,8 +37,8 @@ export const ArticleDraftPreview: React.FC<ArticleDraftPreviewProps> = ({ articl
       {/* Top Bar with viewport switchers and exit */}
       <div className="h-14 px-4 bg-[#0F1115] border-b border-white/10 flex items-center justify-between text-white shrink-0">
         <div className="flex items-center gap-3">
-          <span className="font-serif font-black text-[#D4A757] text-lg tracking-tight uppercase">
-            NFR<span className="text-white">GUIDE</span>
+          <span className="max-w-36 font-serif font-black text-[#D4A757] text-lg tracking-tight uppercase">
+            <SiteLogo branding={branding} wordmarkAccent="GUIDE" accentClassName="text-white" maxHeight={28} />
           </span>
           <span className="text-stone-500">|</span>
           <span className="px-2 py-0.5 bg-amber-400/20 text-amber-300 border border-amber-400/40 text-[10px] font-mono uppercase tracking-widest rounded-xs font-bold">

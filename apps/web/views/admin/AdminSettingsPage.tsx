@@ -10,6 +10,9 @@ import { updateSiteIdentityAction, updateEditorialDefaultsAction, updateRodeoDef
 import { updateSectionConfigAction } from '../../app/admin/section-config-actions';
 import { AdminSearchEnginePanel } from './AdminSearchEnginePanel';
 import type { SearchEngineConfig } from '../../lib/cms/searchEngineService';
+import type { SiteConfigRow } from '../../lib/cms/siteConfigService';
+import { AdminIdentityEditor } from './AdminIdentityEditor';
+import { MediaPickerModal } from '../../components/admin/editor/MediaPickerModal';
 
 export interface SectionRow {
   sectionKey: string;
@@ -31,13 +34,14 @@ export interface AdminSettingsPageProps {
   sections: SectionRow[];
   /** Supplied by the settings route; drives the Search Engines tab. */
   searchEngine: SearchEngineConfig;
+  brandingConfig?: SiteConfigRow;
 }
 
 type Tab = 'identity' | 'editorial' | 'rodeo' | 'sections' | 'searchengine' | 'operational' | 'audit';
 const inputCls = 'w-full px-3 py-2 text-xs border border-stone-300 rounded-xs bg-white text-stone-900 focus:outline-none focus:border-[#D4A757]';
 const labelCls = 'block text-xs font-mono uppercase text-ink-muted font-medium mb-1';
 
-export const AdminSettingsPage: React.FC<AdminSettingsPageProps> = ({ settings, operational, audit, auditFilters, sections, searchEngine }) => {
+export const AdminSettingsPage: React.FC<AdminSettingsPageProps> = ({ settings, operational, audit, auditFilters, sections, searchEngine, brandingConfig }) => {
   const router = useRouter();
   const [tab, setTab] = useState<Tab>('identity');
   const [toast, setToast] = useState<string | null>(null);
@@ -62,6 +66,7 @@ export const AdminSettingsPage: React.FC<AdminSettingsPageProps> = ({ settings, 
       />
 
       {tab === 'identity' && (
+        <div className="max-w-3xl space-y-6">
         <div className="bg-white border border-stone-200 rounded-xs p-6 max-w-3xl space-y-3">
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
             <div><label htmlFor="settings-site-name" className={labelCls}>Site name</label><input id="settings-site-name" className={inputCls} value={identity.siteName} onChange={(e) => setIdentity({ ...identity, siteName: e.target.value })} /></div>
@@ -73,8 +78,12 @@ export const AdminSettingsPage: React.FC<AdminSettingsPageProps> = ({ settings, 
             <div><label htmlFor="settings-facebook-url" className={labelCls}>Facebook URL</label><input id="settings-facebook-url" className={inputCls} value={identity.facebookUrl ?? ''} onChange={(e) => setIdentity({ ...identity, facebookUrl: e.target.value })} /></div>
             <div><label htmlFor="settings-instagram-url" className={labelCls}>Instagram URL</label><input id="settings-instagram-url" className={inputCls} value={identity.instagramUrl ?? ''} onChange={(e) => setIdentity({ ...identity, instagramUrl: e.target.value })} /></div>
           </div>
-          <p className="text-[11px] text-ink-muted">URLs/emails are validated; HTML is rejected. Branding/logo changes remain owner-approved.</p>
           <button disabled={pending} onClick={() => save(updateSiteIdentityAction(identity))} className="px-4 py-2 bg-[#0F1115] text-[#D4A757] text-xs font-semibold rounded-xs disabled:opacity-50">Save Site Identity</button>
+        </div>
+          <section aria-label="Logo and favicon" className="space-y-3">
+            <h2 className="text-lg font-semibold text-stone-900">Logo and favicon</h2>
+            <AdminIdentityEditor config={brandingConfig} canManage singleLogo />
+          </section>
         </div>
       )}
 
@@ -191,6 +200,7 @@ function SectionEditor({ section, pending, onSave }: { section: SectionRow; pend
   const [tagline, setTagline] = useState(section.tagline);
   const [description, setDescription] = useState(section.description);
   const [heroImage, setHeroImage] = useState(section.heroImage);
+  const [mediaPickerOpen, setMediaPickerOpen] = useState(false);
   return (
     <div className="bg-white border border-stone-200 rounded-xs">
       <button type="button" onClick={() => setOpen(!open)} className="w-full px-4 py-3 flex items-center justify-between text-left">
@@ -205,10 +215,28 @@ function SectionEditor({ section, pending, onSave }: { section: SectionRow; pend
           <div><label className={labelCls}>Display name <span className="text-ink-muted font-normal">(default: {section.defaultName})</span></label><input aria-label={`Display name for ${section.defaultName}`} className={inputCls} value={displayName} onChange={(e) => setDisplayName(e.target.value)} placeholder={section.defaultName} /></div>
           <div><label className={labelCls}>Tagline <span className="text-ink-muted font-normal">(default: {section.defaultTagline})</span></label><input aria-label={`Tagline for ${section.defaultName}`} className={inputCls} value={tagline} onChange={(e) => setTagline(e.target.value)} placeholder={section.defaultTagline} /></div>
           <div><label className={labelCls}>Description</label><textarea aria-label={`Description for ${section.defaultName}`} rows={2} className={inputCls} value={description} onChange={(e) => setDescription(e.target.value)} placeholder={section.defaultDescription} /></div>
-          <div><label className={labelCls}>Hero image URL</label><input aria-label={`Hero image URL for ${section.defaultName}`} className={inputCls} value={heroImage} onChange={(e) => setHeroImage(e.target.value)} placeholder="https://…" /></div>
-          <button disabled={pending} onClick={() => onSave({ sectionKey: section.sectionKey, displayName: displayName || null, tagline: tagline || null, description: description || null, heroImage: heroImage || null })} className="px-4 py-2 bg-[#0F1115] text-[#D4A757] text-xs font-semibold rounded-xs disabled:opacity-50">Save Section</button>
+          <div className="space-y-2">
+            <label htmlFor={`section-hero-${section.sectionKey}`} className={labelCls}>Hero image URL</label>
+            <input id={`section-hero-${section.sectionKey}`} aria-label={`Hero image URL for ${section.defaultName}`} className={inputCls} value={heroImage} onChange={(e) => setHeroImage(e.target.value)} placeholder="https://…" />
+            {heroImage && (
+              // eslint-disable-next-line @next/next/no-img-element -- preview for a Media Library or custom URL
+              <img src={heroImage} alt={`${section.defaultName} hero preview`} className="h-28 w-48 rounded-xs border border-stone-200 bg-stone-100 object-contain" />
+            )}
+            <div className="flex flex-wrap gap-2">
+              <button type="button" disabled={pending} onClick={() => setMediaPickerOpen(true)} className="rounded-xs border border-stone-300 px-3 py-1.5 text-xs font-semibold disabled:opacity-50">Choose from Media Library</button>
+              {heroImage && <button type="button" disabled={pending} onClick={() => setHeroImage('')} className="rounded-xs border border-rose-200 px-3 py-1.5 text-xs text-rose-700 disabled:opacity-50">Remove image</button>}
+            </div>
+            <p className="text-[11px] text-ink-muted">A hero image set in Page Builder or Categories takes priority.</p>
+          </div>
+          <button disabled={pending} onClick={() => onSave({ sectionKey: section.sectionKey, displayName: displayName || null, tagline: tagline || null, description: description || null, heroImage: heroImage.trim() || null })} className="px-4 py-2 bg-[#0F1115] text-[#D4A757] text-xs font-semibold rounded-xs disabled:opacity-50">Save Section</button>
         </div>
       )}
+      <MediaPickerModal
+        isOpen={mediaPickerOpen}
+        onClose={() => setMediaPickerOpen(false)}
+        onSelect={(media) => setHeroImage(media.url)}
+        publishedOnly
+      />
     </div>
   );
 }
